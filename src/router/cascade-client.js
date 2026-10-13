@@ -268,6 +268,74 @@ async function callOllama({ prompt, history = [], systemPrompt = '', model = nul
 }
 
 /**
+ * Call OpenRouter chat completions endpoint with zero-data retention enforcement.
+ */
+export async function callOpenRouter({ prompt, history = [], systemPrompt = '', model = null, timeoutMs = 25000 }) {
+  const apiKey = config.cascade.openrouterApiKey;
+  if (!apiKey) {
+    throw new Error('OpenRouter API key is not configured. Set OPENROUTER_API_KEY environment variable or config.json.');
+  }
+
+  const targetModel = model || config.cascade.openrouterModel || 'qwen/qwen-2.5-7b-instruct';
+  const baseUrl = config.cascade.openrouterBaseUrl || 'https://openrouter.ai/api/v1';
+
+  const messages = [];
+  if (systemPrompt) {
+    messages.push({ role: 'system', content: systemPrompt });
+  }
+  for (const h of history) {
+    messages.push({ role: h.role, content: h.content });
+  }
+  messages.push({ role: 'user', content: prompt });
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const payload = {
+      model: targetModel,
+      messages,
+      temperature: 0.7
+    };
+
+    // Enforce Zero Data Retention / Data Collection Deny if configured
+    if (config.cascade.openrouterZeroDataRetention) {
+      payload.provider = {
+        data_collection: 'deny'
+      };
+    }
+
+    const res = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+        'HTTP-Referer': 'https://github.com/kruschdev/krusch-companion',
+        'X-Title': 'Krusch Companion'
+      },
+      signal: controller.signal,
+      body: JSON.stringify(payload)
+    });
+
+    clearTimeout(timer);
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`OpenRouter error ${res.status}: ${errText}`);
+    }
+
+    const data = await res.json();
+    return data?.choices?.[0]?.message?.content || '';
+  } catch (err) {
+    clearTimeout(timer);
+    if (err.name === 'AbortError') {
+      throw new Error(`OpenRouter call timed out after ${timeoutMs}ms on model ${targetModel}`);
+    }
+    throw err;
+  }
+}
+
+/**
  * Dispatch conversational turn through the cascade router hierarchy.
  */
 export async function dispatchCompanionChat({ prompt, history = [], contextBriefing = '', systemPrompt = null }) {
@@ -299,7 +367,28 @@ All personal data is private and sovereign. When referencing personal context, b
     ? `${baseSystemPrompt}\n\n${contextBriefing}`
     : baseSystemPrompt;
 
-  // 4. Execution with resilient hedging
+  // Mode: Direct OpenRouter Provider (Zero-GPU Cloud Mode)
+  if (config.cascade.provider === 'openrouter') {
+    try {
+      const cloudContent = await callOpenRouter({
+        prompt: cleanPrompt,
+        history,
+        systemPrompt: fullSystemPrompt,
+        model: config.cascade.openrouterModel
+      });
+
+      return {
+        content: cloudContent,
+        tierUsed: TIERS.L3_CLOUD,
+        latencyMs: Date.now() - startTime,
+        reason: `L3 OpenRouter (${config.cascade.openrouterModel})`
+      };
+    } catch (err) {
+      throw new Error(`OpenRouter dispatch failed: ${err.message}`);
+    }
+  }
+
+  // 4. Execution with resilient hedging for Local/Swarm
   if (classification.tier === TIERS.L2_SWARM) {
     try {
       const controller = new AbortController();
@@ -377,6 +466,30 @@ All personal data is private and sovereign. When referencing personal context, b
       }
     }
 
+    // If local Ollama failed and cloud escalation is allowed, fall back to OpenRouter
+    const canEscalateToCloud = (config.cascade.allowCloudEscalation || config.cascade.provider === 'hybrid') && Boolean(config.cascade.openrouterApiKey);
+    if (canEscalateToCloud) {
+      console.log(`⚡ Local Ollama unavailable (${err.message}); escalating to L3 OpenRouter (${config.cascade.openrouterModel})`);
+      try {
+        const cloudContent = await callOpenRouter({
+          prompt: cleanPrompt,
+          history,
+          systemPrompt: fullSystemPrompt,
+          model: config.cascade.openrouterModel
+        });
+
+        return {
+          content: cloudContent,
+          tierUsed: TIERS.L3_CLOUD,
+          latencyMs: Date.now() - startTime,
+          reason: `L3 OpenRouter fallback (${config.cascade.openrouterModel})`
+        };
+      } catch (cloudErr) {
+        throw new Error(`Companion LLM dispatch failed (Local: ${err.message}; Cloud: ${cloudErr.message})`);
+      }
+    }
+
     throw new Error(`Companion LLM dispatch failed: ${err.message}`);
   }
 }
+

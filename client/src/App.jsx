@@ -133,7 +133,25 @@ export function App() {
             <span>{streak} Day Streak</span>
           </div>
 
-          {backendHealth?.edgeModel && (
+          {backendHealth?.provider === 'openrouter' ? (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '6px 12px',
+                borderRadius: 'var(--radius-full)',
+                background: 'rgba(255, 183, 0, 0.10)',
+                border: '1px solid rgba(255, 183, 0, 0.35)',
+                fontSize: '0.75rem',
+                color: 'var(--accent-amber)',
+                fontFamily: 'var(--font-mono)'
+              }}
+            >
+              <span>☁️</span>
+              <span>{backendHealth.openrouterModel?.split('/')[1] || 'OpenRouter'}</span>
+            </div>
+          ) : backendHealth?.edgeModel ? (
             <div
               style={{
                 display: 'flex',
@@ -151,7 +169,7 @@ export function App() {
               <span>⚡</span>
               <span>{backendHealth.edgeModel}</span>
             </div>
-          )}
+          ) : null}
         </div>
       </header>
 

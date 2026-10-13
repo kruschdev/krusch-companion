@@ -6,13 +6,18 @@
     "host": "0.0.0.0"
   },
   "cascade": {
+    "provider": "ollama",
     "allowCloudEscalation": false,
     "l0HeuristicEnabled": true,
     "speculativeHedging": true,
     "edgeModel": "qwen2.5-coder:7b",
     "swarmModel": "qwen2.5-coder:14b",
     "ollamaUrl": "http://127.0.0.1:11434",
-    "swarmUrl": "http://100.106.193.66:8000/v1"
+    "swarmUrl": "http://100.106.193.66:8000/v1",
+    "openrouterApiKey": "",
+    "openrouterModel": "qwen/qwen-2.5-7b-instruct",
+    "openrouterBaseUrl": "https://openrouter.ai/api/v1",
+    "openrouterZeroDataRetention": true
   },
   "db": {
     "path": "./data/companion.db"

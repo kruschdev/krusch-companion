@@ -12,7 +12,7 @@
   <a href="https://github.com/kruschdev/krusch-cascade-router"><img src="https://img.shields.io/badge/Router-krusch--cascade--router-cyan.svg?style=flat-square" alt="Powered By krusch-cascade-router"></a>
   <a href="https://github.com/kruschdev/krusch-context-mcp"><img src="https://img.shields.io/badge/Memory-KruschContext%20Engine-purple.svg?style=flat-square" alt="KruschContext Engine"></a>
   <img src="https://img.shields.io/badge/Privacy-100%25%20Local--First-emerald.svg?style=flat-square" alt="100% Local-First">
-  <img src="https://img.shields.io/badge/tests-18%20passed-brightgreen.svg?style=flat-square" alt="Tests Passed">
+  <img src="https://img.shields.io/badge/tests-21%20passed-brightgreen.svg?style=flat-square" alt="Tests Passed">
 </p>
 
 ---
@@ -84,18 +84,26 @@ The frontend is an installable Progressive Web App (PWA) built with React 19, Vi
 
 ## 🚀 Quickstart
 
+Krusch Companion supports two operating modes:
+* **Option A: 100% Sovereign Local-First (Default)**: Uses local Ollama on your machine or home server. Zero network egress.
+* **Option B: Zero-GPU Cloud Connector (OpenRouter)**: For laptops, cloud VPS, or devices without a discrete GPU. Uses [OpenRouter](https://openrouter.ai/) for inference with **Zero Data Retention** (`data_collection: "deny"`). Your database and working memory still remain 100% local in SQLite.
+
 ### Prerequisites
 
+#### If running Option A (Local Ollama):
 1. **Node.js**: `v22.0.0+`
 2. **Local LLM Runtime**: [Ollama](https://ollama.com/) running locally:
    ```bash
    ollama pull qwen2.5-coder:7b
    ```
 3. **Hardware Expectations**:
-   * **GPU (Recommended)**: ~6–8 GB VRAM (e.g. RTX 2080 Ti, RTX 3060, Apple Silicon M-series). Inference speed: ~30–50 tokens/sec.
-   * **CPU (Usable)**: ~16 GB system RAM. Inference speed: ~5–10 tokens/sec (adequate for triage and daily chat).
-   * **Storage**: ~5 GB for model weights + a few megabytes for the SQLite database.
-4. **Optional Speech-to-Text**: Local [Whisper](https://github.com/openai/whisper) server on port 9000 for voice transcription. If disabled, audio recording falls back to manual text entry.
+   * **GPU (Recommended)**: ~6–8 GB VRAM (RTX 2080 Ti, RTX 3060, Apple Silicon). ~30–50 tokens/sec.
+   * **CPU (Usable)**: ~16 GB system RAM. ~5–10 tokens/sec.
+
+#### If running Option B (OpenRouter Zero-GPU):
+1. **Node.js**: `v22.0.0+`
+2. **OpenRouter API Key**: Obtain from [openrouter.ai](https://openrouter.ai/keys). (Works with free or cheap models like `qwen/qwen-2.5-7b-instruct` or `meta-llama/llama-3.1-8b-instruct:free`).
+3. **No GPU or Ollama required**! Runs on any low-power device.
 
 ### 📦 Ecosystem & Monorepo Dependencies
 
@@ -128,11 +136,15 @@ cd client && npm install && cd ..
 # 3. Build the frontend client
 cd client && npm run build && cd ..
 
-# 4. Run the automated test suite (18 unit & integration tests)
+# 4. Run automated tests (21 unit & integration tests)
 npm test
 
 # 5. Start the server
+# Path A: Local Ollama (default)
 npm start
+
+# Path B: OpenRouter Zero-GPU Mode
+OPENROUTER_API_KEY="sk-or-v1-..." LLM_PROVIDER="openrouter" npm start
 ```
 
 Visit **`http://localhost:3004`** in your browser, or install it as a PWA on your mobile device (iOS Safari: *Share → Add to Home Screen*; Android Chrome: *Install App*).
@@ -220,23 +232,30 @@ Injecting long-term personal context into mathematically or syntactically self-c
 
 ## ⚙️ Configuration (`config.json`)
 
-The server configuration is located in `config.json` at the project root:
+The server configuration is located in `config.json` at the project root (and overridable via environment variables):
 
-| Key | Default | Description |
-|:---|:---|:---|
-| `app.port` | `3004` | Local port for Express API server and static client. |
-| `app.host` | `"0.0.0.0"` | Host binding (`0.0.0.0` allows LAN access from phone/laptop). |
-| `cascade.allowCloudEscalation` | `false` | **Sovereign privacy gate**. When `false`, requests never leave local hardware. |
-| `cascade.l0HeuristicEnabled` | `true` | Enables sub-15µs CPU routing for math and direct memory storage. |
-| `cascade.speculativeHedging` | `true` | Parallel fallback hedging to prevent cascade latency stalls. |
-| `cascade.edgeModel` | `"qwen2.5-coder:7b"` | Name of local Ollama model for fast daily tasks. |
-| `cascade.swarmModel` | `"qwen2.5-coder:14b"`| Name of compute server model for deep reasoning. |
-| `cascade.ollamaUrl` | `"http://127.0.0.1:11434"` | URL of local Ollama instance. |
-| `cascade.swarmUrl` | `"http://100.106.193.66:8000/v1"` | URL of local network compute node (e.g. Tailscale IP). |
-| `db.path` | `"./data/companion.db"` | Path to SQLite WAL database file. |
-| `context.decayDays` | `30` | Age threshold in days before memories are flagged for decay review. |
-| `whisper.enabled` | `true` | Enable/disable speech-to-text audio transcription. |
-| `whisper.port` | `9000` | Local Whisper service port. |
+| Key | Default | Environment Var | Description |
+|:---|:---|:---|:---|
+| `app.port` | `3004` | `PORT` | Local port for Express API server and static client. |
+| `app.host` | `"0.0.0.0"` | `HOST` | Host binding (`0.0.0.0` allows LAN access from phone/laptop). |
+| `cascade.provider` | `"ollama"` | `LLM_PROVIDER` | Active LLM driver: `"ollama"` (local GPU), `"openrouter"` (zero-GPU cloud), or `"hybrid"`. |
+| `cascade.allowCloudEscalation` | `false` | `ALLOW_CLOUD_ESCALATION` | When `false`, requests never leave local hardware. If `true` or `"hybrid"`, falls back to OpenRouter if Ollama fails. |
+| `cascade.openrouterApiKey` | `""` | `OPENROUTER_API_KEY` | OpenRouter API key for zero-GPU mode or cloud fallback. |
+| `cascade.openrouterModel` | `"qwen/qwen-2.5-7b-instruct"` | `OPENROUTER_MODEL` | Default model on OpenRouter (e.g. `meta-llama/llama-3.1-8b-instruct:free`). |
+| `cascade.openrouterZeroDataRetention`| `true` | `OPENROUTER_ZDR` | **Privacy Shield**: Injects `provider: { data_collection: "deny" }` to prevent model training and prompt retention. |
+| `cascade.l0HeuristicEnabled` | `true` | — | Enables sub-15µs CPU routing for math and direct memory storage (always local). |
+| `cascade.edgeModel` | `"qwen2.5-coder:7b"` | `EDGE_MODEL` | Name of local Ollama model for fast daily tasks. |
+| `cascade.swarmModel` | `"qwen2.5-coder:14b"`| `SWARM_MODEL` | Name of compute server model for deep reasoning. |
+| `cascade.ollamaUrl` | `"http://127.0.0.1:11434"` | `OLLAMA_HOST` | URL of local Ollama instance. |
+| `cascade.swarmUrl` | `"http://100.106.193.66:8000/v1"` | `SWARM_VLLM_URL` | URL of local network compute node (e.g. Tailscale IP). |
+| `db.path` | `"./data/companion.db"` | `DB_PATH` | Path to SQLite WAL database file. |
+| `context.decayDays` | `30` | `CONTEXT_DECAY_DAYS` | Age threshold in days before memories are flagged for decay review. |
+
+> ### 🔒 OpenRouter Privacy & Sovereignty Guarantee
+> When operating in OpenRouter mode:
+> 1. **Zero Data Retention Enforced**: Krusch Companion transmits `provider: { data_collection: "deny" }` on every request, instructing OpenRouter to route exclusively to providers that do not log prompts or train on user inputs.
+> 2. **Sovereign Local Storage**: Only the prompt for the active turn travels over TLS to OpenRouter. **100% of your persistent tasks, 5-tier boards, streak counts, and KruschContext working memory remain stored exclusively in local SQLite on your own drive.**
+> 3. **L0 Direct Heuristic Remains 100% Local**: Deterministic arithmetic and direct memory parsing continue running on your local CPU in <15µs with zero network calls.
 
 ---
 

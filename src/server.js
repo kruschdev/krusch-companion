@@ -39,8 +39,11 @@ app.get('/api/health', (_req, res) => {
     status: 'healthy',
     app: config.app.name,
     port: config.app.port,
+    provider: config.cascade.provider,
     edgeModel: config.cascade.edgeModel,
     swarmModel: config.cascade.swarmModel,
+    openrouterModel: config.cascade.openrouterModel,
+    openrouterConfigured: Boolean(config.cascade.openrouterApiKey),
     allowCloudEscalation: config.cascade.allowCloudEscalation,
     dbPath: config.db.path
   });
