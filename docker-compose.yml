@@ -12,9 +12,8 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3004
-      - OLLAMA_HOST=http://krusch:11434
-      - SWARM_VLLM_URL=http://kruschdev:8000/v1
+      - OLLAMA_HOST=http://host.docker.internal:11434
+      - SWARM_VLLM_URL=http://host.docker.internal:8000/v1
       - ALLOW_CLOUD_ESCALATION=false
     extra_hosts:
-      - "krusch:100.65.159.15"
-      - "kruschdev:100.106.193.66"
+      - "host.docker.internal:host-gateway"

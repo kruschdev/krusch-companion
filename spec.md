@@ -12,7 +12,7 @@
 
 **Krusch Companion** is a sovereign, privacy-first personal assistant and life companion designed as an uncompromised alternative to cloud-tethered assistants (Meta Muse, xAI Grok, OpenAI Dot). It provides deeply personalized daily assistance, proactive habit coaching, ADHD-friendly voice "Chaos Dumps," and a 5-tier priority framework. 
 
-Crucially, **100% of user data, episodic memory, and personal context remains strictly local and user-owned** on home hardware. By coupling the sub-15µs CPU **Cascade Router** (`krusch-cascade-router`) with the structured working memory and temporal superseding of **KruschContext** (`krusch-context-mcp`), Krusch Companion routes 85%+ of daily interactions to local edge models (Ollama 3B/7B) or compute nodes (`kruschdev` 14B/32B) at $0.00 cost, with zero surveillance and zero cognitive drift.
+Crucially, **100% of user data, episodic memory, and personal context remains strictly local and user-owned** on home hardware. By coupling the sub-15µs CPU **Cascade Router** (`krusch-cascade-router`) with the structured working memory and temporal superseding of **KruschContext** (`krusch-context-mcp`), Krusch Companion routes 85%+ of daily interactions to local edge models (Ollama 3B/7B) or compute nodes (14B/32B) at $0.00 cost, with zero surveillance and zero cognitive drift.
 
 ---
 
@@ -49,11 +49,11 @@ Crucially, **100% of user data, episodic memory, and personal context remains st
 - **Router Layer**: Direct dependency on `projects/krusch-cascade-router` (`createMultiSpecialistRouter`, `classifyPreRoute`, `detectKnowledgeBoundary`).
 - **Context Layer**: Local SQLite WAL database via `better-sqlite3` / `@krusch/toolkit/db` adhering to the `krusch-context-mcp` memory schema (episodes, nuggets, state briefings, temporal invalidation).
 - **LLM Runtimes**:
-  - **Local Tier 1**: Ollama on `krusch` (localhost:11434) using `qwen2.5:7b` / `llama3.2:3b`.
-  - **Local Tier 2**: vLLM or Ollama on `kruschdev` (100.106.193.66) using `qwen2.5-coder:14b` or `deepseek-v4-flash`.
+  - **Local Tier 1**: Ollama (localhost:11434) using `qwen2.5:7b` / `llama3.2:3b`.
+  - **Local Tier 2**: vLLM or Ollama on a secondary compute node using `qwen2.5-coder:14b` or `deepseek-v4-flash`.
   - **Tier 3 (Opt-in)**: OpenRouter or Gemini 3.1 Flash-Lite / 3 Flash via `@krusch/toolkit/llm` strictly behind user consent toggle.
 - **Frontend**: React 19 + Vite (ESM) with Vanilla CSS / Dark Glassmorphism design system (`App.css`, `index.css`), responsive across desktop, tablet, and mobile PWA.
-- **Deployment**: Dockerized on `kruschserv` (or local workstation `krusch`), standard Makefile, zero internet exposure except via Cloudflare Tunnel or local Tailscale mesh.
+- **Deployment**: Dockerized on home server or local workstation, standard Makefile, zero internet exposure except via encrypted tunnel or private wireguard mesh.
 
 ---
 
@@ -103,7 +103,7 @@ The UI builds upon the proven luxury glassmorphism standard of the Krusch ecosys
 ## 7. Edge Cases & Gotchas
 
 1. **Local Node Offline / Network Partition**:
-   - If `kruschdev` (Tier 2 compute) is unreachable or asleep, the Cascade Router must automatically degrade to local Tier 1 (Ollama on `krusch`) without hanging the user's UI.
+   - If secondary compute node (Tier 2 compute) is unreachable or asleep, the Cascade Router must automatically degrade to local Tier 1 (Ollama) without hanging the user's UI.
 2. **Conflicting Life Facts**:
    - When a user states a new preference or schedule rule that contradicts an old one, the system must invoke `supersedeMemoryRecord` to mark the old rule inactive rather than keeping conflicting facts in the active prompt context.
 3. **Noisy Voice Transcriptions**:

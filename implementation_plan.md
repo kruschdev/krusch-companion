@@ -1,8 +1,8 @@
 # Krusch Companion — Implementation Plan
 
-> **Target Project**: `/home/krusch/homelab/projects/krusch-companion`  
-> **Based on**: [`spec.md`](file:///home/krusch/homelab/projects/krusch-companion/spec.md)  
-> **Status**: Ready for Execution
+> **Target Project**: `projects/krusch-companion`  
+> **Based on**: [`spec.md`](spec.md)  
+> **Status**: Complete
 
 ---
 
@@ -81,7 +81,7 @@ projects/krusch-companion/
 
 ### Stage 3: Cascade Router & Local LLM Dispatcher
 1. Build `src/router/cascade-client.js` consuming `createMultiSpecialistRouter` and `classifyPreRoute` from `krusch-cascade-router`.
-2. Configure local Ollama (`krusch:11434`) and vLLM (`kruschdev`) endpoints with fallback hedging.
+2. Configure local Ollama and secondary compute vLLM endpoints with fallback hedging.
 3. Write automated unit test `tests/test-router.js` verifying sub-15µs L0 heuristic routing and tier escalation.
 
 ### Stage 4: Core Services & Express API
@@ -102,7 +102,7 @@ projects/krusch-companion/
 
 ### Stage 6: Fleet Verification & Indexing
 1. Run pre-commit invariant audit: `krusch_context_nudge({ trigger: "pre_commit" })`.
-2. Index repository into `krusch-git` using `node /home/krusch/homelab/projects/krusch-git/scripts/sync_to_pg.js`.
+2. Index repository into `krusch-git`.
 3. Record project completion in `krusch-context-mcp` working memory.
 
 ---

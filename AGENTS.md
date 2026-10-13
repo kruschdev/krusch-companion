@@ -32,7 +32,7 @@ krusch-companion/
 - **Cascade Router**: `krusch-cascade-router` (sub-15µs CPU heuristic classifier, local edge 3B/7B, swarm 14B/32B)
 - **Database**: SQLite WAL via `@krusch/toolkit/db`
 - **Frontend**: React 19, Vite, Vanilla CSS
-- **Local LLMs**: Ollama on `krusch` (localhost:11434) and vLLM on `kruschdev`
+- **Local LLMs**: Local Ollama (localhost:11434) and optional local network vLLM server
 
 ## Key Commands
 ```bash

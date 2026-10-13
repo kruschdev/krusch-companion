@@ -284,7 +284,7 @@ The server configuration is located in `config.json` at the project root (and ov
 | `cascade.edgeModel` | `"qwen2.5-coder:7b"` | `EDGE_MODEL` | Name of local Ollama model for fast daily tasks. |
 | `cascade.swarmModel` | `"qwen2.5-coder:14b"`| `SWARM_MODEL` | Name of compute server model for deep reasoning. |
 | `cascade.ollamaUrl` | `"http://127.0.0.1:11434"` | `OLLAMA_HOST` | URL of local Ollama instance. |
-| `cascade.swarmUrl` | `"http://100.106.193.66:8000/v1"` | `SWARM_VLLM_URL` | URL of local network compute node (e.g. Tailscale IP). |
+| `cascade.swarmUrl` | `"http://127.0.0.1:8000/v1"` | `SWARM_VLLM_URL` | URL of local network compute node or secondary vLLM server. |
 | `db.path` | `"./data/companion.db"` | `DB_PATH` | Path to SQLite WAL database file. |
 | `context.decayDays` | `30` | `CONTEXT_DECAY_DAYS` | Age threshold in days before memories are flagged for decay review. |
 

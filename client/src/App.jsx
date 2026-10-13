@@ -238,7 +238,7 @@ export function App() {
 
       {/* Footer */}
       <footer style={{ marginTop: 32, padding: '16px 0', textAlign: 'center', borderTop: '1px solid var(--border-subtle)', color: 'var(--text-dim)', fontSize: '0.78rem' }}>
-        Krusch Companion v1.0.0 · Powered by <strong style={{ color: 'var(--text-muted)' }}>krusch-cascade-router</strong> & <strong style={{ color: 'var(--text-muted)' }}>krusch-context-mcp</strong> · 100% Private Homelab AI
+        Krusch Companion v1.0.0 · Powered by <strong style={{ color: 'var(--text-muted)' }}>krusch-cascade-router</strong> & <strong style={{ color: 'var(--text-muted)' }}>krusch-context-mcp</strong> · 100% Sovereign & Local AI
       </footer>
     </div>
   );

@@ -18,7 +18,7 @@
 - [x] **Task 2.5**: Write and verify `tests/test-memory.js` testing memory CRUD, superseding, and boundary gating.
 
 ## Phase 3: Cascade Router Integration
-- [x] **Task 3.1**: Implement `src/router/cascade-client.js` wrapping `krusch-cascade-router` with local Ollama (`krusch:11434`) and vLLM (`kruschdev`) endpoints.
+- [x] **Task 3.1**: Implement `src/router/cascade-client.js` wrapping `krusch-cascade-router` with local Ollama and secondary vLLM endpoints.
 - [x] **Task 3.2**: Configure fallback hedging for offline nodes and privacy constraints (cloud escalation blocked unless enabled).
 - [x] **Task 3.3**: Write and verify `tests/test-router.js` validating sub-15µs L0 heuristic routing and tier escalation.
 
