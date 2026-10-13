@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { getDb } from '../db/index.js';
+import { getDb, getTasksForDate, getStreak, getDailyFocus, today } from '../db/index.js';
 
 export const VALID_CATEGORIES = ['decision', 'invariant', 'bug', 'lesson', 'blocker'];
 
@@ -165,69 +165,103 @@ export function searchMemories(query) {
 }
 
 /**
- * Compile active memory into a structured markdown prompt briefing.
+ * Compile active memory and live daily priority board into a structured markdown prompt briefing.
  */
-export function compileStateBriefing({ maxTokens = 2500 } = {}) {
+export function compileStateBriefing({ maxTokens = 2500, date = null, includeTasks = true } = {}) {
   const memories = getActiveMemories();
-  if (!memories || memories.length === 0) {
+  const targetDate = date || today();
+  const tasks = includeTasks ? getTasksForDate(targetDate) : [];
+  const streakInfo = includeTasks ? getStreak() : { streak: 0 };
+  const dailyFocus = includeTasks ? getDailyFocus(targetDate) : null;
+
+  if ((!memories || memories.length === 0) && (!tasks || tasks.length === 0)) {
     return 'No active personal context stored yet.';
-  }
-
-  const grouped = {
-    invariant: [],
-    decision: [],
-    bug: [],      // Life habits & friction quirks
-    lesson: [],
-    blocker: []
-  };
-
-  for (const m of memories) {
-    if (grouped[m.category]) {
-      grouped[m.category].push(m);
-    }
   }
 
   const lines = ['# 🧠 Krusch Companion Active Working Memory\n'];
 
-  if (grouped.invariant.length > 0) {
-    lines.push('## 🛡️ Core Rules & Invariants');
-    for (const item of grouped.invariant) {
-      lines.push(`- **#${item.id}**${item.key ? ` [${item.key}]` : ''}: ${item.content}`);
+  if (includeTasks && tasks && tasks.length > 0) {
+    const pending = tasks.filter(t => !t.completed);
+    const completed = tasks.filter(t => t.completed);
+    lines.push(`## 📋 Today's Live Priority Board (${targetDate})`);
+    lines.push(`- **Progress**: ${completed.length} / ${tasks.length} tasks completed | **Current Streak**: ${streakInfo.streak} day(s)`);
+    if (dailyFocus?.focus_text) {
+      lines.push(`- **Morning Focus**: ${dailyFocus.focus_text}`);
+    }
+    if (pending.length > 0) {
+      lines.push('### ⏳ Pending Tasks (Ordered by Priority Tier)');
+      for (const t of pending) {
+        lines.push(`- **[#${t.id}] [Tier ${t.tier}: ${t.priority_name} ${t.priority_emoji}]** ${t.title}${t.notes ? ` *(${t.notes})*` : ''} (energy: ${t.energy_level || 'medium'})`);
+      }
+    } else {
+      lines.push('### 🎉 All scheduled tasks for today are completed!');
+    }
+    if (completed.length > 0) {
+      lines.push('### ✅ Completed Today');
+      for (const t of completed) {
+        lines.push(`- ~~[#${t.id}] [Tier ${t.tier}] ${t.title}~~`);
+      }
     }
     lines.push('');
   }
 
-  if (grouped.decision.length > 0) {
-    lines.push('## 🎯 Decisions & Established Preferences');
-    for (const item of grouped.decision) {
-      lines.push(`- **#${item.id}**${item.key ? ` [${item.key}]` : ''}: ${item.content}`);
+  if (memories && memories.length > 0) {
+    const grouped = {
+      invariant: [],
+      decision: [],
+      bug: [],      // Life habits & friction quirks
+      lesson: [],
+      blocker: []
+    };
+
+    for (const m of memories) {
+      if (grouped[m.category]) {
+        grouped[m.category].push(m);
+      }
     }
-    lines.push('');
+
+    if (grouped.invariant.length > 0) {
+      lines.push('## 🛡️ Core Rules & Invariants');
+      for (const item of grouped.invariant) {
+        lines.push(`- **#${item.id}**${item.key ? ` [${item.key}]` : ''}: ${item.content}`);
+      }
+      lines.push('');
+    }
+
+    if (grouped.decision.length > 0) {
+      lines.push('## 🎯 Decisions & Established Preferences');
+      for (const item of grouped.decision) {
+        lines.push(`- **#${item.id}**${item.key ? ` [${item.key}]` : ''}: ${item.content}`);
+      }
+      lines.push('');
+    }
+
+    if (grouped.bug.length > 0) {
+      lines.push('## ⚡ Personal Friction Points & Quirks');
+      for (const item of grouped.bug) {
+        lines.push(`- **#${item.id}**: ${item.content}`);
+      }
+      lines.push('');
+    }
+
+    if (grouped.lesson.length > 0) {
+      lines.push('## 📖 Routines & Lessons Learned');
+      for (const item of grouped.lesson) {
+        lines.push(`- **#${item.id}**: ${item.content}`);
+      }
+      lines.push('');
+    }
+
+    if (grouped.blocker.length > 0) {
+      lines.push('## 🚧 Active Blockers & Life Stressors');
+      for (const item of grouped.blocker) {
+        lines.push(`- **#${item.id}**: ${item.content}`);
+      }
+      lines.push('');
+    }
   }
 
-  if (grouped.bug.length > 0) {
-    lines.push('## ⚡ Personal Friction Points & Quirks');
-    for (const item of grouped.bug) {
-      lines.push(`- **#${item.id}**: ${item.content}`);
-    }
-    lines.push('');
-  }
-
-  if (grouped.lesson.length > 0) {
-    lines.push('## 📖 Routines & Lessons Learned');
-    for (const item of grouped.lesson) {
-      lines.push(`- **#${item.id}**: ${item.content}`);
-    }
-    lines.push('');
-  }
-
-  if (grouped.blocker.length > 0) {
-    lines.push('## 🚧 Active Blockers & Life Stressors');
-    for (const item of grouped.blocker) {
-      lines.push(`- **#${item.id}**: ${item.content}`);
-    }
-    lines.push('');
-  }
-
-  return lines.join('\n');
+  const fullText = lines.join('\n');
+  const maxChars = maxTokens * 4;
+  return fullText.length > maxChars ? fullText.slice(0, maxChars) : fullText;
 }

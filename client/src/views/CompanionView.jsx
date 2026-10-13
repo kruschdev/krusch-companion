@@ -1,12 +1,23 @@
 import React, { useState, useEffect, useRef } from 'react';
 import TierBadge from '../components/TierBadge';
 
-export function CompanionView({ streak }) {
+const ACTION_LABELS = {
+  task_created: { icon: '✅', label: "Task Added to Today's Board", color: '#2dd4bf' },
+  task_completed: { icon: '🎉', label: 'Task Marked Complete', color: '#f0c040' },
+  task_deleted: { icon: '🗑️', label: 'Task Removed from Board', color: '#f87171' },
+  tasks_rolled_over: { icon: '🔄', label: 'Unfinished Tasks Rolled Over', color: '#60a5fa' },
+  tasks_listed: { icon: '📋', label: 'Live SQLite Board Snapshot', color: '#00f0ff' },
+  task_breakdown: { icon: '🧩', label: 'Task Decomposed into Subtasks', color: '#a78bfa' },
+  memory_saved: { icon: '🧠', label: 'Committed to Working Memory', color: '#a78bfa' },
+  memory_superseded: { icon: '🔄', label: 'Working Memory Superseded', color: '#f0c040' }
+};
+
+export function CompanionView({ streak, onActionExecuted }) {
   const [messages, setMessages] = useState([
     {
       id: 'welcome',
       role: 'assistant',
-      content: "Hello! I'm your sovereign companion. All your context, habits, and schedules stay strictly on your local home hardware. How are you feeling today?",
+      content: "Hello! I'm your sovereign companion. You can chat with me, ask what's on your board, or tell me directly to add, complete, roll over, or break down tasks. How are you feeling today?",
       tierUsed: 'L1_edge',
       latencyMs: 12
     }
@@ -81,6 +92,10 @@ export function CompanionView({ streak }) {
       if (!res.ok) throw new Error(`Server returned ${res.status}`);
 
       const data = await res.json();
+      if (data.actionExecuted && onActionExecuted) {
+        onActionExecuted(data.actionExecuted);
+      }
+
       setMessages(prev => [
         ...prev,
         {
@@ -89,7 +104,8 @@ export function CompanionView({ streak }) {
           content: data.reply,
           tierUsed: data.tierUsed,
           latencyMs: data.latencyMs,
-          reason: data.reason
+          reason: data.reason,
+          actionExecuted: data.actionExecuted || null
         }
       ]);
     } catch (err) {
@@ -133,40 +149,65 @@ export function CompanionView({ streak }) {
 
       {/* Chat Messages */}
       <div className="glass-panel" style={{ flex: 1, padding: 20, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {messages.map(m => (
-          <div
-            key={m.id}
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: m.role === 'user' ? 'flex-end' : 'flex-start',
-              gap: 4
-            }}
-          >
+        {messages.map(m => {
+          const actionMeta = m.actionExecuted?.type ? ACTION_LABELS[m.actionExecuted.type] : null;
+          return (
             <div
+              key={m.id}
               style={{
-                maxWidth: '85%',
-                padding: '12px 18px',
-                borderRadius: m.role === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
-                background: m.role === 'user' ? 'linear-gradient(135deg, #0088ff, #7928ca)' : 'var(--bg-glass-card)',
-                color: 'var(--text-main)',
-                border: m.role === 'user' ? 'none' : '1px solid var(--border-subtle)',
-                lineHeight: 1.5,
-                fontSize: '0.95rem',
-                whiteSpace: 'pre-wrap'
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: m.role === 'user' ? 'flex-end' : 'flex-start',
+                gap: 6
               }}
             >
-              {m.content}
+              <div
+                style={{
+                  maxWidth: '85%',
+                  padding: '12px 18px',
+                  borderRadius: m.role === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
+                  background: m.role === 'user' ? 'linear-gradient(135deg, #0088ff, #7928ca)' : 'var(--bg-glass-card)',
+                  color: 'var(--text-main)',
+                  border: m.role === 'user' ? 'none' : '1px solid var(--border-subtle)',
+                  lineHeight: 1.5,
+                  fontSize: '0.95rem',
+                  whiteSpace: 'pre-wrap'
+                }}
+              >
+                {m.content}
+              </div>
+              {m.role === 'assistant' && (m.tierUsed || actionMeta) && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  {m.tierUsed && <TierBadge tier={m.tierUsed} latencyMs={m.latencyMs} />}
+                  {actionMeta && (
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5,
+                        fontSize: '0.72rem',
+                        fontWeight: 700,
+                        fontFamily: 'var(--font-mono)',
+                        padding: '2px 9px',
+                        borderRadius: 'var(--radius-full)',
+                        background: 'rgba(45, 212, 191, 0.12)',
+                        border: `1px solid ${actionMeta.color}`,
+                        color: actionMeta.color
+                      }}
+                    >
+                      <span>{actionMeta.icon}</span>
+                      <span>{actionMeta.label}</span>
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
-            {m.role === 'assistant' && m.tierUsed && (
-              <TierBadge tier={m.tierUsed} latencyMs={m.latencyMs} />
-            )}
-          </div>
-        ))}
+          );
+        })}
         {isLoading && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-dim)', fontSize: '0.88rem' }}>
             <span style={{ animation: 'spin 1s infinite linear' }}>⚡</span>
-            <span>Cascade Router evaluating & generating response...</span>
+            <span>Cascade Router evaluating &amp; generating response...</span>
           </div>
         )}
         <div ref={chatEndRef} />
@@ -175,10 +216,11 @@ export function CompanionView({ streak }) {
       {/* Quick Starters */}
       <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
         {[
+          'Show my tasks for today',
+          'Add task: Drink 500ml water',
+          'Break down my top task into steps',
           'What should I tackle next?',
-          'Nudge me to get started',
-          'Remember that I take vitamins with lunch',
-          'What is 350 * 18?'
+          'Remember that I take vitamins with lunch'
         ].map((quick, idx) => (
           <button
             key={idx}
@@ -198,7 +240,7 @@ export function CompanionView({ streak }) {
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Ask a question, reflect, or note a habit..."
+          placeholder="Add/complete a task, break down a goal, or ask what's next..."
           disabled={isLoading}
         />
         <button id="btn-companion-send" type="submit" className="btn-primary" disabled={isLoading || !input.trim()}>

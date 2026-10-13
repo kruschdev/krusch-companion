@@ -7,6 +7,8 @@ export function TodayView({ onFocusTaskSelected }) {
   const [newTitle, setNewTitle] = useState('');
   const [newTier, setNewTier] = useState(5);
   const [isLoading, setIsLoading] = useState(true);
+  const [statusBanner, setStatusBanner] = useState(null);
+  const [breakingDownId, setBreakingDownId] = useState(null);
 
   useEffect(() => {
     loadData();
@@ -28,6 +30,43 @@ export function TodayView({ onFocusTaskSelected }) {
       console.error('Failed to load data:', err);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleRollover = async () => {
+    try {
+      const res = await fetch('/api/tasks/rollover', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.rolledOverCount > 0) {
+          setStatusBanner(`🔄 Rolled over ${data.rolledOverCount} unfinished task(s) from prior days.`);
+          await loadData();
+        } else {
+          setStatusBanner('✨ No unfinished tasks from prior days to roll over.');
+        }
+        setTimeout(() => setStatusBanner(null), 4000);
+      }
+    } catch (err) {
+      alert(`Rollover failed: ${err.message}`);
+    }
+  };
+
+  const handleBreakdown = async (task) => {
+    setBreakingDownId(task.id);
+    try {
+      const res = await fetch(`/api/tasks/${task.id}/breakdown`, { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.subtasks) && data.subtasks.length > 0) {
+          setTasks(prev => [...prev, ...data.subtasks]);
+          setStatusBanner(`🧩 Added ${data.subtasks.length} bite-sized steps for "${task.title}".`);
+          setTimeout(() => setStatusBanner(null), 4500);
+        }
+      }
+    } catch (err) {
+      alert(`Breakdown failed: ${err.message}`);
+    } finally {
+      setBreakingDownId(null);
     }
   };
 
@@ -113,13 +152,22 @@ export function TodayView({ onFocusTaskSelected }) {
           </p>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           {gamify.opted_in && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255, 183, 0, 0.15)', padding: '6px 14px', borderRadius: 'var(--radius-full)', border: '1px solid rgba(255, 183, 0, 0.3)' }}>
               <span style={{ fontSize: '1.1rem' }}>⭐</span>
               <span style={{ fontWeight: 700, color: 'var(--accent-amber)' }}>{gamify.points} pts</span>
             </div>
           )}
+          <button
+            id="btn-rollover-tasks"
+            className="btn-secondary"
+            onClick={handleRollover}
+            style={{ fontSize: '0.8rem', padding: '6px 12px' }}
+            title="Move incomplete tasks from previous days onto today's board"
+          >
+            ↻ Roll Over Unfinished
+          </button>
           <button
             id="btn-toggle-gamify"
             className="btn-secondary"
@@ -130,6 +178,20 @@ export function TodayView({ onFocusTaskSelected }) {
           </button>
         </div>
       </div>
+
+      {statusBanner && (
+        <div
+          className="glass-card"
+          style={{
+            padding: '10px 16px',
+            borderLeft: '4px solid var(--accent-cyan)',
+            color: 'var(--text-main)',
+            fontSize: '0.88rem'
+          }}
+        >
+          {statusBanner}
+        </div>
+      )}
 
       {/* Add Task Form */}
       <form onSubmit={handleAddTask} className="glass-card" style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -225,6 +287,17 @@ export function TodayView({ onFocusTaskSelected }) {
                         </div>
 
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          {!task.completed && (
+                            <button
+                              className="btn-secondary"
+                              onClick={() => handleBreakdown(task)}
+                              disabled={breakingDownId === task.id}
+                              style={{ padding: '4px 10px', fontSize: '0.75rem' }}
+                              title="Break down into 3 bite-sized steps"
+                            >
+                              {breakingDownId === task.id ? '⚡...' : '🧩 Steps'}
+                            </button>
+                          )}
                           {!task.completed && onFocusTaskSelected && (
                             <button
                               className="btn-secondary"

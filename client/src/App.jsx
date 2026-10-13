@@ -224,7 +224,7 @@ export function App() {
 
       {/* Main Content View */}
       <main style={{ flex: 1 }}>
-        {activeTab === 'companion' && <CompanionView streak={streak} />}
+        {activeTab === 'companion' && <CompanionView streak={streak} onActionExecuted={fetchStreak} />}
         {(activeTab === 'stream' || activeTab === 'dump') && <DumpView onTasksCreated={fetchStreak} />}
         {activeTab === 'today' && <TodayView onFocusTaskSelected={handleSelectFocus} />}
         {activeTab === 'focus' && (

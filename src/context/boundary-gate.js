@@ -5,7 +5,10 @@ const COMPANION_MEMORY_KEYWORDS = [
   'schedule', 'today', 'routine', 'habit', 'priority', 'task', 'todo', 'plan',
   'wife', 'daughter', 'partner', 'family', 'work', 'project', 'health', 'fitness',
   'remind', 'remember', 'prefer', 'coffee', 'sleep', 'morning', 'evening',
-  'focus', 'nudge', 'stress', 'blocker', 'coach', 'reflection', 'streak'
+  'focus', 'nudge', 'stress', 'blocker', 'coach', 'reflection', 'streak',
+  'next', 'tackle', 'board', 'list', 'done', 'complete', 'finish', 'check',
+  'add', 'create', 'delete', 'remove', 'rollover', 'yesterday', 'pending',
+  'left', 'remaining', 'progress', 'status', 'start', 'break down', 'split', 'subtask'
 ];
 
 /**

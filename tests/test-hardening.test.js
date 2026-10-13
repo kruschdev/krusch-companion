@@ -13,9 +13,10 @@ if (fs.existsSync(`${testDbPath}-wal`)) fs.unlinkSync(`${testDbPath}-wal`);
 if (fs.existsSync(`${testDbPath}-shm`)) fs.unlinkSync(`${testDbPath}-shm`);
 if (fs.existsSync(testBackupDir)) fs.rmSync(testBackupDir, { recursive: true, force: true });
 
-const { initCompanionDb, getTasksForDate } = await import('../src/db/index.js');
-const { safeEvaluateArithmetic, evaluateL0Heuristic, TIERS } = await import('../src/router/cascade-client.js');
-const { rememberMemory, getActiveMemories, getDecayCandidates, createDatabaseBackup } = await import('../src/context/memory-store.js');
+const { initCompanionDb, getTasksForDate, createTask, rolloverUnfinishedTasks, today } = await import('../src/db/index.js');
+const { safeEvaluateArithmetic, evaluateL0Heuristic, breakdownTaskIntoSubtasks, TIERS } = await import('../src/router/cascade-client.js');
+const { rememberMemory, getActiveMemories, getDecayCandidates, createDatabaseBackup, compileStateBriefing } = await import('../src/context/memory-store.js');
+const { evaluateCompanionContext } = await import('../src/context/boundary-gate.js');
 const { processChaosDump } = await import('../src/services/chaos-dump.js');
 
 initCompanionDb(testDbPath);
@@ -67,6 +68,93 @@ test('Hardening: Memory store prevents near-duplicate active memory inserts', ()
   const activeInvariants = getActiveMemories('invariant');
   const count = activeInvariants.filter(m => m.content === 'Always drink 500ml water immediately upon waking').length;
   assert.strictEqual(count, 1, 'Only one active copy of the invariant exists');
+});
+
+test('Hardening: L0 Natural-Language Task & Memory Actions execute deterministically on SQLite', () => {
+  // 1. Add task with automatic Tier inference (dentist -> Tier 4: Health & Self)
+  const addRes = evaluateL0Heuristic('Add task: Schedule dentist cleaning at 2pm');
+  assert.ok(addRes && addRes.handled);
+  assert.strictEqual(addRes.actionExecuted.type, 'task_created');
+  assert.strictEqual(addRes.actionExecuted.task.tier, 4);
+  const createdId = addRes.actionExecuted.task.id;
+
+  // 2. Show / List tasks via L0
+  const listRes = evaluateL0Heuristic('Show my tasks for today');
+  assert.ok(listRes && listRes.handled);
+  assert.strictEqual(listRes.actionExecuted.type, 'tasks_listed');
+  assert.ok(listRes.content.includes('Schedule dentist cleaning at 2pm'));
+
+  // 3. Complete task via natural language substring match
+  const completeRes = evaluateL0Heuristic('Complete task: dentist cleaning');
+  assert.ok(completeRes && completeRes.handled);
+  assert.strictEqual(completeRes.actionExecuted.type, 'task_completed');
+  assert.strictEqual(completeRes.actionExecuted.task.id, createdId);
+  assert.strictEqual(completeRes.actionExecuted.task.completed, 1);
+
+  // 4. Delete task via ID
+  const deleteRes = evaluateL0Heuristic(`Delete task #${createdId}`);
+  assert.ok(deleteRes && deleteRes.handled);
+  assert.strictEqual(deleteRes.actionExecuted.type, 'task_deleted');
+
+  // 5. Semantic memory superseding ("Instead of X, remember that Y")
+  rememberMemory({ category: 'decision', content: 'I drink espresso after lunch' });
+  const supRes = evaluateL0Heuristic('Instead of espresso, remember that I switched to green tea after lunch');
+  assert.ok(supRes && supRes.handled);
+  assert.strictEqual(supRes.actionExecuted.type, 'memory_superseded');
+});
+
+test('Hardening: Live Daily Task Board & Streak State injected into Companion Context', () => {
+  createTask({ title: 'Prepare quarterly strategy memo', priority_id: 5, date: today() });
+  const briefing = compileStateBriefing({ date: today(), includeTasks: true });
+  assert.ok(briefing.includes("Today's Live Priority Board"));
+  assert.ok(briefing.includes('Prepare quarterly strategy memo'));
+  assert.ok(briefing.includes('Current Streak'));
+
+  const evalRes = evaluateCompanionContext('What should I tackle next today?');
+  assert.strictEqual(evalRes.shouldInjectContext, true);
+  assert.ok(evalRes.contextPrompt.includes('Prepare quarterly strategy memo'));
+});
+
+test('Hardening: Daily Task Lifecycle — Recurring Auto-Seed & Unfinished Task Rollover', () => {
+  // 1. Recurring tasks auto-seed onto a future date
+  const futureDate = '2026-12-31';
+  const futureTasks = getTasksForDate(futureDate);
+  assert.ok(futureTasks.length >= 4, 'Recurring habits auto-seeded onto new date');
+  assert.ok(futureTasks.some(t => t.title === 'Morning gratitude & prayer' && t.recurring === 1));
+
+  // 2. Incomplete non-recurring task on a past date rolls over to today
+  const pastDate = '2026-01-01';
+  const staleTask = createTask({
+    title: 'File 2025 property tax exemption',
+    priority_id: 5,
+    recurring: 0,
+    date: pastDate
+  });
+  assert.strictEqual(staleTask.date, pastDate);
+
+  const rollover = rolloverUnfinishedTasks(today());
+  assert.ok(rollover.rolledOverCount >= 1);
+  assert.ok(rollover.tasks.some(t => t.title === 'File 2025 property tax exemption' && t.date === today()));
+});
+
+test('Hardening: Task Breakdown decomposes a task into concrete subtasks on Today Board', async () => {
+  const parent = createTask({
+    title: 'Launch sovereign backup verification pipeline',
+    priority_id: 5,
+    date: today()
+  });
+
+  const breakdown = await breakdownTaskIntoSubtasks({
+    taskQuery: `#${parent.id}`,
+    date: today()
+  });
+
+  assert.ok(breakdown);
+  assert.strictEqual(breakdown.actionExecuted.type, 'task_breakdown');
+  assert.ok(Array.isArray(breakdown.subtasks));
+  assert.ok(breakdown.subtasks.length >= 3);
+  const todayTasks = getTasksForDate(today());
+  assert.ok(todayTasks.some(t => t.id === breakdown.subtasks[0].id));
 });
 
 test('Hardening: Database backup via VACUUM INTO produces verified snapshot', () => {

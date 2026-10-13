@@ -9,7 +9,7 @@ import config from './config.js';
 import * as db from './db/index.js';
 import { rememberMemory, getActiveMemories, supersedeMemory, compileStateBriefing, createDatabaseBackup, getDecayCandidates } from './context/memory-store.js';
 import { evaluateCompanionContext } from './context/boundary-gate.js';
-import { dispatchCompanionChat, classifyCompanionPrompt } from './router/cascade-client.js';
+import { dispatchCompanionChat, classifyCompanionPrompt, breakdownTaskIntoSubtasks } from './router/cascade-client.js';
 import { processThoughtStream, processChaosDump } from './services/chaos-dump.js';
 import { generateDailyFocus, generateDailyReflection, generateNudge } from './services/coach.js';
 import { transcribeAudio } from './services/stt.js';
@@ -75,6 +75,27 @@ app.post('/api/tasks', (req, res) => {
     }
     const task = db.createTask({ title, priority_id, notes, recurring, energy_level, date });
     res.json(task);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/tasks/rollover', (req, res) => {
+  try {
+    const date = req.body?.date || db.today();
+    const result = db.rolloverUnfinishedTasks(date);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/tasks/:id/breakdown', async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const date = req.body?.date || db.today();
+    const result = await breakdownTaskIntoSubtasks({ taskQuery: `#${id}`, date });
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -151,7 +172,6 @@ app.post('/api/companion/chat', async (req, res) => {
     const contextBriefing = contextEval.shouldInjectContext ? contextEval.contextPrompt : '';
 
     // Dispatch via Cascade Router
-    const startTime = Date.now();
     const result = await dispatchCompanionChat({
       prompt: contextEval.cleanQuery || prompt,
       history,
@@ -180,7 +200,8 @@ app.post('/api/companion/chat', async (req, res) => {
       tierUsed: result.tierUsed,
       latencyMs: result.latencyMs,
       reason: result.reason,
-      contextActivated: contextEval.shouldInjectContext
+      contextActivated: contextEval.shouldInjectContext,
+      actionExecuted: result.actionExecuted || null
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

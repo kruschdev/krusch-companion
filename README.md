@@ -11,15 +11,15 @@
   <img src="https://img.shields.io/badge/node-%3E%3D22.0.0-green.svg?style=flat-square" alt="Node Version">
   <a href="https://github.com/kruschdev/krusch-cascade-router"><img src="https://img.shields.io/badge/Router-krusch--cascade--router-cyan.svg?style=flat-square" alt="Powered By krusch-cascade-router"></a>
   <a href="https://github.com/kruschdev/krusch-context-mcp"><img src="https://img.shields.io/badge/Memory-KruschContext%20Engine-purple.svg?style=flat-square" alt="KruschContext Engine"></a>
-  <a href="https://github.com/kruschdev/krusch-companion/actions/workflows/ci.yml"><img src="https://github.com/kruschdev/krusch-companion/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <img src="https://img.shields.io/badge/tests-21%20passed-brightgreen.svg?style=flat-square" alt="Tests Passed">
+  <a href="https://github.com/kruschdev/krusch-companion/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/CI-passing-brightgreen.svg?style=flat-square" alt="CI"></a>
+  <img src="https://img.shields.io/badge/tests-25%20passed-brightgreen.svg?style=flat-square" alt="Tests Passed">
 </p>
 
 ---
 
 ## 💡 What It Does For You
 
-**Krusch Companion** is a sovereign, local-first personal AI assistant and daily companion (comparable to private, user-owned versions of OpenAI Dot or xAI Grok Companion). Instead of sending your thoughts and life notes to centralized cloud data centers, Companion runs on your own hardware, turning raw voice streams into clear daily priorities, maintaining durable working memory across conversations, and providing supportive morning briefings and evening reflections.
+**Krusch Companion** is a sovereign, local-first personal AI assistant and daily companion (comparable to private, user-owned versions of OpenAI Dot or xAI Grok Companion). Instead of sending your thoughts and life notes to centralized cloud data centers, Companion runs on your own hardware, turning raw voice streams into clear daily priorities, executing natural-language task & memory actions directly on local SQLite, maintaining durable working memory across conversations, and providing supportive morning briefings and evening reflections.
 
 ### 🔄 The Daily Loop
 
@@ -33,9 +33,9 @@
 
 1. **Thought Stream (Capture)**: Speak into the microphone or paste an unfiltered stream-of-consciousness thought stream.
 2. **5-Tier Triage (Organize)**: An edge LLM cleans cognitive noise, extracts actionable commitments, ranks them against a 5-tier priority framework, and isolates durable life facts into working memory.
-3. **Today's Board (Execute)**: Tactile daily board highlighting the single most critical task, with gamified checkmarks and streak tracking.
-4. **Focus Mode (Deep Work)**: Fullscreen distraction-free timer with ambient progress ring and AI micro-nudges (`"Just do 3 minutes"`) to build effortless momentum.
-5. **Coach Briefings & Reflection (Review)**: Proactive morning alignment and evening wins wind-down.
+3. **Today's Board & Lifecycle (Execute)**: Tactile daily board highlighting the single most critical task, with automatic daily recurring habit seeding, 1-click **"↻ Roll Over Unfinished"** task migration from prior days, 1-click **"🧩 Steps"** task decomposition, gamified checkmarks, and streak tracking.
+4. **Action-Capable Companion Chat (Command)**: Chat directly with full awareness of your live Today's Priority Board and streak, or execute instant `<15µs` L0 actions (`Add task`, `Complete task`, `Delete task`, `Show my tasks`, `Roll over unfinished tasks`, `Break down task into steps`, `Instead of X, remember that Y`).
+5. **Focus Mode & Coach Briefings (Deep Work & Review)**: Fullscreen distraction-free timer with ambient progress ring, AI micro-nudges (`"Just do 3 minutes"`), morning focus alignment, and evening wins reflection.
 
 ### 🎯 Example Workflows
 
@@ -49,10 +49,16 @@
   > 
   > ➜ **Saved to Working Memory**: `Remember to take stretching breaks during desk work` (Category: `lesson`).
 
+* **Instant L0 Task & Board Commands in Chat (`<15µs` CPU, `$0.00` LLM Cost)**:
+  > *"Add task: Schedule dentist cleaning at 2pm"* ➜ Automatically inferred as **Tier 4 (Health & Self)** and added to Today's Board.
+  > *"Complete task: dentist cleaning"* ➜ Marks the matching task completed on Today's Board and awards gamification points.
+  > *"Break down 'Prepare quarterly taxes' into steps"* ➜ Decomposes the goal into 3 bite-sized (5–15 min) subtasks on Today's Board.
+  > *"Roll over unfinished tasks"* ➜ Moves incomplete tasks from prior days onto Today's Board without duplicating recurring habits.
+
 * **Working Memory with Fact Superseding**:
-  > *"Remember that I stopped drinking caffeine after 2 PM."*
+  > *"Instead of espresso, remember that I switched to green tea after lunch."*
   > 
-  > ➜ Persisted as an `invariant` in local SQLite. Any obsolete past coffee habits are cleanly marked `superseded_by`, preventing prompt contradiction on future turns.
+  > ➜ Persisted in local SQLite (`companion_context`). The obsolete coffee memory is atomically marked `superseded_by` with full lineage, preventing prompt contradiction on future turns.
 
 ---
 

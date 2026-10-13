@@ -72,8 +72,54 @@ export function getPriorities() {
 }
 
 // ── Tasks ───────────────────────────────────────────────────────────────────
+export function ensureRecurringTasksForDate(date = null) {
+  const targetDate = date || today();
+  const database = getDb();
+  const seedKey = `recurring_seeded_${targetDate}`;
+
+  const alreadySeeded = database.prepare('SELECT value FROM config WHERE key = ?').get(seedKey);
+  if (alreadySeeded) return 0;
+
+  const recurringTemplates = database.prepare(`
+    SELECT priority_id, title, notes, energy_level
+    FROM tasks
+    WHERE recurring = 1
+    GROUP BY lower(trim(title))
+    ORDER BY id ASC
+  `).all();
+
+  if (recurringTemplates.length === 0) return 0;
+
+  const existingTitles = new Set(
+    database.prepare('SELECT lower(trim(title)) as norm_title FROM tasks WHERE date = ?')
+      .all(targetDate)
+      .map(r => r.norm_title)
+  );
+
+  let inserted = 0;
+  const tx = database.transaction(() => {
+    const insertStmt = database.prepare(`
+      INSERT INTO tasks (priority_id, title, notes, recurring, energy_level, date)
+      VALUES (?, ?, ?, 1, ?, ?)
+    `);
+    for (const tmpl of recurringTemplates) {
+      const norm = tmpl.title.toLowerCase().trim();
+      if (!existingTitles.has(norm)) {
+        insertStmt.run(tmpl.priority_id, tmpl.title, tmpl.notes || null, tmpl.energy_level || 'medium', targetDate);
+        existingTitles.add(norm);
+        inserted++;
+      }
+    }
+    database.prepare('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)').run(seedKey, new Date().toISOString());
+  });
+
+  tx();
+  return inserted;
+}
+
 export function getTasksForDate(date) {
   const targetDate = date || today();
+  ensureRecurringTasksForDate(targetDate);
   return getDb().prepare(`
     SELECT t.*, p.name as priority_name, p.emoji as priority_emoji, p.color as priority_color, p.tier
     FROM tasks t
@@ -83,8 +129,112 @@ export function getTasksForDate(date) {
   `).all(targetDate);
 }
 
+export function rolloverUnfinishedTasks(targetDate = null) {
+  const destDate = targetDate || today();
+  const database = getDb();
+  ensureRecurringTasksForDate(destDate);
+
+  const staleIncomplete = database.prepare(`
+    SELECT * FROM tasks
+    WHERE completed = 0 AND date < ?
+    ORDER BY date DESC, id ASC
+  `).all(destDate);
+
+  if (staleIncomplete.length === 0) {
+    return { rolledOverCount: 0, tasks: [] };
+  }
+
+  const existingTitles = new Set(
+    database.prepare('SELECT lower(trim(title)) as norm_title FROM tasks WHERE date = ?')
+      .all(destDate)
+      .map(r => r.norm_title)
+  );
+
+  const rolledIds = [];
+  const tx = database.transaction(() => {
+    const updateStmt = database.prepare('UPDATE tasks SET date = ? WHERE id = ?');
+    const deleteDuplicateStmt = database.prepare('DELETE FROM tasks WHERE id = ?');
+
+    for (const task of staleIncomplete) {
+      const norm = task.title.toLowerCase().trim();
+      if (existingTitles.has(norm)) {
+        // If it's a recurring task that already exists on destDate, clean up the old uncompleted duplicate
+        if (task.recurring) {
+          deleteDuplicateStmt.run(task.id);
+        }
+        continue;
+      }
+      updateStmt.run(destDate, task.id);
+      existingTitles.add(norm);
+      rolledIds.push(task.id);
+    }
+  });
+
+  tx();
+
+  const rolledTasks = rolledIds.length > 0
+    ? database.prepare(`
+        SELECT t.*, p.name as priority_name, p.emoji as priority_emoji, p.color as priority_color, p.tier
+        FROM tasks t
+        JOIN priorities p ON t.priority_id = p.id
+        WHERE t.id IN (${rolledIds.map(() => '?').join(',')})
+      `).all(...rolledIds)
+    : [];
+
+  return {
+    rolledOverCount: rolledTasks.length,
+    tasks: rolledTasks
+  };
+}
+
+export function findTaskByQuery(query, date = null, { onlyIncomplete = false } = {}) {
+  const targetDate = date || today();
+  const tasks = getTasksForDate(targetDate);
+  const candidates = onlyIncomplete ? tasks.filter(t => !t.completed) : tasks;
+  if (!query) return candidates[0] || null;
+
+  const raw = String(query).trim();
+  const idMatch = raw.match(/^#?(\d+)$/);
+  if (idMatch) {
+    const id = parseInt(idMatch[1], 10);
+    return candidates.find(t => t.id === id) || tasks.find(t => t.id === id) || null;
+  }
+
+  const norm = raw.toLowerCase().replace(/^["']|["']$/g, '').trim();
+  if (!norm) return null;
+
+  // 1. Exact title match
+  const exact = candidates.find(t => t.title.toLowerCase().trim() === norm);
+  if (exact) return exact;
+
+  // 2. Substring match (task title contains query or query contains task title)
+  const sub = candidates.find(
+    t => t.title.toLowerCase().includes(norm) || (norm.length >= 4 && norm.includes(t.title.toLowerCase()))
+  );
+  if (sub) return sub;
+
+  // 3. Token overlap match
+  const queryWords = norm.split(/\s+/).filter(w => w.length >= 3);
+  if (queryWords.length > 0) {
+    let bestTask = null;
+    let bestScore = 0;
+    for (const t of candidates) {
+      const titleLower = t.title.toLowerCase();
+      const hits = queryWords.filter(w => titleLower.includes(w)).length;
+      if (hits > bestScore) {
+        bestScore = hits;
+        bestTask = t;
+      }
+    }
+    if (bestScore > 0) return bestTask;
+  }
+
+  return null;
+}
+
 export function createTask({ title, priority_id = 5, notes = null, recurring = 0, energy_level = 'medium', date = null }) {
   const targetDate = date || today();
+  ensureRecurringTasksForDate(targetDate);
   const stmt = getDb().prepare(`
     INSERT INTO tasks (priority_id, title, notes, recurring, energy_level, date)
     VALUES (?, ?, ?, ?, ?, ?)
