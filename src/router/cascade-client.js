@@ -530,6 +530,49 @@ async function callOllama({ prompt, history = [], systemPrompt = '', model = nul
   }
 }
 
+export const OPENROUTER_SPECIALISTS = {
+  TOOL_AND_CODE: 'qwen/qwen-2.5-coder-32b-instruct',
+  GENERAL_COACH: 'qwen/qwen-2.5-72b-instruct',
+  DEEP_REASONING: 'deepseek/deepseek-chat-v3-0324'
+};
+
+/**
+ * Dynamically selects the optimal OpenRouter model based on Cascade Router classification
+ * and whether the turn is an Agentic Proxy (<holodata>) tool execution.
+ */
+export function selectOpenRouterSpecialistModel({ classification = null, systemPrompt = '' } = {}) {
+  const configured = config.cascade.openrouterModel;
+  // Respect explicit custom model overrides outside the standard default
+  if (
+    configured &&
+    configured !== 'qwen/qwen-2.5-72b-instruct' &&
+    configured !== 'qwen/qwen-2.5-7b-instruct'
+  ) {
+    return configured;
+  }
+
+  // 1. Agentic Proxy (<holodata> tool calling) or code/structured task -> 32B Coder (~400ms, 100% tool accuracy)
+  if (
+    (systemPrompt && systemPrompt.includes('<holodata>')) ||
+    classification?.role === 'code' ||
+    classification?.role === 'reasoning_fast'
+  ) {
+    return OPENROUTER_SPECIALISTS.TOOL_AND_CODE;
+  }
+
+  // 2. Deep reasoning / complex multi-constraint analysis -> DeepSeek V3 685B MoE
+  if (
+    classification?.role === 'reasoning_deep' ||
+    classification?.role === 'comprehension_rc' ||
+    (classification?.complexityScore ?? 0) >= 0.45
+  ) {
+    return OPENROUTER_SPECIALISTS.DEEP_REASONING;
+  }
+
+  // 3. Default conversational coaching, Thought Stream extraction, and empathy -> Qwen 2.5 72B Instruct
+  return OPENROUTER_SPECIALISTS.GENERAL_COACH;
+}
+
 /**
  * Call OpenRouter chat completions endpoint with zero-data retention enforcement.
  */
@@ -539,7 +582,7 @@ export async function callOpenRouter({ prompt, history = [], systemPrompt = '', 
     throw new Error('OpenRouter API key is not configured. Set OPENROUTER_API_KEY environment variable or config.json.');
   }
 
-  const targetModel = model || config.cascade.openrouterModel || 'qwen/qwen-2.5-72b-instruct';
+  const targetModel = model || config.cascade.openrouterModel || OPENROUTER_SPECIALISTS.GENERAL_COACH;
   const baseUrl = config.cascade.openrouterBaseUrl || 'https://openrouter.ai/api/v1';
 
   const messages = [];
@@ -749,19 +792,23 @@ All personal data is private and sovereign. When referencing the user's Today's 
 
   // Mode: Direct OpenRouter Provider (Zero-GPU Cloud Mode)
   if (config.cascade.provider === 'openrouter') {
+    const selectedCloudModel = selectOpenRouterSpecialistModel({
+      classification,
+      systemPrompt: fullSystemPrompt
+    });
     try {
       const cloudContent = await callOpenRouter({
         prompt: cleanPrompt,
         history,
         systemPrompt: fullSystemPrompt,
-        model: config.cascade.openrouterModel
+        model: selectedCloudModel
       });
 
       return {
         content: cloudContent,
         tierUsed: TIERS.L3_CLOUD,
         latencyMs: Date.now() - startTime,
-        reason: `L3 OpenRouter (${config.cascade.openrouterModel})`
+        reason: `L3 OpenRouter (${selectedCloudModel})`
       };
     } catch (err) {
       throw new Error(`OpenRouter dispatch failed: ${err.message}`);
@@ -849,20 +896,24 @@ All personal data is private and sovereign. When referencing the user's Today's 
     // If local Ollama failed and cloud escalation is allowed, fall back to OpenRouter
     const canEscalateToCloud = (config.cascade.allowCloudEscalation || config.cascade.provider === 'hybrid') && Boolean(config.cascade.openrouterApiKey);
     if (canEscalateToCloud) {
-      console.log(`⚡ Local Ollama unavailable (${err.message}); escalating to L3 OpenRouter (${config.cascade.openrouterModel})`);
+      const selectedCloudModel = selectOpenRouterSpecialistModel({
+        classification,
+        systemPrompt: fullSystemPrompt
+      });
+      console.log(`⚡ Local Ollama unavailable (${err.message}); escalating to L3 OpenRouter (${selectedCloudModel})`);
       try {
         const cloudContent = await callOpenRouter({
           prompt: cleanPrompt,
           history,
           systemPrompt: fullSystemPrompt,
-          model: config.cascade.openrouterModel
+          model: selectedCloudModel
         });
 
         return {
           content: cloudContent,
           tierUsed: TIERS.L3_CLOUD,
           latencyMs: Date.now() - startTime,
-          reason: `L3 OpenRouter fallback (${config.cascade.openrouterModel})`
+          reason: `L3 OpenRouter fallback (${selectedCloudModel})`
         };
       } catch (cloudErr) {
         throw new Error(`Companion LLM dispatch failed (Local: ${err.message}; Cloud: ${cloudErr.message})`);

@@ -2,7 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert';
 
 import config from '../src/config.js';
-import { callOpenRouter, dispatchCompanionChat, TIERS } from '../src/router/cascade-client.js';
+import {
+  callOpenRouter,
+  dispatchCompanionChat,
+  selectOpenRouterSpecialistModel,
+  OPENROUTER_SPECIALISTS,
+  TIERS
+} from '../src/router/cascade-client.js';
 
 test('OpenRouter Connector: throws clear error if API key is missing', async (t) => {
   const originalKey = config.cascade.openrouterApiKey;
@@ -97,4 +103,24 @@ test('OpenRouter Connector: L0 Heuristics still evaluate locally on CPU in <15µ
     config.cascade.openrouterApiKey = originalKey;
     config.cascade.provider = originalProvider;
   }
+});
+
+test('OpenRouter Specialist Cascade: dynamically selects 32B Coder for <holodata> tools, 72B for coaching, and DeepSeek V3 for deep reasoning', () => {
+  const toolModel = selectOpenRouterSpecialistModel({
+    classification: { role: 'general_fast', complexityScore: 0.1 },
+    systemPrompt: 'Wrap your blueprint in <holodata> tags'
+  });
+  assert.strictEqual(toolModel, OPENROUTER_SPECIALISTS.TOOL_AND_CODE);
+
+  const coachModel = selectOpenRouterSpecialistModel({
+    classification: { role: 'general_fast', complexityScore: 0.15 },
+    systemPrompt: 'You are Krusch Companion'
+  });
+  assert.strictEqual(coachModel, OPENROUTER_SPECIALISTS.GENERAL_COACH);
+
+  const deepModel = selectOpenRouterSpecialistModel({
+    classification: { role: 'reasoning_deep', complexityScore: 0.65 },
+    systemPrompt: 'You are Krusch Companion'
+  });
+  assert.strictEqual(deepModel, OPENROUTER_SPECIALISTS.DEEP_REASONING);
 });
