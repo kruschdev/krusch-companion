@@ -15,7 +15,8 @@ Krusch Companion (`krusch-companion`) is fully implemented, verified, and indexe
 - [x] Implemented ADHD Chaos Dump voice/text triage engine (`src/services/chaos-dump.js`)
 - [x] Implemented Daily Focus, micro-nudge, and evening reflection services (`src/services/coach.js`)
 - [x] Built and styled React 19 + Vite PWA frontend with luxury dark glassmorphism (`client/`)
-- [x] All 12 unit/integration tests passing cleanly
+- [x] All 18 unit/integration tests passing cleanly (including enterprise hardening)
 - [x] Pre-commit invariant audit passed (`NO_NUDGES_REQUIRED`)
-- [x] Indexed into `krusch-git` (Repo ID 154, 44 files, 81 symbols, 71 call edges)
+- [x] Authored and pushed comprehensive public-facing `README.md` with architectural comparisons and quickstart
+- [x] Re-indexed into `krusch-git` (Repo ID 154, 46 files)
 - [x] Memory recorded in `krusch-context-mcp` (Decision #2)
