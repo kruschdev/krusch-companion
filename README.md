@@ -2,7 +2,7 @@
   <h1 align="center">🛡️ Krusch Companion</h1>
   <p align="center">
     <strong>Sovereign Personal AI & Executive Operating System</strong><br>
-    <em>A 100% private, local-first co-pilot for ADHD task triage, prioritized daily focus, and durable working memory.</em>
+    <em>A 100% private, local-first co-pilot for friction-free thought triage, prioritized daily focus, and durable working memory.</em>
   </p>
 </p>
 
@@ -19,27 +19,27 @@
 
 ## 💡 What It Does For You
 
-**Krusch Companion** is a local-first personal assistant and executive operating system designed to overcome executive dysfunction, mental clutter, and ADHD overwhelm. Instead of sending your thoughts to centralized cloud data centers, Companion processes your voice notes, tasks, and habits entirely on your own home hardware.
+**Krusch Companion** is a local-first personal assistant and executive operating system designed to overcome cognitive overload, mental clutter, and task paralysis. Instead of sending your thoughts to centralized cloud data centers, Companion processes your voice notes, tasks, and habits entirely on your own home hardware.
 
 ### 🔄 The Daily Loop
 
 ```
   ┌─────────────────┐       ┌─────────────────┐       ┌─────────────────┐       ┌─────────────────┐
-  │ 1. Chaos Dump   │  ──►  │ 2. Priority     │  ──►  │ 3. Focus Mode   │  ──►  │ 4. Evening      │
-  │ Unstructured    │       │    Board        │       │ Single-Task     │       │    Reflection   │
-  │ voice or text   │       │ 5-tier triage   │       │ Ambient timer   │       │ Wins & habits   │
+  │ 1. Thought      │  ──►  │ 2. Priority     │  ──►  │ 3. Focus Mode   │  ──►  │ 4. Evening      │
+  │    Stream       │       │    Board        │       │ Single-Task     │       │    Reflection   │
+  │ Voice or text   │       │ 5-tier triage   │       │ Ambient timer   │       │ Wins & habits   │
   └─────────────────┘       └─────────────────┘       └─────────────────┘       └─────────────────┘
 ```
 
-1. **Chaos Dump (Capture)**: Speak into the microphone or paste an unstructured stream-of-consciousness mental dump.
+1. **Thought Stream (Capture)**: Speak into the microphone or paste an unfiltered stream-of-consciousness thought stream.
 2. **5-Tier Triage (Organize)**: An edge LLM cleans cognitive noise, extracts actionable commitments, ranks them against a 5-tier priority framework, and isolates durable life facts into working memory.
 3. **Today's Board (Execute)**: Tactile daily board highlighting the single most critical task, with gamified checkmarks and streak tracking.
-4. **Focus Mode (Initiation)**: Fullscreen distraction-free timer with AI micro-nudges (`"Just do 3 minutes"`) to break task paralysis.
+4. **Focus Mode (Initiation)**: Fullscreen distraction-free timer with AI micro-nudges (`"Just do 3 minutes"`) to break task initiation friction.
 5. **Coach Briefings & Reflection (Review)**: Proactive morning alignment and evening wins wind-down.
 
 ### 🎯 Example Workflows
 
-* **Voice/Text Chaos Dump**:
+* **Voice/Text Thought Stream**:
   > *"I need to send the updated invoice to Alex, fix the door latch before tonight, schedule a dentist checkup for next Tuesday, and I kept forgetting to stretch today."*
   > 
   > ➜ **Extracted into Tasks**:
@@ -62,7 +62,7 @@ To be completely honest about scope and capabilities:
 
 * **Not a general-knowledge frontier chatbot**: The local 7B model (`qwen2.5-coder:7b`) excels at task extraction, summarization, triage, and conversation, but it is not a drop-in replacement for 70B+ models (Claude 3.5 Sonnet, GPT-4o) on broad encyclopedic trivia, complex code generation, or multi-step logic proofs.
 * **Not a multi-user SaaS**: Companion is a single-user executive co-pilot designed for personal sovereignty. There are no multi-tenant logins or shared organization workspaces.
-* **Not zero-setup**: It requires running a local LLM runtime ([Ollama](https://ollama.com/)) on your machine or home server.
+* **Not zero-setup**: It requires running a local LLM runtime ([Ollama](https://ollama.com/)) on your machine or home server (or setting an OpenRouter API key for zero-GPU mode).
 
 ---
 
@@ -70,10 +70,10 @@ To be completely honest about scope and capabilities:
 
 The frontend is an installable Progressive Web App (PWA) built with React 19, Vite, and dark glassmorphism styling compliant with Apple HIG touch targets.
 
-| 💬 Companion Chat | 🌪️ Chaos Dump |
+| 💬 Companion Chat | 🌊 Thought Stream |
 |:---:|:---:|
-| ![Companion Chat](docs/screenshots/companion-view.png) | ![Chaos Dump](docs/screenshots/chaos-dump.png) |
-| *Real-time L0/L1/L2 routing badges, morning focus briefings, and fast local chat.* | *Live HTML5 microphone waveform visualizer and stream-of-consciousness text input.* |
+| ![Companion Chat](docs/screenshots/companion-view.png) | ![Thought Stream](docs/screenshots/thought-stream.png) |
+| *Real-time L0/L1/L2/L3 routing badges, morning focus briefings, and fast local chat.* | *Live HTML5 microphone waveform visualizer and stream-of-consciousness text input.* |
 
 | 📋 Today's Board | 🎯 Focus Mode |
 |:---:|:---:|
@@ -170,7 +170,7 @@ Krusch Companion is built around the **Krusch Cascade Router** and the **KruschC
    [ Tier 0: Direct ]             [ Tier 1: Edge Local ]          [ Tier 2: Deep Local ]
    - Safe AST Arithmetic (<15µs)   - Local 7B Ollama               - Local 14B Swarm
    - Direct Memory Persistence    - Sub-second daily chat,        - Complex life planning,
-   - Zero LLM Token Cost ($0.00)     triage, morning briefing        deep chaos dump synthesis
+   - Zero LLM Token Cost ($0.00)     triage, morning briefing        deep thought stream synthesis
          │                                │                                │
          └────────────────────────────────┴────────────────────────────────┘
                                           │
@@ -226,7 +226,7 @@ Injecting long-term personal context into mathematically or syntactically self-c
 | **Task Routing** | Monolithic cloud roundtrips for all queries | **Cascade Router**: L0 Heuristic (<15µs) + L1 7B Edge + L2 14B Swarm |
 | **Context Hygiene** | Unbounded vector RAG (prone to hallucinations) | **KruschContext**: 5 closed taxonomies + temporal superseding |
 | **Reasoning Depth** | Frontier models (70B–400B cloud parameters) | **Local 7B/14B models** (optimized for triage, not frontier research) |
-| **Executive Function**| Conversational chitchat and journaling | **Chaos Dump Engine**: Rambling speech triaged into 5-tier board |
+| **Executive Function**| Conversational chitchat and journaling | **Thought Stream Engine**: Rambling speech triaged into 5-tier board |
 
 ---
 
@@ -252,8 +252,8 @@ For most developers and privacy-conscious users, **OpenRouter is the most practi
 1. **Transit vs. Storage**:
    * **What never leaves your machine**: Your task lists, 5-tier priority board, completed task timestamps, streak counts, and KruschContext memory store stay **strictly on your local drive**.
    * **What travels in transit**: During an active turn, only the prompt text and immediate session context travel over TLS to OpenRouter for inference.
-2. **The Intimate Nature of Executive / ADHD Data**:
-   * An executive co-pilot is uniquely personal. Stream-of-consciousness Chaos Dumps often mention medical prescriptions (*"refill Adderall"*), therapy sessions, relationship friction, or sensitive financial notes.
+2. **The Intimate Nature of Executive Journaling & Life Data**:
+   * An executive co-pilot is uniquely personal. Stream-of-consciousness Thought Streams often mention medical prescriptions (*"refill medication"*), therapy sessions, relationship friction, or sensitive financial notes.
    * If you are dumping highly confidential personal or medical data, **Option A (Local Ollama)** guarantees that not a single byte leaves your physical machine.
 3. **The Two-Hop Trust Chain**:
    * Calling OpenRouter involves two hops: `[Your Companion] ──► [OpenRouter Proxy] ──► [Upstream Host (e.g. Together, DeepInfra, Fireworks, Azure)]`.
@@ -310,11 +310,11 @@ The server configuration is located in `config.json` at the project root (and ov
 | `GET` | `/api/gamify/today` | Retrieves today's gamification points and opt-in status. |
 | `POST` | `/api/gamify/opt-in` | Updates gamification opt-in status (`{ optedIn: boolean }`). |
 | `POST` | `/api/companion/chat` | Main conversational endpoint routed via Cascade Router (`{ prompt, history, sessionId }`). |
-| `POST` | `/api/companion/dump` | Ingests unformatted Chaos Dump text and triages into 5-tier tasks and memories. |
-| `POST` | `/api/companion/voice` | Accepts multipart `audio` (WebM/WAV) -> Whisper STT -> Chaos Dump pipeline. |
+| `POST` | `/api/companion/stream` | Ingests unformatted Thought Stream text and triages into 5-tier tasks and memories (aliases `/api/companion/dump`). |
+| `POST` | `/api/companion/voice` | Accepts multipart `audio` (WebM/WAV) -> Whisper STT -> Thought Stream pipeline. |
 | `GET` | `/api/coach/focus` | Retrieves today's active morning focus briefing. |
 | `POST` | `/api/coach/focus` | Synthesizes a new morning focus briefing from tasks and working memory. |
-| `POST` | `/api/coach/nudge` | Generates a 1-sentence ADHD micro-nudge for the current task. |
+| `POST` | `/api/coach/nudge` | Generates a 1-sentence initiation micro-nudge for the current task. |
 | `POST` | `/api/coach/reflect` | Synthesizes an evening reflection celebrating wins. |
 | `GET` | `/api/context` | Retrieves active working memory nuggets and compiled state briefing (`?category=...`). |
 | `POST` | `/api/context` | Persists a new memory nugget (`{ category, content, key, confidence }`). |
@@ -366,7 +366,7 @@ docker compose ps
 
 * [`krusch-cascade-router`](https://github.com/kruschdev/krusch-cascade-router): Sub-15µs CPU routing substrate with AST arithmetic evaluation and fallback hedging.
 * [`krusch-context-mcp`](https://github.com/kruschdev/krusch-context-mcp): Model Context Protocol server providing working memory, invariant steering, and fact superseding.
-* [`first-things-first`](https://github.com/kruschdev/first-things-first): The ADHD personal assistant platform that originated the 5-tier priority framework and Chaos Dump workflow.
+* [`first-things-first`](https://github.com/kruschdev/first-things-first): The executive personal assistant platform that originated the 5-tier priority framework and stream capture workflow.
 
 ---
 

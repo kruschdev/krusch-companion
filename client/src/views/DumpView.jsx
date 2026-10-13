@@ -73,11 +73,10 @@ export function DumpView({ onTasksCreated }) {
       {/* Voice Recorder Header */}
       <div className="glass-panel" style={{ padding: 24, textAlign: 'center' }}>
         <h2 style={{ fontSize: '1.4rem', fontWeight: 800, marginBottom: 8 }}>
-          🌪️ ADHD Chaos Dump
+          🌊 Thought Stream
         </h2>
         <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', maxWidth: 600, margin: '0 auto 20px' }}>
-          Unload everything spinning in your head. Rambling, unorganized speech or text is welcomed.
-          Our local Cascade Router will extract actionable tasks and life memories automatically.
+          Speak or write your unfiltered thoughts freely. Rambling thoughts, to-dos, and life commitments are automatically triaged into prioritized action items and durable working memory.
         </p>
 
         <AudioRecorder onAudioReady={handleAudioReady} isProcessing={isProcessing} />
@@ -86,10 +85,10 @@ export function DumpView({ onTasksCreated }) {
       {/* Text Area Form */}
       <form onSubmit={handleProcessText} className="glass-panel" style={{ padding: 24 }}>
         <label style={{ display: 'block', fontWeight: 600, marginBottom: 8, fontSize: '0.9rem' }}>
-          Or Type / Paste Your Stream of Consciousness:
+          Or Type / Paste Your Thoughts:
         </label>
         <textarea
-          id="textarea-chaos-dump"
+          id="textarea-thought-stream"
           rows={5}
           value={text}
           onChange={(e) => setText(e.target.value)}

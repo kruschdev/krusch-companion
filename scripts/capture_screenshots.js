@@ -18,7 +18,8 @@ await new Promise((r) => setTimeout(r, 2000));
 
 const views = [
   { tab: 'companion', file: 'docs/screenshots/companion-view.png' },
-  { tab: 'dump', file: 'docs/screenshots/chaos-dump.png' },
+  { tab: 'stream', file: 'docs/screenshots/thought-stream.png' },
+  { tab: 'stream', file: 'docs/screenshots/chaos-dump.png' },
   { tab: 'today', file: 'docs/screenshots/today-board.png' },
   { tab: 'focus', file: 'docs/screenshots/focus-mode.png' }
 ];

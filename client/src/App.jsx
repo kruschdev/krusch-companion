@@ -9,7 +9,9 @@ export function App() {
     try {
       const params = new URLSearchParams(window.location.search);
       const tab = params.get('tab');
-      if (['companion', 'dump', 'today', 'focus'].includes(tab)) return tab;
+      if (['companion', 'stream', 'dump', 'today', 'focus'].includes(tab)) {
+        return tab === 'dump' ? 'stream' : tab;
+      }
     } catch {
       // fallback
     }
@@ -187,7 +189,7 @@ export function App() {
       >
         {[
           { id: 'companion', label: '💬 Companion Chat' },
-          { id: 'dump', label: '🌪️ Chaos Dump' },
+          { id: 'stream', label: '🌊 Thought Stream' },
           { id: 'today', label: "📋 Today's Board" },
           { id: 'focus', label: '🎯 Focus Mode' }
         ].map((tab) => {
@@ -219,7 +221,7 @@ export function App() {
       {/* Main Content View */}
       <main style={{ flex: 1 }}>
         {activeTab === 'companion' && <CompanionView streak={streak} />}
-        {activeTab === 'dump' && <DumpView onTasksCreated={fetchStreak} />}
+        {(activeTab === 'stream' || activeTab === 'dump') && <DumpView onTasksCreated={fetchStreak} />}
         {activeTab === 'today' && <TodayView onFocusTaskSelected={handleSelectFocus} />}
         {activeTab === 'focus' && (
           <FocusView

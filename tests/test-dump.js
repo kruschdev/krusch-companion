@@ -12,12 +12,12 @@ if (fs.existsSync(`${testDbPath}-wal`)) fs.unlinkSync(`${testDbPath}-wal`);
 if (fs.existsSync(`${testDbPath}-shm`)) fs.unlinkSync(`${testDbPath}-shm`);
 
 const { initCompanionDb, getTasksForDate } = await import('../src/db/index.js');
-const { processChaosDump } = await import('../src/services/chaos-dump.js');
+const { processThoughtStream, processChaosDump } = await import('../src/services/chaos-dump.js');
 const { getActiveMemories } = await import('../src/context/memory-store.js');
 
 initCompanionDb(testDbPath);
 
-test('Chaos Dump Service: parses unformatted stream into structured tasks and memories', async (t) => {
+test('Thought Stream Service: parses unformatted stream into structured tasks and memories', async (t) => {
   const rawDump = `
     I feel super overwhelmed today. I have to call the dentist before 3pm to reschedule,
     pick up prescription from CVS, make sure to drink at least 2 liters of water today.

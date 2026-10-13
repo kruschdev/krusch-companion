@@ -10,7 +10,7 @@ import * as db from './db/index.js';
 import { rememberMemory, getActiveMemories, supersedeMemory, compileStateBriefing, createDatabaseBackup, getDecayCandidates } from './context/memory-store.js';
 import { evaluateCompanionContext } from './context/boundary-gate.js';
 import { dispatchCompanionChat, classifyCompanionPrompt } from './router/cascade-client.js';
-import { processChaosDump } from './services/chaos-dump.js';
+import { processThoughtStream, processChaosDump } from './services/chaos-dump.js';
 import { generateDailyFocus, generateDailyReflection, generateNudge } from './services/coach.js';
 import { transcribeAudio } from './services/stt.js';
 
@@ -187,13 +187,13 @@ app.post('/api/companion/chat', async (req, res) => {
   }
 });
 
-// ── Chaos Dump (Text & Audio) ───────────────────────────────────────────────
-app.post('/api/companion/dump', async (req, res) => {
+// ── Thought Stream (Text & Audio) ──────────────────────────────────────────
+const handleStreamProcessing = async (req, res) => {
   try {
     const { text, date, autoSaveTasks = true, autoSaveMemories = true } = req.body;
-    if (!text) return res.status(400).json({ error: 'Text is required for Chaos Dump' });
+    if (!text) return res.status(400).json({ error: 'Text is required for Thought Stream' });
 
-    const result = await processChaosDump({
+    const result = await processThoughtStream({
       text,
       date,
       autoSaveTasks,
@@ -204,7 +204,10 @@ app.post('/api/companion/dump', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
-});
+};
+
+app.post('/api/companion/stream', handleStreamProcessing);
+app.post('/api/companion/dump', handleStreamProcessing);
 
 app.post('/api/companion/voice', upload.single('audio'), async (req, res) => {
   try {
@@ -217,7 +220,7 @@ app.post('/api/companion/voice', upload.single('audio'), async (req, res) => {
       return res.status(422).json({ error: 'No audible speech detected in transcription' });
     }
 
-    const dumpResult = await processChaosDump({
+    const streamResult = await processThoughtStream({
       text: transcribedText,
       autoSaveTasks: true,
       autoSaveMemories: true
@@ -225,7 +228,7 @@ app.post('/api/companion/voice', upload.single('audio'), async (req, res) => {
 
     res.json({
       transcription: transcribedText,
-      ...dumpResult
+      ...streamResult
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

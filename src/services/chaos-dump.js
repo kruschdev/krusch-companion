@@ -8,14 +8,14 @@ import { rememberMemory } from '../context/memory-store.js';
  * extracts actionable tasks with 5-tier priority assignments, identifies
  * permanent life memories/habits, and auto-persists them to SQLite.
  */
-export async function processChaosDump({
+export async function processThoughtStream({
   text,
   date = null,
   autoSaveTasks = true,
   autoSaveMemories = true
 }) {
   if (!text || typeof text !== 'string' || text.trim().length === 0) {
-    throw new Error('Chaos dump text cannot be empty');
+    throw new Error('Thought stream text cannot be empty');
   }
 
   const targetDate = date || today();
@@ -25,8 +25,8 @@ export async function processChaosDump({
     .join('\n');
 
   const systemPrompt = `You are Krusch Companion's Executive Triage Engine.
-Your task is to analyze an unformatted, rambling stream-of-consciousness thought dump from the user (who may have ADHD or feel overwhelmed).
-Extract actionable tasks, categorize each task into the user's 5-Tier Priority Framework, and extract any lasting life facts, habits, or decisions into memories.
+Your task is to analyze an unformatted, rambling stream-of-consciousness thought stream from the user (who may feel overwhelmed or have high cognitive load).
+Extract actionable tasks, categorize each task into the user's 5-Tier Priority Framework, and extract any lasting life facts, habits, or commitments into working memories.
 
 User's 5-Tier Priority Framework:
 ${priorityGuide}
@@ -135,3 +135,5 @@ You MUST respond with valid JSON ONLY in the following format:
     latencyMs: Date.now() - startTime
   };
 }
+
+export const processChaosDump = processThoughtStream;
