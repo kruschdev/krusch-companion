@@ -539,7 +539,7 @@ export async function callOpenRouter({ prompt, history = [], systemPrompt = '', 
     throw new Error('OpenRouter API key is not configured. Set OPENROUTER_API_KEY environment variable or config.json.');
   }
 
-  const targetModel = model || config.cascade.openrouterModel || 'qwen/qwen-2.5-7b-instruct';
+  const targetModel = model || config.cascade.openrouterModel || 'qwen/qwen-2.5-72b-instruct';
   const baseUrl = config.cascade.openrouterBaseUrl || 'https://openrouter.ai/api/v1';
 
   const messages = [];

@@ -360,13 +360,44 @@ export async function executeAgenticProxyTurn({
     return null;
   }
 
-  // Phase 2: Execute each tool in the sandboxed executor
+  // Phase 2: Execute each tool in the sandboxed executor, piping upstream API results into downstream notes/notifications
   const executedResults = [];
+  const upstreamOutputs = [];
+
   for (const call of plannedCalls.slice(0, 4)) {
-    const res = await executeCompanionTool(call.name, call.arguments, { fetchImpl });
+    const resolvedArgs = { ...(call.arguments || {}) };
+
+    // If a downstream save_note or send_notification follows an upstream data-fetching tool,
+    // automatically ground its content/message with the live upstream API output.
+    if (upstreamOutputs.length > 0) {
+      const combinedUpstream = upstreamOutputs.join('\n\n');
+      if (call.name === 'save_note') {
+        const rawContent = String(resolvedArgs.content || '').trim();
+        const isPlaceholder =
+          !rawContent ||
+          /to be fetched|insert(?:ed)? here|placeholder|<[^>]+>|\{\{[^}]+\}\}|weather summary|research summary|summary of/i.test(rawContent);
+        resolvedArgs.content = isPlaceholder
+          ? combinedUpstream
+          : `${rawContent}\n\n---\n### Live Data Snapshot\n${combinedUpstream}`;
+      } else if (call.name === 'send_notification') {
+        const rawMsg = String(resolvedArgs.message || '').trim();
+        const isPlaceholder =
+          !rawMsg ||
+          /to be fetched|insert(?:ed)? here|placeholder|<[^>]+>|\{\{[^}]+\}\}|weather summary/i.test(rawMsg);
+        resolvedArgs.message = isPlaceholder
+          ? combinedUpstream
+          : `${rawMsg} — ${combinedUpstream}`;
+      }
+    }
+
+    const res = await executeCompanionTool(call.name, resolvedArgs, { fetchImpl });
+    if (res.ok && ['get_weather', 'web_research', 'fetch_url_digest', 'system_status', 'sovereign_gateway_query'].includes(call.name)) {
+      upstreamOutputs.push(res.summary);
+    }
+
     executedResults.push({
       name: call.name,
-      arguments: call.arguments,
+      arguments: resolvedArgs,
       ok: res.ok,
       actionType: res.actionType || 'agentic_tool',
       summary: res.summary,

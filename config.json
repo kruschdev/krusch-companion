@@ -15,7 +15,7 @@
     "ollamaUrl": "http://127.0.0.1:11434",
     "swarmUrl": "http://127.0.0.1:8000/v1",
     "openrouterApiKey": "",
-    "openrouterModel": "qwen/qwen-2.5-7b-instruct",
+    "openrouterModel": "qwen/qwen-2.5-72b-instruct",
     "openrouterBaseUrl": "https://openrouter.ai/api/v1",
     "openrouterZeroDataRetention": true
   },
