@@ -5,7 +5,16 @@ import TodayView from './views/TodayView';
 import FocusView from './views/FocusView';
 
 export function App() {
-  const [activeTab, setActiveTab] = useState('companion');
+  const [activeTab, setActiveTab] = useState(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const tab = params.get('tab');
+      if (['companion', 'dump', 'today', 'focus'].includes(tab)) return tab;
+    } catch {
+      // fallback
+    }
+    return 'companion';
+  });
   const [streak, setStreak] = useState(0);
   const [focusTask, setFocusTask] = useState(null);
   const [backendHealth, setBackendHealth] = useState(null);
