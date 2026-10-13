@@ -18,6 +18,9 @@ const ACTION_LABELS = {
   notification_sent: { icon: '🔔', label: 'Agentic Proxy: Push Notification Sent', color: '#f0c040' },
   system_telemetry: { icon: '🖥️', label: 'Agentic Proxy: System Telemetry', color: '#2dd4bf' },
   sovereign_gateway: { icon: '⚖️', label: 'Agentic Proxy: Sovereign Gateway', color: '#f0c040' },
+  google_drive: { icon: '☁️', label: 'G-Krusch: Google Drive & Docs', color: '#38bdf8' },
+  google_calendar: { icon: '📅', label: 'G-Krusch: Google Calendar', color: '#60a5fa' },
+  google_gmail: { icon: '✉️', label: 'G-Krusch: Gmail Extension', color: '#f87171' },
   agentic_tool: { icon: '⚡', label: 'Agentic Proxy: Tool Executed', color: '#00f0ff' }
 };
 
@@ -26,7 +29,7 @@ export function CompanionView({ streak, onActionExecuted }) {
     {
       id: 'welcome',
       role: 'assistant',
-      content: "Hello! I'm your sovereign personal assistant. Through the Krusch Agentic Proxy (<holodata> Dual-Engine), I can execute live actions for you—check the weather, research topics on the web, save Markdown notes, send push notifications, inspect system telemetry, or manage Today's Priority Board. What can I get done for you?",
+      content: "Hello! I'm your sovereign personal assistant. Through the Krusch Agentic Proxy (<holodata> Dual-Engine) and G-Krusch Google Workspace Extensions, I can execute live actions for you—check the weather, research the web, search or write Google Drive docs, manage Google Calendar events, draft or search Gmail, save local Markdown notes, send push notifications, inspect system telemetry, or manage Today's Priority Board. What can I get done for you?",
       tierUsed: 'L1_edge',
       latencyMs: 12
     }
@@ -284,10 +287,11 @@ export function CompanionView({ streak, onActionExecuted }) {
       <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
         {[
           "What's the weather in Seattle?",
+          'Search my Google Drive for project specs',
+          "What's on my Google Calendar today?",
           'Check system status',
           'Save a note titled Weekly Goals: Ship v2.0 & review priorities',
-          'Show my tasks for today',
-          'Break down my top task into steps'
+          'Show my tasks for today'
         ].map((quick, idx) => (
           <button
             key={idx}
@@ -307,7 +311,7 @@ export function CompanionView({ streak, onActionExecuted }) {
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Ask for weather, web research, notes, notifications, or task actions..."
+          placeholder="Ask for weather, Google Drive/Calendar/Gmail actions, web research, notes, or tasks..."
           disabled={isLoading}
         />
         <button id="btn-companion-send" type="submit" className="btn-primary" disabled={isLoading || !input.trim()}>

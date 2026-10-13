@@ -627,6 +627,332 @@ export const COMPANION_TOOLS = [
         data: { task: created }
       };
     }
+  },
+  {
+    name: 'gkrusch_drive',
+    category: 'google_drive',
+    description: 'Interact with G-Krusch Google Drive & Google Docs Extension: search indexed Drive docs via hybrid RAG, read a Google Doc/file as Markdown, write/export a document to Drive, list the workspace, or fetch agent.md steering.',
+    parameters: {
+      action: 'string (REQUIRED: "search" | "read" | "write" | "list" | "steering")',
+      query: 'string (Search query when action="search")',
+      path: 'string (Workspace file path e.g. "output/report.md" or "context/spec.md" for read/write)',
+      content: 'string (Markdown content to write when action="write")'
+    },
+    required: ['action'],
+    async execute(args, { fetchImpl = fetch } = {}) {
+      const action = String(args?.action || 'search').toLowerCase().trim();
+      const baseUrl = (process.env.G_KRUSCH_URL || 'http://127.0.0.1:5446').replace(/\/+$/, '');
+
+      try {
+        if (action === 'search') {
+          const query = String(args?.query || args?.path || '').trim();
+          if (!query) {
+            return { ok: false, tool: 'gkrusch_drive', summary: 'Parameter "query" is required for gkrusch_drive search.' };
+          }
+          const res = await fetchImpl(`${baseUrl}/api/rag/search?q=${encodeURIComponent(query)}&limit=5`, {
+            signal: AbortSignal.timeout(8000)
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+          const hits = data?.results || [];
+          if (hits.length === 0) {
+            return {
+              ok: true,
+              tool: 'gkrusch_drive',
+              actionType: 'google_drive',
+              summary: `☁️ **G-Krusch Drive RAG Search ("${query}")**: No matching documents found in your indexed Google Drive workspace.`,
+              data: { query, results: [] }
+            };
+          }
+          const formatted = hits.slice(0, 4).map((h, i) => `${i + 1}. **${h.fileName || h.name || 'Drive Doc'}** *(score ${(h.score || 0).toFixed(2)})*: ${(h.content || h.text || '').slice(0, 240)}`).join('\n');
+          return {
+            ok: true,
+            tool: 'gkrusch_drive',
+            actionType: 'google_drive',
+            summary: `☁️ **G-Krusch Drive RAG Results for "${query}"**:\n${formatted}`,
+            data
+          };
+        }
+
+        if (action === 'read') {
+          const targetPath = String(args?.path || args?.query || '').trim();
+          if (!targetPath) {
+            return { ok: false, tool: 'gkrusch_drive', summary: 'Parameter "path" is required for gkrusch_drive read.' };
+          }
+          const res = await fetchImpl(`${baseUrl}/api/drive/read?path=${encodeURIComponent(targetPath)}`, {
+            signal: AbortSignal.timeout(8000)
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+          return {
+            ok: true,
+            tool: 'gkrusch_drive',
+            actionType: 'google_drive',
+            summary: `📄 **G-Krusch Google Drive File \`${data.name || targetPath}\`**:\n\n${String(data.content || '').slice(0, 1500)}`,
+            data
+          };
+        }
+
+        if (action === 'write') {
+          const rawPath = String(args?.path || 'output/companion-note.md').trim();
+          const targetPath = rawPath.includes('/') ? rawPath : `output/${toSafeNoteFilename(rawPath)}`;
+          const content = String(args?.content || '').trim();
+          if (!content) {
+            return { ok: false, tool: 'gkrusch_drive', summary: 'Parameter "content" is required for gkrusch_drive write.' };
+          }
+
+          // Always save a sovereign local mirror in data/notes/ as well
+          const localFilename = toSafeNoteFilename(path.basename(targetPath));
+          fs.writeFileSync(path.join(getNotesDirectory(), localFilename), content, 'utf-8');
+
+          const res = await fetchImpl(`${baseUrl}/api/drive/write`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: targetPath, content, mimeType: 'text/markdown' }),
+            signal: AbortSignal.timeout(10000)
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+          return {
+            ok: true,
+            tool: 'gkrusch_drive',
+            actionType: 'google_drive',
+            summary: `☁️ Saved document to **Google Drive (\`G-Krusch/${targetPath}\`)** and mirrored locally to \`data/notes/${localFilename}\`.`,
+            data
+          };
+        }
+
+        if (action === 'steering') {
+          const res = await fetchImpl(`${baseUrl}/api/steering`, { signal: AbortSignal.timeout(8000) });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+          return {
+            ok: true,
+            tool: 'gkrusch_drive',
+            actionType: 'google_drive',
+            summary: `🧭 **G-Krusch Cloud Steering (\`agent.md\`)**:\n\n${String(data.content || data.raw || JSON.stringify(data)).slice(0, 1200)}`,
+            data
+          };
+        }
+
+        // Default: list workspace tree
+        const res = await fetchImpl(`${baseUrl}/api/workspace/tree`, { signal: AbortSignal.timeout(8000) });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+        return {
+          ok: true,
+          tool: 'gkrusch_drive',
+          actionType: 'google_drive',
+          summary: `☁️ **G-Krusch Google Drive Workspace**:\n\`\`\`json\n${JSON.stringify(data, null, 2).slice(0, 1000)}\n\`\`\``,
+          data
+        };
+      } catch (err) {
+        // If writing a file while Google Drive OAuth is disconnected, confirm the local vault mirror succeeded
+        if (action === 'write' && args?.content) {
+          const localFilename = toSafeNoteFilename(path.basename(String(args?.path || 'companion-note')));
+          return {
+            ok: true,
+            tool: 'gkrusch_drive',
+            actionType: 'google_drive',
+            summary: `📝 Saved locally to \`data/notes/${localFilename}\` (G-Krusch Google Drive sync pending OAuth connection at \`${baseUrl}/auth/google\`: ${err.message}).`,
+            data: { localFilename, driveError: err.message }
+          };
+        }
+        return {
+          ok: false,
+          tool: 'gkrusch_drive',
+          actionType: 'google_drive',
+          summary: `☁️ G-Krusch Google Drive (${baseUrl}) returned: ${err.message}. Connect Google OAuth at \`${baseUrl}/auth/google\`.`
+        };
+      }
+    }
+  },
+  {
+    name: 'gkrusch_calendar',
+    category: 'google_calendar',
+    description: 'Interact with G-Krusch Google Calendar Extension: list upcoming calendar events or schedule/create a new calendar appointment.',
+    parameters: {
+      action: 'string (REQUIRED: "list_events" | "create_event")',
+      summary: 'string (Event title when action="create_event", or search filter when action="list_events")',
+      startTime: 'string (ISO-8601 start timestamp when action="create_event", e.g. "2026-10-14T14:00:00")',
+      endTime: 'string (OPTIONAL: ISO-8601 end timestamp when action="create_event")',
+      description: 'string (OPTIONAL: Event notes or location)'
+    },
+    required: ['action'],
+    async execute(args, { fetchImpl = fetch } = {}) {
+      const action = String(args?.action || 'list_events').toLowerCase().trim();
+      const baseUrl = (process.env.G_KRUSCH_URL || 'http://127.0.0.1:5446').replace(/\/+$/, '');
+
+      try {
+        if (action === 'create_event' || action === 'create' || action === 'schedule') {
+          const summary = String(args?.summary || args?.title || 'Scheduled Event').trim();
+          const startTime = args?.startTime || new Date(Date.now() + 3600 * 1000).toISOString();
+          const res = await fetchImpl(`${baseUrl}/api/calendar/events`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              summary,
+              startTime,
+              endTime: args?.endTime || null,
+              description: args?.description || ''
+            }),
+            signal: AbortSignal.timeout(8000)
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+          const ev = data.event || {};
+          return {
+            ok: true,
+            tool: 'gkrusch_calendar',
+            actionType: 'google_calendar',
+            summary: `📅 **Scheduled on Google Calendar**: **${ev.summary || summary}** (${ev.start || startTime})${ev.htmlLink ? `\n🔗 [Open in Google Calendar](${ev.htmlLink})` : ''}`,
+            data: ev
+          };
+        }
+
+        // Default: list_events
+        const q = String(args?.summary || args?.query || '').trim();
+        const url = `${baseUrl}/api/calendar/events?limit=8${q ? `&q=${encodeURIComponent(q)}` : ''}`;
+        const res = await fetchImpl(url, { signal: AbortSignal.timeout(8000) });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+        const events = data.events || [];
+        if (events.length === 0) {
+          return {
+            ok: true,
+            tool: 'gkrusch_calendar',
+            actionType: 'google_calendar',
+            summary: '📅 **Google Calendar**: No upcoming events found for that window.',
+            data: { events: [] }
+          };
+        }
+        const lines = events.map(e => `- **${e.summary}** — \`${e.start}\`${e.location ? ` (${e.location})` : ''}`);
+        return {
+          ok: true,
+          tool: 'gkrusch_calendar',
+          actionType: 'google_calendar',
+          summary: `📅 **Upcoming Google Calendar Events (${events.length})**:\n${lines.join('\n')}`,
+          data: { events }
+        };
+      } catch (err) {
+        // Graceful fallback: if creating an event while Google Calendar OAuth is disconnected, add to Today's Priority Board
+        if (action.includes('create') || action.includes('schedule')) {
+          const summary = String(args?.summary || args?.title || 'Scheduled Event').trim();
+          const inferred = inferPriorityTierFromText(summary);
+          const created = createTask({
+            title: `${inferred.cleanTitle}${args?.startTime ? ` (@ ${args.startTime})` : ''}`,
+            priority_id: inferred.priorityId,
+            notes: 'Scheduled via G-Krusch Calendar fallback',
+            energy_level: 'medium',
+            date: today()
+          });
+          return {
+            ok: true,
+            tool: 'gkrusch_calendar',
+            actionType: 'google_calendar',
+            summary: `📅 Added **[#${created.id}] ${created.title}** to **Today's Priority Board** (Google Calendar OAuth not yet connected at \`${baseUrl}/auth/google\`).`,
+            data: { fallbackTask: created, calendarError: err.message }
+          };
+        }
+        return {
+          ok: false,
+          tool: 'gkrusch_calendar',
+          actionType: 'google_calendar',
+          summary: `📅 G-Krusch Google Calendar (${baseUrl}) returned: ${err.message}. Connect Google OAuth at \`${baseUrl}/auth/google\`.`
+        };
+      }
+    }
+  },
+  {
+    name: 'gkrusch_gmail',
+    category: 'google_gmail',
+    description: 'Interact with G-Krusch Gmail Extension: search recent emails in your inbox, create a Gmail draft, or send an email.',
+    parameters: {
+      action: 'string (REQUIRED: "search_emails" | "create_draft" | "send_email")',
+      query: 'string (Gmail search query when action="search_emails", e.g. "from:alex invoice" or "is:unread")',
+      to: 'string (Recipient email address when action="create_draft" or "send_email")',
+      subject: 'string (Email subject line when composing)',
+      body: 'string (Email body text when composing)'
+    },
+    required: ['action'],
+    async execute(args, { fetchImpl = fetch } = {}) {
+      const action = String(args?.action || 'search_emails').toLowerCase().trim();
+      const baseUrl = (process.env.G_KRUSCH_URL || 'http://127.0.0.1:5446').replace(/\/+$/, '');
+
+      try {
+        if (action === 'create_draft' || action === 'send_email' || action === 'draft' || action === 'send') {
+          const to = String(args?.to || 'recipient@example.com').trim();
+          const subject = String(args?.subject || 'Note from Krusch Companion').trim();
+          const body = String(args?.body || '').trim();
+          const sendImmediately = action === 'send_email' || action === 'send';
+
+          const res = await fetchImpl(`${baseUrl}/api/gmail/drafts`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ to, subject, body, sendImmediately }),
+            signal: AbortSignal.timeout(8000)
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+          return {
+            ok: true,
+            tool: 'gkrusch_gmail',
+            actionType: 'google_gmail',
+            summary: `✉️ **Gmail ${sendImmediately ? 'Sent' : 'Draft Created'}**:\n- **To**: \`${to}\`\n- **Subject**: **${subject}**\n\n> ${body.slice(0, 400)}`,
+            data
+          };
+        }
+
+        // Default: search_emails
+        const query = String(args?.query || 'is:inbox').trim();
+        const res = await fetchImpl(`${baseUrl}/api/gmail/messages?q=${encodeURIComponent(query)}&limit=5`, {
+          signal: AbortSignal.timeout(8000)
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+        const messages = data.messages || [];
+        if (messages.length === 0) {
+          return {
+            ok: true,
+            tool: 'gkrusch_gmail',
+            actionType: 'google_gmail',
+            summary: `✉️ **Gmail Search ("${query}")**: No matching emails found.`,
+            data: { messages: [] }
+          };
+        }
+        const lines = messages.map(m => `- **${m.subject || '(No Subject)'}** from \`${m.from}\` *(${m.date})*\n  > ${m.snippet}`);
+        return {
+          ok: true,
+          tool: 'gkrusch_gmail',
+          actionType: 'google_gmail',
+          summary: `✉️ **Gmail Messages for "${query}" (${messages.length})**:\n${lines.join('\n')}`,
+          data: { messages }
+        };
+      } catch (err) {
+        // Graceful fallback: save drafted email into local Sovereign Notes Vault if Gmail OAuth is not connected yet
+        if (action.includes('draft') || action.includes('send')) {
+          const to = String(args?.to || 'recipient@example.com').trim();
+          const subject = String(args?.subject || 'Email Draft').trim();
+          const body = String(args?.body || '').trim();
+          const filename = toSafeNoteFilename(`email-draft-${subject}`);
+          const draftMd = `# Email Draft: ${subject}\n- **To**: ${to}\n- **Status**: Saved locally (connect G-Krusch OAuth at ${baseUrl}/auth/google to sync with Gmail)\n\n---\n\n${body}\n`;
+          fs.writeFileSync(path.join(getNotesDirectory(), filename), draftMd, 'utf-8');
+          return {
+            ok: true,
+            tool: 'gkrusch_gmail',
+            actionType: 'google_gmail',
+            summary: `✉️ Saved email draft **${subject}** (To: \`${to}\`) to local vault \`data/notes/${filename}\` (connect G-Krusch OAuth at \`${baseUrl}/auth/google\` for live Gmail sync):\n\n> ${body.slice(0, 400)}`,
+            data: { localDraft: filename, gmailError: err.message }
+          };
+        }
+        return {
+          ok: false,
+          tool: 'gkrusch_gmail',
+          actionType: 'google_gmail',
+          summary: `✉️ G-Krusch Gmail (${baseUrl}) returned: ${err.message}. Connect Google OAuth at \`${baseUrl}/auth/google\`.`
+        };
+      }
+    }
   }
 ];
 

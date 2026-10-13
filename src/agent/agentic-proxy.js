@@ -45,6 +45,21 @@ const INTENT_PATTERNS = [
     category: 'sovereign_law_biz',
     tools: ['sovereign_gateway_query'],
     regex: /\b(?:kruschlaw|kruschbiz|statute\s+lookup|search\s+statutes?|legal\s+rag|contract\s+graph|tenant\s+defense\s+statute)\b/i
+  },
+  {
+    category: 'google_drive',
+    tools: ['gkrusch_drive'],
+    regex: /\b(?:google\s+drive|g-krusch|gkrusch|google\s+docs?|drive\s+rag|search\s+(?:my\s+)?drive|save\s+to\s+(?:google\s+)?drive|write\s+to\s+(?:google\s+)?drive|export\s+to\s+(?:google\s+)?drive|agent\.md\s+steering)\b/i
+  },
+  {
+    category: 'google_calendar',
+    tools: ['gkrusch_calendar'],
+    regex: /\b(?:google\s+calendar|my\s+calendar|calendar\s+events?|upcoming\s+(?:events?|meetings?|appointments?)|schedule\s+(?:a\s+|an\s+)?(?:meeting|event|appointment|call)|what(?:'s|\s+is)\s+on\s+my\s+calendar)\b/i
+  },
+  {
+    category: 'google_gmail',
+    tools: ['gkrusch_gmail'],
+    regex: /\b(?:gmail|my\s+(?:emails?|inbox)|unread\s+emails?|search\s+(?:my\s+)?emails?|check\s+(?:my\s+)?(?:emails?|inbox|gmail)|(?:draft|compose|send)\s+(?:an?\s+)?email)\b/i
   }
 ];
 
@@ -281,6 +296,71 @@ export function inferFallbackToolCalls(prompt, matchedCategories = []) {
     });
   }
 
+  if (matchedCategories.includes('google_drive')) {
+    if (/\b(?:save|write|export)\s+to\s+(?:google\s+)?drive\b/i.test(text)) {
+      calls.push({
+        name: 'gkrusch_drive',
+        arguments: { action: 'write', path: 'output/companion-note.md', content: text }
+      });
+    } else if (/\bagent\.md|steering\b/i.test(text)) {
+      calls.push({
+        name: 'gkrusch_drive',
+        arguments: { action: 'steering' }
+      });
+    } else if (/\b(?:list|show)\s+(?:my\s+)?(?:google\s+)?drive\s+workspace\b/i.test(text)) {
+      calls.push({
+        name: 'gkrusch_drive',
+        arguments: { action: 'list' }
+      });
+    } else {
+      const qMatch = text.match(/(?:search\s+(?:my\s+)?(?:google\s+)?drive|drive\s+rag|google\s+docs?)\s*(?:for|about|:)?\s*(.+?)(?:\s+and\s+\b|[?.!]|$)/i);
+      const query = (qMatch ? qMatch[1] : text).trim();
+      calls.push({
+        name: 'gkrusch_drive',
+        arguments: { action: 'search', query }
+      });
+    }
+  }
+
+  if (matchedCategories.includes('google_calendar')) {
+    const createMatch = text.match(/\b(?:schedule|create|book|add)\s+(?:a\s+|an\s+)?(?:calendar\s+)?(?:meeting|event|appointment|call)\s*(?:titled|called|for|to|:)?\s*(.+?)$/i);
+    if (createMatch) {
+      calls.push({
+        name: 'gkrusch_calendar',
+        arguments: { action: 'create_event', summary: createMatch[1].trim() }
+      });
+    } else {
+      calls.push({
+        name: 'gkrusch_calendar',
+        arguments: { action: 'list_events' }
+      });
+    }
+  }
+
+  if (matchedCategories.includes('google_gmail')) {
+    if (/\b(?:draft|compose|send)\s+(?:an?\s+)?email\b/i.test(text)) {
+      const emailMatch = text.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
+      const subjectMatch = text.match(/\b(?:subject|about|titled)\s*[:\-]?\s*["']?([^"'\n:]+?)["']?(?:\s*[:\-]\s*([\s\S]+))?$/i);
+      const isSend = /\bsend\s+(?:an?\s+)?email\b/i.test(text);
+      calls.push({
+        name: 'gkrusch_gmail',
+        arguments: {
+          action: isSend ? 'send_email' : 'create_draft',
+          to: emailMatch ? emailMatch[1] : 'recipient@example.com',
+          subject: subjectMatch ? subjectMatch[1].trim() : 'Update from Krusch Companion',
+          body: (subjectMatch && subjectMatch[2]) ? subjectMatch[2].trim() : text
+        }
+      });
+    } else {
+      const qMatch = text.match(/(?:search\s+(?:my\s+)?(?:emails?|gmail|inbox)|check\s+(?:my\s+)?(?:emails?|gmail|inbox))\s*(?:for|from|about|:)?\s*(.+?)$/i);
+      const query = (qMatch ? qMatch[1] : 'is:inbox').trim();
+      calls.push({
+        name: 'gkrusch_gmail',
+        arguments: { action: 'search_emails', query: query || 'is:inbox' }
+      });
+    }
+  }
+
   if (matchedCategories.includes('board')) {
     const addTaskMatch = text.match(/\b(?:add|create|schedule)\s+(?:a\s+)?task\s+(?:to\s+)?(.+?)$/i);
     if (addTaskMatch) {
@@ -360,18 +440,18 @@ export async function executeAgenticProxyTurn({
     return null;
   }
 
-  // Phase 2: Execute each tool in the sandboxed executor, piping upstream API results into downstream notes/notifications
+  // Phase 2: Execute each tool in the sandboxed executor, piping upstream API results into downstream notes/notifications/Drive/Gmail
   const executedResults = [];
   const upstreamOutputs = [];
 
   for (const call of plannedCalls.slice(0, 4)) {
     const resolvedArgs = { ...(call.arguments || {}) };
 
-    // If a downstream save_note or send_notification follows an upstream data-fetching tool,
-    // automatically ground its content/message with the live upstream API output.
+    // If a downstream save_note, send_notification, gkrusch_drive(write), or gkrusch_gmail(draft/send) follows an upstream data-fetching tool,
+    // automatically ground its content/message/body with the live upstream API output.
     if (upstreamOutputs.length > 0) {
       const combinedUpstream = upstreamOutputs.join('\n\n');
-      if (call.name === 'save_note') {
+      if (call.name === 'save_note' || (call.name === 'gkrusch_drive' && resolvedArgs.action === 'write')) {
         const rawContent = String(resolvedArgs.content || '').trim();
         const isPlaceholder =
           !rawContent ||
@@ -387,11 +467,27 @@ export async function executeAgenticProxyTurn({
         resolvedArgs.message = isPlaceholder
           ? combinedUpstream
           : `${rawMsg} — ${combinedUpstream}`;
+      } else if (call.name === 'gkrusch_gmail' && ['create_draft', 'send_email', 'draft', 'send'].includes(String(resolvedArgs.action || ''))) {
+        const rawBody = String(resolvedArgs.body || '').trim();
+        const isPlaceholder =
+          !rawBody ||
+          /to be fetched|insert(?:ed)? here|placeholder|<[^>]+>|\{\{[^}]+\}\}|summary of/i.test(rawBody);
+        resolvedArgs.body = isPlaceholder
+          ? combinedUpstream
+          : `${rawBody}\n\n${combinedUpstream}`;
       }
     }
 
     const res = await executeCompanionTool(call.name, resolvedArgs, { fetchImpl });
-    if (res.ok && ['get_weather', 'web_research', 'fetch_url_digest', 'system_status', 'sovereign_gateway_query'].includes(call.name)) {
+    if (
+      res.ok &&
+      (
+        ['get_weather', 'web_research', 'fetch_url_digest', 'system_status', 'sovereign_gateway_query'].includes(call.name) ||
+        (call.name === 'gkrusch_drive' && ['search', 'read', 'steering'].includes(String(resolvedArgs.action || 'search'))) ||
+        (call.name === 'gkrusch_calendar' && String(resolvedArgs.action || 'list_events') === 'list_events') ||
+        (call.name === 'gkrusch_gmail' && String(resolvedArgs.action || 'search_emails') === 'search_emails')
+      )
+    ) {
       upstreamOutputs.push(res.summary);
     }
 

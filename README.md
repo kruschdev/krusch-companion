@@ -37,7 +37,7 @@
 3. **Today's Board & Lifecycle (Execute)**: Tactile daily board highlighting the single most critical task, with automatic daily recurring habit seeding, 1-click **"↻ Roll Over Unfinished"** task migration from prior days, 1-click **"🧩 Steps"** task decomposition, gamified checkmarks, and streak tracking.
 4. **Agentic Action Proxy & L0 Commands (Act)**:
    - **Instant `<15µs` L0 CPU Commands**: `Add task`, `Complete task`, `Delete task`, `Show my tasks`, `Roll over unfinished tasks`, `Break down task into steps`, `Instead of X, remember that Y`.
-   - **Live Multi-Tool Agentic Proxy (`<holodata>` Dual-Engine)**: Enables local 7B/14B models (or OpenRouter 32B/72B specialists) to execute real APIs and multi-step chains: live weather (`get_weather`), web research (`web_research`), SSRF-guarded URL digests (`fetch_url_digest`), local Markdown note vault (`save_note`, `list_notes`), push notifications (`send_notification`), host telemetry (`system_status`), and Sovereign Legal/Contract queries (`sovereign_gateway_query`).
+   - **Live Multi-Tool Agentic Proxy (`<holodata>` Dual-Engine) + G-Krusch Google Workspace Extensions**: Enables local 7B/14B models (or OpenRouter 32B/72B specialists) to execute 11 real APIs and multi-step chains: live weather (`get_weather`), web research (`web_research`), SSRF-guarded URL digests (`fetch_url_digest`), Google Drive RAG & Google Docs read/write (`gkrusch_drive`), Google Calendar events & scheduling (`gkrusch_calendar`), Gmail inbox search & email drafting/sending (`gkrusch_gmail`), local Markdown note vault (`save_note`, `list_notes`), push notifications (`send_notification`), host telemetry (`system_status`), and Sovereign Legal/Contract queries (`sovereign_gateway_query`).
 5. **Focus Mode & Coach Briefings (Deep Work & Review)**: Fullscreen distraction-free timer with ambient progress ring, AI micro-nudges (`"Just do 3 minutes"`), morning focus alignment, and evening wins reflection.
 
 ### 🎯 Example Workflows
@@ -52,13 +52,15 @@
   > 
   > ➜ **Saved to Working Memory**: `Remember to take stretching breaks during desk work` (Category: `lesson`).
 
-* **Multi-Step Agentic Proxy Actions (`<holodata>` Dual-Engine)**:
+* **Multi-Step Agentic Proxy Actions (`<holodata>` Dual-Engine + G-Krusch Workspace)**:
   > *"What is the weather in Seattle right now and add a task to go for a 20-minute walk?"*
   > ➜ **Tool 1 (`get_weather`)**: Queries live Open-Meteo API (`60.8°F / 16°C — Overcast ☁️, Wind 1.9 mph, Precip 10%`).
   > ➜ **Tool 2 (`board_action`)**: Automatically creates **[Tier 4: Health & Self 💪] Go for a 20-minute walk** on Today's Board.
   >
-  > *"Check the weather in Austin, TX, save a note titled Austin Trip Packing with the forecast, and send a notification to my phone."*
-  > ➜ Fetches live Austin weather and automatically pipes the live telemetry into `data/notes/austin-trip-packing.md` and your `ntfy` push channel.
+  > *"Search my Google Drive for Q4 Architecture Spec, schedule an Architecture Sync on my Google Calendar, and draft an email to team@krusch.dev with the summary."*
+  > ➜ **Tool 1 (`gkrusch_drive`)**: Runs hybrid semantic + BM25 search across your indexed Google Drive workspace.
+  > ➜ **Tool 2 (`gkrusch_calendar`)**: Creates the event on Google Calendar (or falls back to Today's Priority Board if offline).
+  > ➜ **Tool 3 (`gkrusch_gmail`)**: Automatically pipes the Google Drive RAG summary into a Gmail draft (with local Markdown mirror in `data/notes/`).
 
 * **Instant L0 Task & Board Commands in Chat (`<15µs` CPU, `$0.00` LLM Cost)**:
   > *"Add task: Schedule dentist cleaning at 2pm"* ➜ Automatically inferred as **Tier 4 (Health & Self)** and added to Today's Board.

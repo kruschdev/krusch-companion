@@ -184,4 +184,82 @@ describe('Krusch Companion — Agentic Proxy (<holodata> Dual-Engine for 7B/14B 
     assert.ok(turnResult.content.includes('Sovereign System & Companion Telemetry'));
     assert.equal(turnResult.agenticTrace.toolCalls[0].name, 'system_status');
   });
+
+  test('8. G-Krusch Google Workspace Extension tools (Drive RAG, Calendar, Gmail) execute and chain upstream data', async () => {
+    const mockGKruschFetch = async (url, opts) => {
+      if (url.includes('/api/rag/search')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            results: [
+              { fileName: 'Q4-Architecture-Spec.md', score: 0.94, content: 'Zero-trust sovereign companion with G-Krusch Workspace integration.' }
+            ]
+          })
+        };
+      }
+      if (url.includes('/api/calendar/events')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            event: {
+              id: 'evt_123',
+              summary: 'Architecture Sync',
+              start: '2026-10-14T15:00:00Z',
+              htmlLink: 'https://calendar.google.com/event?eid=evt_123'
+            }
+          })
+        };
+      }
+      if (url.includes('/api/gmail/drafts')) {
+        const bodyObj = JSON.parse(opts?.body || '{}');
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            status: 'draft_created',
+            draftId: 'dr_999',
+            to: bodyObj.to,
+            subject: bodyObj.subject,
+            bodyPreview: bodyObj.body
+          })
+        };
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    };
+
+    const mockChainLlm = async () => ({
+      tierUsed: 'L2_cloud',
+      reason: 'OpenRouter Specialist (qwen/qwen-2.5-coder-32b-instruct)',
+      content: `<holodata>
+{
+  "cognitive_scratchpad": "Search Google Drive for Q4 Architecture Spec, schedule a calendar meeting, and draft an email with the Drive findings.",
+  "task_name": "G-Krusch Workspace Chain",
+  "strict_problem_constraints": "Chain Drive RAG output into Gmail draft body.",
+  "tool_plan": "gkrusch_drive -> gkrusch_calendar -> gkrusch_gmail"
+}
+</holodata>
+[
+  {"name": "gkrusch_drive", "arguments": {"action": "search", "query": "Q4 Architecture Spec"}},
+  {"name": "gkrusch_calendar", "arguments": {"action": "create_event", "summary": "Architecture Sync", "startTime": "2026-10-14T15:00:00Z"}},
+  {"name": "gkrusch_gmail", "arguments": {"action": "create_draft", "to": "team@krusch.dev", "subject": "Q4 Spec Brief", "body": "<insert summary here>"}}
+]`
+    });
+
+    const turnResult = await executeAgenticProxyTurn({
+      prompt: 'Search my Google Drive for Q4 Architecture Spec, schedule a meeting on Google Calendar, and draft an email to team@krusch.dev',
+      callLlm: mockChainLlm,
+      fetchImpl: mockGKruschFetch
+    });
+
+    assert.ok(turnResult);
+    assert.equal(turnResult.agenticTrace.toolCalls.length, 3);
+    assert.ok(turnResult.content.includes('Q4-Architecture-Spec.md'));
+    assert.ok(turnResult.content.includes('Scheduled on Google Calendar'));
+    assert.ok(turnResult.content.includes('Gmail Draft Created'));
+    // Verify upstream Drive RAG result was automatically piped into the downstream Gmail draft body!
+    assert.ok(turnResult.agenticTrace.toolCalls[2].arguments.body.includes('Q4-Architecture-Spec.md'));
+  });
 });
+
