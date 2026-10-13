@@ -11,15 +11,16 @@
   <img src="https://img.shields.io/badge/node-%3E%3D22.0.0-green.svg?style=flat-square" alt="Node Version">
   <a href="https://github.com/kruschdev/krusch-cascade-router"><img src="https://img.shields.io/badge/Router-krusch--cascade--router-cyan.svg?style=flat-square" alt="Powered By krusch-cascade-router"></a>
   <a href="https://github.com/kruschdev/krusch-context-mcp"><img src="https://img.shields.io/badge/Memory-KruschContext%20Engine-purple.svg?style=flat-square" alt="KruschContext Engine"></a>
+  <a href="https://github.com/kruschdev/krusch-agentic-mcp"><img src="https://img.shields.io/badge/Agentic%20Proxy-%3Cholodata%3E%20Dual--Engine-orange.svg?style=flat-square" alt="Krusch Agentic Proxy"></a>
   <a href="https://github.com/kruschdev/krusch-companion/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/CI-passing-brightgreen.svg?style=flat-square" alt="CI"></a>
-  <img src="https://img.shields.io/badge/tests-25%20passed-brightgreen.svg?style=flat-square" alt="Tests Passed">
+  <img src="https://img.shields.io/badge/tests-33%20passed-brightgreen.svg?style=flat-square" alt="Tests Passed">
 </p>
 
 ---
 
 ## 💡 What It Does For You
 
-**Krusch Companion** is a sovereign, local-first personal AI assistant and daily companion (comparable to private, user-owned versions of OpenAI Dot or xAI Grok Companion). Instead of sending your thoughts and life notes to centralized cloud data centers, Companion runs on your own hardware, turning raw voice streams into clear daily priorities, executing natural-language task & memory actions directly on local SQLite, maintaining durable working memory across conversations, and providing supportive morning briefings and evening reflections.
+**Krusch Companion** is a sovereign, local-first personal AI assistant and daily companion (a 100% private, user-owned alternative to OpenClaw/Moltbot, Meta Muse, OpenAI Dot, or xAI Grok Companion). Instead of sending your personal thoughts and life notes to centralized cloud data centers, Companion runs on your own hardware—turning raw voice streams into clear daily priorities, executing **live external APIs and multi-step personal assistant actions** via the **Krusch Agentic Proxy (`<holodata>` Dual-Engine)**, maintaining durable working memory across conversations, and providing supportive morning briefings and evening reflections.
 
 ### 🔄 The Daily Loop
 
@@ -34,7 +35,9 @@
 1. **Thought Stream (Capture)**: Speak into the microphone or paste an unfiltered stream-of-consciousness thought stream.
 2. **5-Tier Triage (Organize)**: An edge LLM cleans cognitive noise, extracts actionable commitments, ranks them against a 5-tier priority framework, and isolates durable life facts into working memory.
 3. **Today's Board & Lifecycle (Execute)**: Tactile daily board highlighting the single most critical task, with automatic daily recurring habit seeding, 1-click **"↻ Roll Over Unfinished"** task migration from prior days, 1-click **"🧩 Steps"** task decomposition, gamified checkmarks, and streak tracking.
-4. **Action-Capable Companion Chat (Command)**: Chat directly with full awareness of your live Today's Priority Board and streak, or execute instant `<15µs` L0 actions (`Add task`, `Complete task`, `Delete task`, `Show my tasks`, `Roll over unfinished tasks`, `Break down task into steps`, `Instead of X, remember that Y`).
+4. **Agentic Action Proxy & L0 Commands (Act)**:
+   - **Instant `<15µs` L0 CPU Commands**: `Add task`, `Complete task`, `Delete task`, `Show my tasks`, `Roll over unfinished tasks`, `Break down task into steps`, `Instead of X, remember that Y`.
+   - **Live Multi-Tool Agentic Proxy (`<holodata>` Dual-Engine)**: Enables local 7B/14B models (or OpenRouter 32B/72B specialists) to execute real APIs and multi-step chains: live weather (`get_weather`), web research (`web_research`), SSRF-guarded URL digests (`fetch_url_digest`), local Markdown note vault (`save_note`, `list_notes`), push notifications (`send_notification`), host telemetry (`system_status`), and Sovereign Legal/Contract queries (`sovereign_gateway_query`).
 5. **Focus Mode & Coach Briefings (Deep Work & Review)**: Fullscreen distraction-free timer with ambient progress ring, AI micro-nudges (`"Just do 3 minutes"`), morning focus alignment, and evening wins reflection.
 
 ### 🎯 Example Workflows
@@ -48,6 +51,14 @@
   > 3. `Schedule dentist checkup for Tuesday` (Tier 4: Health & Self)
   > 
   > ➜ **Saved to Working Memory**: `Remember to take stretching breaks during desk work` (Category: `lesson`).
+
+* **Multi-Step Agentic Proxy Actions (`<holodata>` Dual-Engine)**:
+  > *"What is the weather in Seattle right now and add a task to go for a 20-minute walk?"*
+  > ➜ **Tool 1 (`get_weather`)**: Queries live Open-Meteo API (`60.8°F / 16°C — Overcast ☁️, Wind 1.9 mph, Precip 10%`).
+  > ➜ **Tool 2 (`board_action`)**: Automatically creates **[Tier 4: Health & Self 💪] Go for a 20-minute walk** on Today's Board.
+  >
+  > *"Check the weather in Austin, TX, save a note titled Austin Trip Packing with the forecast, and send a notification to my phone."*
+  > ➜ Fetches live Austin weather and automatically pipes the live telemetry into `data/notes/austin-trip-packing.md` and your `ntfy` push channel.
 
 * **Instant L0 Task & Board Commands in Chat (`<15µs` CPU, `$0.00` LLM Cost)**:
   > *"Add task: Schedule dentist cleaning at 2pm"* ➜ Automatically inferred as **Tier 4 (Health & Self)** and added to Today's Board.
@@ -66,9 +77,8 @@
 
 To be completely honest about scope and capabilities:
 
-* **Not a general-knowledge frontier chatbot**: The local 7B model (`qwen2.5-coder:7b`) excels at task extraction, summarization, triage, and conversation, but it is not a drop-in replacement for 70B+ models (Claude 3.5 Sonnet, GPT-4o) on broad encyclopedic trivia, complex code generation, or multi-step logic proofs.
 * **Not a multi-user SaaS**: Companion is a single-user executive co-pilot designed for personal sovereignty. There are no multi-tenant logins or shared organization workspaces.
-* **Not zero-setup**: It requires running a local LLM runtime ([Ollama](https://ollama.com/)) on your machine or home server (or setting an OpenRouter API key for zero-GPU mode).
+* **Not zero-setup**: It requires running a local LLM runtime ([Ollama](https://ollama.com/)) on your machine or home server, or setting an OpenRouter API key for zero-GPU mode.
 
 ---
 
@@ -284,7 +294,7 @@ The server configuration is located in `config.json` at the project root (and ov
 | `cascade.provider` | `"ollama"` | `LLM_PROVIDER` | Active LLM driver: `"ollama"` (local GPU), `"openrouter"` (zero-GPU cloud), or `"hybrid"`. |
 | `cascade.allowCloudEscalation` | `false` | `ALLOW_CLOUD_ESCALATION` | When `false`, requests never leave local hardware. If `true` or `"hybrid"`, falls back to OpenRouter if Ollama fails. |
 | `cascade.openrouterApiKey` | `""` | `OPENROUTER_API_KEY` | OpenRouter API key for zero-GPU mode or cloud fallback. |
-| `cascade.openrouterModel` | `"qwen/qwen-2.5-7b-instruct"` | `OPENROUTER_MODEL` | Default model on OpenRouter (e.g. `meta-llama/llama-3.1-8b-instruct:free`). |
+| `cascade.openrouterModel` | `"qwen/qwen-2.5-72b-instruct"` | `OPENROUTER_MODEL` | Default OpenRouter model (automatically cascades across `qwen-2.5-coder-32b-instruct` for `<holodata>` tools, `qwen-2.5-72b-instruct` for coaching, and `deepseek-chat-v3-0324` for deep reasoning). |
 | `cascade.openrouterZeroDataRetention`| `true` | `OPENROUTER_ZDR` | **Privacy Shield**: Injects `provider: { data_collection: "deny" }` to prevent model training and prompt retention. |
 | `cascade.l0HeuristicEnabled` | `true` | — | Enables sub-15µs CPU routing for math and direct memory storage (always local). |
 | `cascade.edgeModel` | `"qwen2.5-coder:7b"` | `EDGE_MODEL` | Name of local Ollama model for fast daily tasks. |
@@ -305,17 +315,21 @@ The server configuration is located in `config.json` at the project root (and ov
 ## 📡 Complete REST API Reference
 
 | Method | Endpoint | Description |
-|:---|:---|:---|
+| :--- | :--- | :--- |
 | `GET` | `/api/health` | Service status, connected local models, and privacy gate configuration. |
 | `GET` | `/api/priorities` | Retrieves the 5-tier priority framework definitions and colors. |
-| `GET` | `/api/tasks` | Retrieves tasks for date (`?date=YYYY-MM-DD`, defaults to today). |
+| `GET` | `/api/tasks` | Retrieves tasks for date (`?date=YYYY-MM-DD`, defaults to today) and auto-seeds recurring habits. |
 | `POST` | `/api/tasks` | Creates a new task (`{ title, priority_id, notes, recurring, energy_level, date }`). |
+| `POST` | `/api/tasks/rollover` | Rolls over unfinished tasks from prior days onto Today's Priority Board without duplicating recurring habits. |
+| `POST` | `/api/tasks/:id/breakdown` | Decomposes a complex task into 3 concrete, low-friction subtasks on Today's Board. |
 | `PATCH` | `/api/tasks/:id/complete` | Toggles task completion and updates gamification points. |
 | `DELETE`| `/api/tasks/:id` | Deletes a task by ID. |
 | `GET` | `/api/streak` | Retrieves continuous task completion streak data. |
 | `GET` | `/api/gamify/today` | Retrieves today's gamification points and opt-in status. |
 | `POST` | `/api/gamify/opt-in` | Updates gamification opt-in status (`{ optedIn: boolean }`). |
-| `POST` | `/api/companion/chat` | Main conversational endpoint routed via Cascade Router (`{ prompt, history, sessionId }`). |
+| `POST` | `/api/companion/chat` | Main conversational & Agentic Proxy endpoint routed via Cascade Router (`{ prompt, history, sessionId }`). |
+| `GET` | `/api/companion/tools` | Lists all registered Agentic Proxy (`<holodata>` Dual-Engine) tools and parameter schemas. |
+| `POST` | `/api/companion/action` | Directly executes a sandboxed Agentic Proxy tool (`{ tool, arguments }`). |
 | `POST` | `/api/companion/stream` | Ingests unformatted Thought Stream text and triages into 5-tier tasks and memories (aliases `/api/companion/dump`). |
 | `POST` | `/api/companion/voice` | Accepts multipart `audio` (WebM/WAV) -> Whisper STT -> Thought Stream pipeline. |
 | `GET` | `/api/coach/focus` | Retrieves today's active morning focus briefing. |
