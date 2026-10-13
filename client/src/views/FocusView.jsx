@@ -16,6 +16,20 @@ export function FocusView({ task, onTaskCompleted, onExitFocus }) {
     return () => clearInterval(timer);
   }, [isRunning, timeLeft]);
 
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      if (e.code === 'Space') {
+        e.preventDefault();
+        setIsRunning(prev => !prev);
+      } else if (e.key === 'Escape') {
+        if (onExitFocus) onExitFocus();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onExitFocus]);
+
   const handleGetNudge = async () => {
     setIsNudgeLoading(true);
     try {

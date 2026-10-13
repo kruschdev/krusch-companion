@@ -93,6 +93,12 @@ export function DumpView({ onTasksCreated }) {
           rows={5}
           value={text}
           onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+              e.preventDefault();
+              handleProcessText(e);
+            }
+          }}
           placeholder="e.g. Need to call plumber about kitchen sink leak before 3pm, buy milk, remember that Sophia has piano lesson on Wednesday at 5, and feeling exhausted from yesterday's meeting..."
           disabled={isProcessing}
           style={{ resize: 'vertical', marginBottom: 14 }}

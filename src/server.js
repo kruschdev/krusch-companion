@@ -7,7 +7,7 @@ import { fileURLToPath } from 'url';
 
 import config from './config.js';
 import * as db from './db/index.js';
-import { rememberMemory, getActiveMemories, supersedeMemory, compileStateBriefing } from './context/memory-store.js';
+import { rememberMemory, getActiveMemories, supersedeMemory, compileStateBriefing, createDatabaseBackup, getDecayCandidates } from './context/memory-store.js';
 import { evaluateCompanionContext } from './context/boundary-gate.js';
 import { dispatchCompanionChat, classifyCompanionPrompt } from './router/cascade-client.js';
 import { processChaosDump } from './services/chaos-dump.js';
@@ -297,6 +297,35 @@ app.post('/api/context/:id/supersede', (req, res) => {
     const { newContent, reason } = req.body;
     const result = supersedeMemory({ targetId, newContent, reason });
     res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/context/decay', (req, res) => {
+  try {
+    const days = parseInt(req.query.days || 30, 10);
+    const candidates = getDecayCandidates(days);
+    res.json({ days, count: candidates.length, candidates });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Sovereign Backup & Integrity ───────────────────────────────────────────
+app.post('/api/backup', (_req, res) => {
+  try {
+    const backup = createDatabaseBackup();
+    res.json({ success: true, ...backup });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/system/integrity', (_req, res) => {
+  try {
+    const check = db.getDb().prepare('PRAGMA integrity_check').all();
+    res.json({ integrity: check });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

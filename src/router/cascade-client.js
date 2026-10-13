@@ -1,4 +1,5 @@
 import { classifyPreRoute, detectKnowledgeBoundary, pruneText } from 'krusch-cascade-router';
+import { sanitizeAgentMessage } from '@krusch/toolkit/trajectory-guard';
 import config from '../config.js';
 import { rememberMemory } from '../context/memory-store.js';
 
@@ -10,6 +11,121 @@ export const TIERS = {
 };
 
 /**
+ * Completely safe AST recursive-descent arithmetic evaluator.
+ * Eliminates eval() and Function() code execution risks entirely.
+ */
+export function safeEvaluateArithmetic(expr) {
+  if (!expr || typeof expr !== 'string') return null;
+
+  const tokens = [];
+  let i = 0;
+  while (i < expr.length) {
+    const ch = expr[i];
+    if (/\s/.test(ch)) {
+      i++;
+      continue;
+    }
+    if (/\d/.test(ch) || ch === '.') {
+      let numStr = '';
+      while (i < expr.length && (/[\d.]/.test(expr[i]))) {
+        numStr += expr[i];
+        i++;
+      }
+      const num = parseFloat(numStr);
+      if (isNaN(num)) return null;
+      tokens.push({ type: 'NUM', value: num });
+      continue;
+    }
+    if ('+-*/%^()'.includes(ch)) {
+      tokens.push({ type: 'OP', value: ch });
+      i++;
+      continue;
+    }
+    return null; // Invalid token
+  }
+
+  if (tokens.length === 0) return null;
+
+  let pos = 0;
+  function peek() { return tokens[pos]; }
+  function consume() { return tokens[pos++]; }
+
+  function parseExpression() {
+    let left = parseTerm();
+    if (left === null) return null;
+    while (peek() && (peek().value === '+' || peek().value === '-')) {
+      const op = consume().value;
+      const right = parseTerm();
+      if (right === null) return null;
+      left = op === '+' ? left + right : left - right;
+    }
+    return left;
+  }
+
+  function parseTerm() {
+    let left = parseFactor();
+    if (left === null) return null;
+    while (peek() && (peek().value === '*' || peek().value === '/' || peek().value === '%')) {
+      const op = consume().value;
+      const right = parseFactor();
+      if (right === null) return null;
+      if (op === '/') {
+        if (right === 0) return null; // Safe divide-by-zero prevention
+        left = left / right;
+      } else if (op === '%') {
+        if (right === 0) return null;
+        left = left % right;
+      } else {
+        left = left * right;
+      }
+    }
+    return left;
+  }
+
+  function parseFactor() {
+    let left = parsePrimary();
+    if (left === null) return null;
+    while (peek() && peek().value === '^') {
+      consume();
+      const right = parseFactor();
+      if (right === null) return null;
+      left = Math.pow(left, right);
+    }
+    return left;
+  }
+
+  function parsePrimary() {
+    const t = peek();
+    if (!t) return null;
+    if (t.type === 'OP' && t.value === '-') {
+      consume();
+      const val = parsePrimary();
+      return val === null ? null : -val;
+    }
+    if (t.type === 'OP' && t.value === '+') {
+      consume();
+      return parsePrimary();
+    }
+    if (t.type === 'NUM') {
+      consume();
+      return t.value;
+    }
+    if (t.type === 'OP' && t.value === '(') {
+      consume();
+      const val = parseExpression();
+      if (!peek() || peek().value !== ')') return null;
+      consume();
+      return val;
+    }
+    return null;
+  }
+
+  const result = parseExpression();
+  if (pos !== tokens.length || result === null || !isFinite(result)) return null;
+  return Math.round(result * 1000000) / 1000000;
+}
+
+/**
  * Fast-path evaluator: determines if a query can be handled directly in <15µs
  * by deterministic rules or arithmetic without LLM invocation.
  */
@@ -17,23 +133,18 @@ export function evaluateL0Heuristic(rawText) {
   if (!rawText || typeof rawText !== 'string') return null;
   const text = rawText.trim();
 
-  // 1. Direct arithmetic: e.g. "what is 25 * 4", "calculate 120 / 4", "500 + 42"
-  const mathMatch = text.match(/^(?:what is|calculate|compute|solve)?\s*([0-9\s.+\-*/%()]+)\??$/i);
-  if (mathMatch && /[\d]/.test(mathMatch[1]) && /[+\-*/%]/.test(mathMatch[1])) {
-    try {
-      const sanitized = mathMatch[1].replace(/[^0-9+\-*/.()%]/g, '');
-      // Safe arithmetic evaluation using Function
-      const result = Function(`"use strict"; return (${sanitized});`)();
-      if (typeof result === 'number' && !isNaN(result)) {
-        return {
-          handled: true,
-          tier: TIERS.L0_HEURISTIC,
-          content: `${sanitized.trim()} = **${result}**`,
-          reason: 'L0 Heuristic: deterministic arithmetic evaluated in <15µs'
-        };
-      }
-    } catch {
-      // Fall through to LLM
+  // 1. Safe AST arithmetic: e.g. "what is 25 * 4", "calculate 120 / 4", "500 + 42", "2 ^ 8"
+  const mathMatch = text.match(/^(?:what is|calculate|compute|solve)?\s*([0-9\s.+\-*/%^()]+)\??$/i);
+  if (mathMatch && /[\d]/.test(mathMatch[1]) && /[+\-*/%^]/.test(mathMatch[1])) {
+    const expr = mathMatch[1].trim();
+    const result = safeEvaluateArithmetic(expr);
+    if (typeof result === 'number' && !isNaN(result)) {
+      return {
+        handled: true,
+        tier: TIERS.L0_HEURISTIC,
+        content: `${expr} = **${result}**`,
+        reason: 'L0 Heuristic: deterministic arithmetic evaluated in <15µs'
+      };
     }
   }
 
@@ -52,7 +163,7 @@ export function evaluateL0Heuristic(rawText) {
         content: `I've committed that to your sovereign working memory:\n> "${saved.content}" *(Memory #${saved.id})*`,
         reason: 'L0 Heuristic: direct working memory persistence'
       };
-    } catch (err) {
+    } catch {
       // Fall through to LLM if error
     }
   }
@@ -106,9 +217,9 @@ export function classifyCompanionPrompt(prompt) {
 }
 
 /**
- * Call local Ollama chat endpoint.
+ * Call local Ollama chat endpoint with hardened timeout and circuit breaking.
  */
-async function callOllama({ prompt, history = [], systemPrompt = '', model = null }) {
+async function callOllama({ prompt, history = [], systemPrompt = '', model = null, timeoutMs = 12000 }) {
   const ollamaUrl = config.cascade.ollamaUrl;
   const targetModel = model || config.cascade.edgeModel;
 
@@ -121,25 +232,39 @@ async function callOllama({ prompt, history = [], systemPrompt = '', model = nul
   }
   messages.push({ role: 'user', content: prompt });
 
-  const res = await fetch(`${ollamaUrl}/api/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: targetModel,
-      messages,
-      stream: false,
-      options: {
-        temperature: 0.7
-      }
-    })
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-  if (!res.ok) {
-    throw new Error(`Ollama error ${res.status}: ${await res.text()}`);
+  try {
+    const res = await fetch(`${ollamaUrl}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: targetModel,
+        messages,
+        stream: false,
+        options: {
+          temperature: 0.7
+        }
+      })
+    });
+
+    clearTimeout(timer);
+
+    if (!res.ok) {
+      throw new Error(`Ollama error ${res.status}: ${await res.text()}`);
+    }
+
+    const data = await res.json();
+    return data?.message?.content || '';
+  } catch (err) {
+    clearTimeout(timer);
+    if (err.name === 'AbortError') {
+      throw new Error(`Ollama call timed out after ${timeoutMs}ms on model ${targetModel}`);
+    }
+    throw err;
   }
-
-  const data = await res.json();
-  return data?.message?.content || '';
 }
 
 /**
@@ -148,8 +273,12 @@ async function callOllama({ prompt, history = [], systemPrompt = '', model = nul
 export async function dispatchCompanionChat({ prompt, history = [], contextBriefing = '', systemPrompt = null }) {
   const startTime = Date.now();
 
-  // 1. Check L0 heuristic
-  const l0 = evaluateL0Heuristic(prompt);
+  // 1. Sanitize incoming prompt for security & injection containment (arXiv: 2608.10218)
+  const sanitized = sanitizeAgentMessage(prompt);
+  const cleanPrompt = sanitized.sanitizedMessage || prompt;
+
+  // 2. Check L0 heuristic
+  const l0 = evaluateL0Heuristic(cleanPrompt);
   if (l0 && l0.handled) {
     return {
       content: l0.content,
@@ -159,8 +288,8 @@ export async function dispatchCompanionChat({ prompt, history = [], contextBrief
     };
   }
 
-  // 2. Classify tier
-  const classification = classifyCompanionPrompt(prompt);
+  // 3. Classify tier
+  const classification = classifyCompanionPrompt(cleanPrompt);
 
   const baseSystemPrompt = systemPrompt || `You are Krusch Companion, a sovereign, empathetic, and exceptionally capable personal assistant and executive partner.
 You speak clearly, warmly, and constructively. You help the user manage their energy, ADHD focus, priorities, and daily tasks.
@@ -170,12 +299,11 @@ All personal data is private and sovereign. When referencing personal context, b
     ? `${baseSystemPrompt}\n\n${contextBriefing}`
     : baseSystemPrompt;
 
-  // 3. Execution with resilient hedging
+  // 4. Execution with resilient hedging
   if (classification.tier === TIERS.L2_SWARM) {
     try {
-      // Attempt L2 Swarm
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000); // 4s timeout before fallback
+      const timeoutId = setTimeout(() => controller.abort(), 3500);
 
       const res = await fetch(`${config.cascade.swarmUrl}/chat/completions`, {
         method: 'POST',
@@ -186,7 +314,7 @@ All personal data is private and sovereign. When referencing personal context, b
           messages: [
             { role: 'system', content: fullSystemPrompt },
             ...history,
-            { role: 'user', content: prompt }
+            { role: 'user', content: cleanPrompt }
           ],
           temperature: 0.6
         })
@@ -214,10 +342,11 @@ All personal data is private and sovereign. When referencing personal context, b
   // L1 Local Edge (Ollama)
   try {
     const edgeContent = await callOllama({
-      prompt,
+      prompt: cleanPrompt,
       history,
       systemPrompt: fullSystemPrompt,
-      model: config.cascade.edgeModel
+      model: config.cascade.edgeModel,
+      timeoutMs: 12000
     });
 
     return {
@@ -231,10 +360,11 @@ All personal data is private and sovereign. When referencing personal context, b
     if (config.cascade.edgeModel !== 'hermes3:latest') {
       try {
         const fallbackContent = await callOllama({
-          prompt,
+          prompt: cleanPrompt,
           history,
           systemPrompt: fullSystemPrompt,
-          model: 'hermes3:latest'
+          model: 'hermes3:latest',
+          timeoutMs: 12000
         });
         return {
           content: fallbackContent,

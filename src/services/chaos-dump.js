@@ -1,6 +1,6 @@
 import { parseAIJson } from '@krusch/toolkit/json-parse';
 import { dispatchCompanionChat, TIERS } from '../router/cascade-client.js';
-import { createTask, getPriorities, today } from '../db/index.js';
+import { createTask, getPriorities, today, getTasksForDate } from '../db/index.js';
 import { rememberMemory } from '../context/memory-store.js';
 
 /**
@@ -80,7 +80,20 @@ You MUST respond with valid JSON ONLY in the following format:
 
   const savedTasks = [];
   if (autoSaveTasks && rawTasks.length > 0) {
+    const existingToday = getTasksForDate(targetDate);
+    const existingTitles = new Set(existingToday.map(et => et.title.toLowerCase().trim()));
+
     for (const t of rawTasks) {
+      if (!t.title) continue;
+      const normalizedTitle = t.title.toLowerCase().trim();
+      
+      // Skip if task with identical title already scheduled for this date
+      if (existingTitles.has(normalizedTitle)) {
+        const match = existingToday.find(et => et.title.toLowerCase().trim() === normalizedTitle);
+        if (match) savedTasks.push(match);
+        continue;
+      }
+
       const priorityId = tierToPriorityId[t.tier] || tierToPriorityId[5] || 5;
       const created = createTask({
         title: t.title,
@@ -89,6 +102,7 @@ You MUST respond with valid JSON ONLY in the following format:
         energy_level: t.energy_level || 'medium',
         date: targetDate
       });
+      existingTitles.add(normalizedTitle);
       savedTasks.push(created);
     }
   }

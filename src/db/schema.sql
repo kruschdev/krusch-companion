@@ -40,7 +40,11 @@ CREATE TABLE IF NOT EXISTS companion_context (
   updated_at TEXT DEFAULT (datetime('now'))
 );
 
+CREATE INDEX IF NOT EXISTS idx_tasks_date_priority ON tasks(date, priority_id, completed);
+
 CREATE INDEX IF NOT EXISTS idx_companion_context_active ON companion_context(is_active, category);
+CREATE INDEX IF NOT EXISTS idx_companion_context_key ON companion_context(key);
+CREATE INDEX IF NOT EXISTS idx_companion_context_decay ON companion_context(is_active, updated_at);
 
 CREATE TABLE IF NOT EXISTS companion_dialogue (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

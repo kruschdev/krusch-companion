@@ -1,9 +1,11 @@
+import fs from 'fs';
+import path from 'path';
 import { getDb } from '../db/index.js';
 
 export const VALID_CATEGORIES = ['decision', 'invariant', 'bug', 'lesson', 'blocker'];
 
 /**
- * Persist a new working memory or steering nugget into local storage.
+ * Persist a new working memory or steering nugget into local storage with deduplication.
  */
 export function rememberMemory({ category = 'lesson', content, key = null, confidence = 1.0 }) {
   if (!VALID_CATEGORIES.includes(category)) {
@@ -14,6 +16,7 @@ export function rememberMemory({ category = 'lesson', content, key = null, confi
   }
 
   const db = getDb();
+  const trimmed = content.trim();
 
   // If a key is provided, check if an active record already exists with that key
   if (key) {
@@ -24,17 +27,28 @@ export function rememberMemory({ category = 'lesson', content, key = null, confi
     if (existing) {
       return supersedeMemory({
         targetId: existing.id,
-        newContent: content.trim(),
+        newContent: trimmed,
         reason: `Updated key "${key}"`
       });
     }
+  }
+
+  // Deduplication: prevent near-duplicate active memory inserts
+  const duplicate = db.prepare(`
+    SELECT * FROM companion_context 
+    WHERE is_active = 1 AND lower(trim(content)) = lower(?)
+  `).get(trimmed);
+
+  if (duplicate) {
+    db.prepare(`UPDATE companion_context SET updated_at = datetime('now') WHERE id = ?`).run(duplicate.id);
+    return duplicate;
   }
 
   const stmt = db.prepare(`
     INSERT INTO companion_context (category, content, key, is_active, confidence)
     VALUES (?, ?, ?, 1, ?)
   `);
-  const info = stmt.run(category, content.trim(), key, confidence);
+  const info = stmt.run(category, trimmed, key, confidence);
   return db.prepare('SELECT * FROM companion_context WHERE id = ?').get(info.lastInsertRowid);
 }
 
@@ -59,6 +73,19 @@ export function getActiveMemories(category = null) {
     WHERE is_active = 1
     ORDER BY category ASC, id DESC
   `).all();
+}
+
+/**
+ * Retrieve decay candidates (memories older than N days without refresh).
+ */
+export function getDecayCandidates(days = 30) {
+  const db = getDb();
+  return db.prepare(`
+    SELECT * FROM companion_context
+    WHERE is_active = 1
+      AND updated_at <= datetime('now', '-' || ? || ' days')
+    ORDER BY updated_at ASC
+  `).all(days);
 }
 
 /**
@@ -101,6 +128,25 @@ export function supersedeMemory({ targetId, newContent = null, reason = 'Superse
     invalidatedId: targetId,
     newId,
     reason
+  };
+}
+
+/**
+ * Safely snapshot the SQLite database using VACUUM INTO for sovereign zero-lock backups.
+ */
+export function createDatabaseBackup(backupDir = null) {
+  const db = getDb();
+  const targetDir = backupDir || path.resolve(process.cwd(), 'data', 'backups');
+  if (!fs.existsSync(targetDir)) {
+    fs.mkdirSync(targetDir, { recursive: true });
+  }
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const backupFile = path.join(targetDir, `companion-backup-${timestamp}.db`);
+  db.prepare(`VACUUM INTO ?`).run(backupFile);
+  return {
+    backupFile,
+    timestamp,
+    sizeBytes: fs.statSync(backupFile).size
   };
 }
 
