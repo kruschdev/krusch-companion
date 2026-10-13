@@ -1,0 +1,29 @@
+{
+  "_comment": "Krusch Companion configuration — sovereign, privacy-first personal assistant",
+  "app": {
+    "name": "Krusch Companion",
+    "port": 3004,
+    "host": "0.0.0.0"
+  },
+  "cascade": {
+    "allowCloudEscalation": false,
+    "l0HeuristicEnabled": true,
+    "speculativeHedging": true,
+    "edgeModel": "qwen2.5-coder:7b",
+    "swarmModel": "qwen2.5-coder:14b",
+    "ollamaUrl": "http://127.0.0.1:11434",
+    "swarmUrl": "http://100.106.193.66:8000/v1"
+  },
+  "db": {
+    "path": "./data/companion.db"
+  },
+  "context": {
+    "maxTokenBudget": 3000,
+    "decayDays": 30
+  },
+  "whisper": {
+    "host": "localhost",
+    "port": 9000,
+    "enabled": true
+  }
+}

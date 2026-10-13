@@ -1,0 +1,22 @@
+{
+  "name": "krusch-companion",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Sovereign, privacy-first personal assistant and executive companion integrating KruschContext working memory with Krusch Cascade Router",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test tests/*.js"
+  },
+  "dependencies": {
+    "@krusch/toolkit": "file:../../lib",
+    "krusch-cascade-router": "file:../krusch-cascade-router",
+    "better-sqlite3": "^11.10.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
+    "multer": "^1.4.5-lts.1"
+  },
+  "author": "kruschdev",
+  "license": "MIT"
+}
