@@ -25,7 +25,7 @@ test('Thought Stream Service: parses unformatted stream into structured tasks an
     We decided to only have pizza on Fridays from now on.
   `;
 
-  console.log('🧠 Processing test Chaos Dump through local Cascade Router...');
+  console.log('🧠 Processing test Thought Stream through local Cascade Router...');
   const result = await processChaosDump({
     text: rawDump,
     date: '2026-10-13',

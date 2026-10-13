@@ -10,7 +10,7 @@
 
 ## 1. What Is This?
 
-**Krusch Companion** is a sovereign, privacy-first personal assistant and life companion designed as an uncompromised alternative to cloud-tethered assistants (Meta Muse, xAI Grok, OpenAI Dot). It provides deeply personalized daily assistance, proactive habit coaching, ADHD-friendly voice "Chaos Dumps," and a 5-tier priority framework. 
+**Krusch Companion** is a sovereign, privacy-first personal assistant and life companion designed as an uncompromised alternative to cloud-tethered assistants (Meta Muse, xAI Grok, OpenAI Dot). It provides deeply personalized daily assistance, proactive habit coaching, ambient voice Thought Streams, and an actionable 5-tier priority framework. 
 
 Crucially, **100% of user data, episodic memory, and personal context remains strictly local and user-owned** on home hardware. By coupling the sub-15µs CPU **Cascade Router** (`krusch-cascade-router`) with the structured working memory and temporal superseding of **KruschContext** (`krusch-context-mcp`), Krusch Companion routes 85%+ of daily interactions to local edge models (Ollama 3B/7B) or compute nodes (14B/32B) at $0.00 cost, with zero surveillance and zero cognitive drift.
 
@@ -19,7 +19,7 @@ Crucially, **100% of user data, episodic memory, and personal context remains st
 ## 2. User Stories
 
 - **As a user wanting complete digital privacy**, I want an assistant that runs entirely on my own local hardware (or self-hosted home server), so that my private thoughts, daily schedule, medical notes, and family relationships are never harvested or trained on by Big Tech.
-- **As someone managing ADHD or executive overwhelm**, I want to speak or type an unformatted, rambling voice dump ("Chaos Dump") and have the assistant immediately distill it into actionable tasks, assign them to my 5-tier priority framework, and update my life context.
+- **As a busy user juggling high cognitive load**, I want to speak or type an unformatted, rambling voice stream ("Thought Stream") and have the assistant immediately distill it into actionable tasks, assign them to my 5-tier priority framework, and update my life context.
 - **As a busy person with evolving routines**, I want my assistant to remember my habits and preferences, but automatically supersede old habits when I change them (e.g., "I stopped drinking coffee after 2 PM") so it doesn't give contradictory advice.
 - **As a homelab owner**, I want utility tasks (quick notes, timers, arithmetic, simple lookups) to execute in microseconds without wasting heavy cloud LLM tokens, while reserving deep reasoning models for complex life planning.
 - **As a daily user**, I want an engaging, modern interface (dark glassmorphism, responsive touch targets, voice-first capture) that provides a clear morning focus briefing and evening reflection.
@@ -33,9 +33,9 @@ Crucially, **100% of user data, episodic memory, and personal context remains st
 | **Hierarchical Cascade Dispatcher** | Must-have | Integrated `krusch-cascade-router` evaluating prompts in <15µs on CPU. Tier 0 (deterministic rule) -> Tier 1 (local Ollama 3B/7B) -> Tier 2 (local compute swarm 14B/32B) -> Tier 3 (opt-in cloud). | Zero token cost for utility commands; sub-second TTFT on local edge. |
 | **Sovereign Working Memory (KruschContext)** | Must-have | Native SQLite WAL working memory leveraging the closed taxonomy (`decision`, `invariant`, `bug`/habit friction, `lesson`, `blocker`) with temporal superseding (`MemoryInvalidationEngine`). | Replaces brittle markdown regex edits from `first-things-first`. |
 | **Knowledge Boundary & Memory Gating** | Must-have | Integration of `@krusch/toolkit` `shouldActivateMemory` and prune gates to prevent memory pollution and cognitive degradation on closed-world tasks. | Based on arXiv: 2608.23982 research. |
-| **Voice-First Chaos Dump Engine** | Must-have | Audio upload / browser STT transcription coupled with LLM intent parsing to extract structured tasks, schedule adjustments, and memory nuggets in one pass. | Preserves and refines the core UX of `first-things-first`. |
+| **Voice-First Thought Stream Engine** | Must-have | Audio upload / browser STT transcription coupled with LLM intent parsing to extract structured tasks, schedule adjustments, and memory nuggets in one pass. | Natural, ambient speech triage. |
 | **5-Tier Dynamic Priority Framework** | Must-have | Customizable personal priority hierarchy (e.g., Faith/Values, Family/Partner, Health/Self, Work/Career, Chores/Backlog) with task organization. | Enables clear cognitive offloading. |
-| **Proactive Coaching & Daily Focus** | Must-have | Morning daily focus synthesis, midday friction nudges, and evening reflection logs generated from today's tasks and active context nuggets. | Non-judgmental, constructive ADHD coaching. |
+| **Proactive Coaching & Daily Focus** | Must-have | Morning daily focus synthesis, midday friction nudges, and evening reflection logs generated from today's tasks and active context nuggets. | Non-judgmental, constructive daily coaching. |
 | **Single-Task Focus Mode & Gamification** | Must-have | Distraction-free single task view with timer, streak tracking, and optional completion bonus points. | Proven behavioral anchor from FTF. |
 | **Private Chat & Companion Dialogue** | Must-have | Empathetic, conversational assistant surface that answers questions, deliberates on decisions, and references personal context naturally. | Parity with Dot / Muse conversational feel. |
 | **Home Ecosystem Bridge (Home Assistant / Fleet)** | Nice-to-have | Optional integrations for smart home control (Home Assistant) and fleet health triggers. | Modular plug-in architecture. |
@@ -94,7 +94,7 @@ The UI builds upon the proven luxury glassmorphism standard of the Krusch ecosys
 - **Palette**: Deep void dark mode (`#0a0b10`), glowing cyan/amber accents (`#00f0ff`, `#ffb700`, `#7928ca`), translucent panels with backdrop blur (`backdrop-filter: blur(16px)`).
 - **Navigation (4 Core Views)**:
   1. **Companion (Chat & Daily Briefing)**: Conversational dialogue with the assistant, proactive morning brief, habit check-ins, tier routing badge (showing L0/L1/L2 escalation source).
-  2. **Chaos Dump (Voice & Rapid Capture)**: Large, responsive microphone button with visual audio wave feedback, single-click paste/transcribe, instant preview of extracted tasks and context updates.
+  2. **Thought Stream (Voice & Rapid Capture)**: Large, responsive microphone button with visual audio wave feedback, single-click paste/transcribe, instant preview of extracted tasks and context updates.
   3. **Today (5-Tier Priority Dashboard)**: Drag-and-drop or 1-tap priority assignments, completion checkboxes with tactile micro-animations, streak counter, and gamification badge.
   4. **Focus & Mind (Single-Task Flow)**: Zero-distraction fullscreen view for the current #1 task with countdown/stopwatch, ambient sound toggle, and instant completion trigger.
 
@@ -118,7 +118,7 @@ The UI builds upon the proven luxury glassmorphism standard of the Krusch ecosys
 - [ ] Project scaffolds cleanly inside `projects/krusch-companion` with Node 22 ESM backend and Vite/React client.
 - [ ] Backend loads `@krusch/toolkit` and `krusch-cascade-router` with sub-15µs routing validation.
 - [ ] SQLite database initializes with WAL mode, storing tasks, priorities, daily focus, and KruschContext memory records.
-- [ ] Voice/Text "Chaos Dump" takes unstructured input and extracts:
+- [ ] Voice/Text "Thought Stream" takes unstructured input and extracts:
   - Structured tasks with auto-categorization into the 5-tier priority framework.
   - Persistent life nuggets saved to the local working memory.
 - [ ] Cascade Router displays real-time execution tier badges (`L0 Heuristic`, `L1 Local Edge`, `L2 Swarm Compute`) on responses.
@@ -141,6 +141,6 @@ The UI builds upon the proven luxury glassmorphism standard of the Krusch ecosys
 | Phase | Milestone | Deliverables |
 |---|---|---|
 | **Phase 1: Foundation & Backend Core** | Scaffold `krusch-companion`, SQLite schema, `@krusch/toolkit` integration, `krusch-cascade-router` multi-tier client. | Backend API, route classifier, local Ollama integration, memory CRUD. |
-| **Phase 2: Chaos Dump & Priority Engine** | Port & evolve `first-things-first` logic into structured KruschContext memory updates and 5-tier task management. | Task routes, STT transcription, extraction prompt with JSON validation. |
-| **Phase 3: React PWA Frontend** | High-prestige dark glassmorphism client with 4 views (Companion Chat, Chaos Dump, Today, Focus Mode). | React/Vite client, audio wave recording, streak & gamify components. |
+| **Phase 2: Thought Stream & Priority Engine** | Structured KruschContext memory updates and 5-tier task management. | Task routes, STT transcription, extraction prompt with JSON validation. |
+| **Phase 3: React PWA Frontend** | High-prestige dark glassmorphism client with 4 views (Companion Chat, Thought Stream, Today, Focus Mode). | React/Vite client, audio wave recording, streak & gamify components. |
 | **Phase 4: Invariant Audit & Homelab Registration** | Unit & integration tests, pre-commit invariant check, `krusch-git` registration, Dockerfile setup. | Passing test suite, `AGENTS.md`, `INFLIGHT.md`, git sync. |

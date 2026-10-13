@@ -37,7 +37,7 @@ projects/krusch-companion/
 │   └── routes/
 │       ├── api-tasks.js       # CRUD for 5-tier tasks & streaks
 │       ├── api-companion.js   # Conversational companion dialogue with tier badges
-│       ├── api-dump.js        # Voice & text Chaos Dump ingestion
+│       ├── api-dump.js        # Voice & text Thought Stream ingestion
 │       └── api-context.js     # Memory nuggets & active invariants management
 ├── client/                    # React 19 + Vite frontend
 │   ├── package.json
@@ -53,13 +53,13 @@ projects/krusch-companion/
 │       │   └── PriorityPicker.jsx
 │       └── views/
 │           ├── CompanionView.jsx # Conversational companion & morning briefing
-│           ├── DumpView.jsx      # Chaos dump interface with extraction preview
+│           ├── DumpView.jsx      # Thought Stream interface with extraction preview
 │           ├── TodayView.jsx     # 5-Tier priority board & streak counters
 │           └── FocusView.jsx     # Single-task flow state with timer
 ├── tests/
 │   ├── test-router.js         # Cascade routing & tier escalation test
 │   ├── test-memory.js         # Working memory & superseding test
-│   └── test-dump.js           # Chaos dump extraction test
+│   └── test-dump.js           # Thought Stream extraction test
 ├── Dockerfile                 # Multi-stage production container
 └── docker-compose.yml         # Homelab service definition
 ```
@@ -112,4 +112,4 @@ projects/krusch-companion/
 - **Gate 1**: Unit tests (`node tests/test-router.js` and `node tests/test-memory.js`) execute and pass cleanly.
 - **Gate 2**: Backend starts without errors (`node src/server.js`) on designated port (default: 3004).
 - **Gate 3**: Frontend builds cleanly (`cd client && npm run build`) with zero lint or bundling errors.
-- **Gate 4**: Verification walkthrough demonstrates an end-to-end Chaos Dump -> Task Extraction -> Working Memory Update flow.
+- **Gate 4**: Verification walkthrough demonstrates an end-to-end Thought Stream -> Task Extraction -> Working Memory Update flow.

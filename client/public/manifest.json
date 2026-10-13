@@ -1,7 +1,7 @@
 {
   "name": "Krusch Companion",
   "short_name": "Companion",
-  "description": "Sovereign, privacy-first personal assistant and executive operating system",
+  "description": "Sovereign, privacy-first personal AI assistant and daily companion",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",

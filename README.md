@@ -1,8 +1,8 @@
 <p align="center">
   <h1 align="center">🛡️ Krusch Companion</h1>
   <p align="center">
-    <strong>Sovereign Personal AI & Executive Operating System</strong><br>
-    <em>A 100% private, local-first co-pilot for friction-free thought triage, prioritized daily focus, and durable working memory.</em>
+    <strong>Sovereign Personal AI Assistant & Daily Companion</strong><br>
+    <em>A 100% private, local-first companion (like Dot or Grok) for voice thought capture, prioritized daily focus, and durable working memory.</em>
   </p>
 </p>
 
@@ -19,7 +19,7 @@
 
 ## 💡 What It Does For You
 
-**Krusch Companion** is a local-first personal assistant and executive operating system designed to overcome cognitive overload, mental clutter, and task paralysis. Instead of sending your thoughts to centralized cloud data centers, Companion processes your voice notes, tasks, and habits entirely on your own home hardware.
+**Krusch Companion** is a sovereign, local-first personal AI assistant and daily companion (comparable to private, user-owned versions of OpenAI Dot or xAI Grok Companion). Instead of sending your thoughts and life notes to centralized cloud data centers, Companion runs on your own hardware, turning raw voice streams into clear daily priorities, maintaining durable working memory across conversations, and providing supportive morning briefings and evening reflections.
 
 ### 🔄 The Daily Loop
 
@@ -34,7 +34,7 @@
 1. **Thought Stream (Capture)**: Speak into the microphone or paste an unfiltered stream-of-consciousness thought stream.
 2. **5-Tier Triage (Organize)**: An edge LLM cleans cognitive noise, extracts actionable commitments, ranks them against a 5-tier priority framework, and isolates durable life facts into working memory.
 3. **Today's Board (Execute)**: Tactile daily board highlighting the single most critical task, with gamified checkmarks and streak tracking.
-4. **Focus Mode (Initiation)**: Fullscreen distraction-free timer with AI micro-nudges (`"Just do 3 minutes"`) to break task initiation friction.
+4. **Focus Mode (Deep Work)**: Fullscreen distraction-free timer with ambient progress ring and AI micro-nudges (`"Just do 3 minutes"`) to build effortless momentum.
 5. **Coach Briefings & Reflection (Review)**: Proactive morning alignment and evening wins wind-down.
 
 ### 🎯 Example Workflows
@@ -226,7 +226,7 @@ Injecting long-term personal context into mathematically or syntactically self-c
 | **Task Routing** | Monolithic cloud roundtrips for all queries | **Cascade Router**: L0 Heuristic (<15µs) + L1 7B Edge + L2 14B Swarm |
 | **Context Hygiene** | Unbounded vector RAG (prone to hallucinations) | **KruschContext**: 5 closed taxonomies + temporal superseding |
 | **Reasoning Depth** | Frontier models (70B–400B cloud parameters) | **Local 7B/14B models** (optimized for triage, not frontier research) |
-| **Executive Function**| Conversational chitchat and journaling | **Thought Stream Engine**: Rambling speech triaged into 5-tier board |
+| **Actionable Priority Triage**| Conversational chitchat and journaling | **Thought Stream Engine**: Rambling speech triaged into 5-tier board |
 
 ---
 
@@ -252,8 +252,8 @@ For most developers and privacy-conscious users, **OpenRouter is the most practi
 1. **Transit vs. Storage**:
    * **What never leaves your machine**: Your task lists, 5-tier priority board, completed task timestamps, streak counts, and KruschContext memory store stay **strictly on your local drive**.
    * **What travels in transit**: During an active turn, only the prompt text and immediate session context travel over TLS to OpenRouter for inference.
-2. **The Intimate Nature of Executive Journaling & Life Data**:
-   * An executive co-pilot is uniquely personal. Stream-of-consciousness Thought Streams often mention medical prescriptions (*"refill medication"*), therapy sessions, relationship friction, or sensitive financial notes.
+2. **The Intimate Nature of Personal Journaling & Daily Thoughts**:
+   * A personal AI companion is uniquely intimate. Stream-of-consciousness Thought Streams often mention medical prescriptions (*"refill medication"*), therapy appointments, relationship friction, or sensitive financial notes.
    * If you are dumping highly confidential personal or medical data, **Option A (Local Ollama)** guarantees that not a single byte leaves your physical machine.
 3. **The Two-Hop Trust Chain**:
    * Calling OpenRouter involves two hops: `[Your Companion] ──► [OpenRouter Proxy] ──► [Upstream Host (e.g. Together, DeepInfra, Fireworks, Azure)]`.
@@ -314,7 +314,7 @@ The server configuration is located in `config.json` at the project root (and ov
 | `POST` | `/api/companion/voice` | Accepts multipart `audio` (WebM/WAV) -> Whisper STT -> Thought Stream pipeline. |
 | `GET` | `/api/coach/focus` | Retrieves today's active morning focus briefing. |
 | `POST` | `/api/coach/focus` | Synthesizes a new morning focus briefing from tasks and working memory. |
-| `POST` | `/api/coach/nudge` | Generates a 1-sentence initiation micro-nudge for the current task. |
+| `POST` | `/api/coach/nudge` | Generates a 1-sentence focus micro-nudge for the current task. |
 | `POST` | `/api/coach/reflect` | Synthesizes an evening reflection celebrating wins. |
 | `GET` | `/api/context` | Retrieves active working memory nuggets and compiled state briefing (`?category=...`). |
 | `POST` | `/api/context` | Persists a new memory nugget (`{ category, content, key, confidence }`). |
@@ -366,7 +366,6 @@ docker compose ps
 
 * [`krusch-cascade-router`](https://github.com/kruschdev/krusch-cascade-router): Sub-15µs CPU routing substrate with AST arithmetic evaluation and fallback hedging.
 * [`krusch-context-mcp`](https://github.com/kruschdev/krusch-context-mcp): Model Context Protocol server providing working memory, invariant steering, and fact superseding.
-* [`first-things-first`](https://github.com/kruschdev/first-things-first): The executive personal assistant platform that originated the 5-tier priority framework and stream capture workflow.
 
 ---
 

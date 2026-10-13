@@ -2,7 +2,7 @@
   "name": "krusch-companion",
   "version": "1.0.0",
   "type": "module",
-  "description": "Sovereign, privacy-first personal assistant and executive companion integrating KruschContext working memory with Krusch Cascade Router",
+  "description": "Sovereign, privacy-first personal AI assistant and daily companion integrating KruschContext working memory with Krusch Cascade Router",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",

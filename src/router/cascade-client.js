@@ -359,8 +359,8 @@ export async function dispatchCompanionChat({ prompt, history = [], contextBrief
   // 3. Classify tier
   const classification = classifyCompanionPrompt(cleanPrompt);
 
-  const baseSystemPrompt = systemPrompt || `You are Krusch Companion, a sovereign, empathetic, and exceptionally capable personal assistant and executive partner.
-You speak clearly, warmly, and constructively. You help the user manage their energy, ADHD focus, priorities, and daily tasks.
+  const baseSystemPrompt = systemPrompt || `You are Krusch Companion, a sovereign, empathetic, and exceptionally capable personal AI assistant and daily companion.
+You speak clearly, warmly, and constructively. You help the user manage their daily focus, priorities, goals, and tasks.
 All personal data is private and sovereign. When referencing personal context, be natural and encouraging without being overly robotic.`;
 
   const fullSystemPrompt = contextBriefing

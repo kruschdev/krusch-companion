@@ -9,7 +9,7 @@ export async function generateDailyFocus(date = null) {
 
   const taskList = tasks.map(t => `- [Tier ${t.tier} / ${t.priority_name}] ${t.title} (${t.completed ? 'COMPLETED' : 'PENDING'})`).join('\n');
 
-  const systemPrompt = `You are Krusch Companion, an empathetic ADHD-friendly personal coach.
+  const systemPrompt = `You are Krusch Companion, an empathetic, supportive personal assistant and daily coach.
 Given today's task list and active life context, generate a concise, inspiring morning focus briefing (max 3-4 sentences).
 Highlight the ONE single most important task to conquer first before doing anything else, and provide a grounding mindset tip.
 Be warm, direct, and energizing. Avoid corporate jargon.`;
@@ -72,7 +72,7 @@ export async function generateNudge(date = null) {
   }
 
   const topTask = tasks[0];
-  const systemPrompt = `You are Krusch Companion. Give a punchy, warm, 1-2 sentence micro-nudge to help someone with ADHD overcome initiation friction on their current task: "${topTask.title}". Suggest doing just 3 minutes of it.`;
+  const systemPrompt = `You are Krusch Companion. Give a punchy, warm, 1-2 sentence micro-nudge to help the user build momentum and get started on their current task: "${topTask.title}". Suggest doing just 3 minutes of it to get rolling.`;
 
   const res = await dispatchCompanionChat({
     prompt: `Nudge me to start "${topTask.title}".`,

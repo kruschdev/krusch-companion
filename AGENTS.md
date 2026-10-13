@@ -1,7 +1,7 @@
 # Krusch Companion — Sovereign Personal Assistant
 
 ## Overview
-Krusch Companion (`krusch-companion`) is a privacy-first, sovereign personal assistant and executive companion. It evolves and consolidates the ADHD-friendly voice capture ("Chaos Dump") and 5-tier priority framework from `first-things-first` with `krusch-context-mcp` working memory and `krusch-cascade-router` hierarchical tiering. All state, personal habits, notes, and tasks live strictly on local homelab hardware with $0.00 cloud token costs for daily interactions.
+Krusch Companion (`krusch-companion`) is a privacy-first, sovereign personal AI assistant and life companion (comparable to private versions of OpenAI Dot or xAI Grok Companion). It pairs ambient voice Thought Streams and a 5-tier priority framework with `krusch-context-mcp` working memory and `krusch-cascade-router` hierarchical tiering. All state, personal habits, notes, and tasks live strictly on local user-owned hardware with $0.00 cloud token costs for daily interactions.
 
 ## Architecture & Layout
 ```
@@ -19,7 +19,7 @@ krusch-companion/
 │   ├── db/                    # SQLite database with WAL mode
 │   ├── context/               # Working memory & knowledge boundary gating
 │   ├── router/                # krusch-cascade-router integration
-│   ├── services/              # Chaos Dump, Coach, STT
+│   ├── services/              # Thought Stream, Coach, STT
 │   └── routes/                # REST endpoints
 ├── client/                    # React 19 + Vite frontend (dark glassmorphism)
 └── tests/                     # Unit and integration test suites

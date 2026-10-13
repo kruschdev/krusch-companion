@@ -12,7 +12,7 @@ Krusch Companion (`krusch-companion`) is fully implemented, verified, and indexe
 - [x] Implemented KruschContext working memory store with temporal fact superseding (`src/context/memory-store.js`)
 - [x] Implemented Knowledge Boundary Gating and context pruning (`src/context/boundary-gate.js`)
 - [x] Integrated `krusch-cascade-router` with L0 Heuristic (<15µs), L1 Local Edge (Ollama 7B), and L2 Swarm escalation (`src/router/cascade-client.js`)
-- [x] Implemented ADHD Chaos Dump voice/text triage engine (`src/services/chaos-dump.js`)
+- [x] Implemented Thought Stream voice/text triage engine (`src/services/chaos-dump.js`)
 - [x] Implemented Daily Focus, micro-nudge, and evening reflection services (`src/services/coach.js`)
 - [x] Built and styled React 19 + Vite PWA frontend with luxury dark glassmorphism (`client/`)
 - [x] All 18 unit/integration tests passing cleanly (including enterprise hardening)
