@@ -1,4 +1,4 @@
-import { parseAIJson } from '@krusch/toolkit/json-parse';
+import { parseAIJson } from '../toolkit/json-parse.js';
 import { dispatchCompanionChat, TIERS } from '../router/cascade-client.js';
 import { createTask, getPriorities, today, getTasksForDate } from '../db/index.js';
 import { rememberMemory } from '../context/memory-store.js';

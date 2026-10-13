@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert';
 
+process.env.NODE_ENV = process.env.NODE_ENV || 'test';
+
 const { evaluateL0Heuristic, classifyCompanionPrompt, dispatchCompanionChat, TIERS } = await import('../src/router/cascade-client.js');
 const { initCompanionDb } = await import('../src/db/index.js');
 

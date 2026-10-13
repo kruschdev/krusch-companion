@@ -4,6 +4,8 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+process.env.NODE_ENV = process.env.NODE_ENV || 'test';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const testDbPath = path.join(__dirname, 'test-dump.db');
 

@@ -1,6 +1,6 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { loadJsonConfig } from '@krusch/toolkit/config';
+import { loadJsonConfig } from './toolkit/config.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

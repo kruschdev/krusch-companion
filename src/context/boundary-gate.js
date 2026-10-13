@@ -1,4 +1,4 @@
-import { shouldActivateMemory, prunePreRetrieval } from '@krusch/toolkit/prune';
+import { shouldActivateMemory, prunePreRetrieval } from '../toolkit/prune.js';
 import { compileStateBriefing } from './memory-store.js';
 
 const COMPANION_MEMORY_KEYWORDS = [
