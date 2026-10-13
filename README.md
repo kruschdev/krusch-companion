@@ -12,55 +12,83 @@
   <a href="https://github.com/kruschdev/krusch-cascade-router"><img src="https://img.shields.io/badge/Router-krusch--cascade--router-cyan.svg?style=flat-square" alt="Powered By krusch-cascade-router"></a>
   <a href="https://github.com/kruschdev/krusch-context-mcp"><img src="https://img.shields.io/badge/Memory-KruschContext%20Engine-purple.svg?style=flat-square" alt="KruschContext Engine"></a>
   <a href="https://github.com/kruschdev/krusch-agentic-mcp"><img src="https://img.shields.io/badge/Agentic%20Proxy-%3Cholodata%3E%20Dual--Engine-orange.svg?style=flat-square" alt="Krusch Agentic Proxy"></a>
+  <a href="https://github.com/kruschdev/G-krusch"><img src="https://img.shields.io/badge/Workspace-G--Krusch%20Extensions-4285F4.svg?style=flat-square" alt="G-Krusch Google Workspace Extensions"></a>
   <a href="https://github.com/kruschdev/krusch-companion/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/CI-passing-brightgreen.svg?style=flat-square" alt="CI"></a>
-  <img src="https://img.shields.io/badge/tests-33%20passed-brightgreen.svg?style=flat-square" alt="Tests Passed">
+  <img src="https://img.shields.io/badge/tests-34%20passed-brightgreen.svg?style=flat-square" alt="Tests Passed">
 </p>
 
 ---
 
 ## 💡 What It Does For You
 
-**Krusch Companion** is a sovereign, local-first personal AI assistant and daily companion (a 100% private, user-owned alternative to OpenClaw/Moltbot, Meta Muse, OpenAI Dot, or xAI Grok Companion). Instead of sending your personal thoughts and life notes to centralized cloud data centers, Companion runs on your own hardware—turning raw voice streams into clear daily priorities, executing **live external APIs and multi-step personal assistant actions** via the **Krusch Agentic Proxy (`<holodata>` Dual-Engine)**, maintaining durable working memory across conversations, and providing supportive morning briefings and evening reflections.
+**Krusch Companion** is a sovereign, local-first personal AI assistant and daily companion—a 100% private, user-owned alternative to **OpenClaw / Grokbot**, **Meta Muse**, or **OpenAI Dot**. Instead of surrendering your personal thoughts, daily schedule, and life notes to centralized cloud data centers, Companion runs on your own hardware—turning raw voice streams into clear daily priorities, executing **12 live external APIs, Google Workspace extensions, and multi-step personal assistant actions** via the **Krusch Agentic Proxy (`<holodata>` Dual-Engine)**, maintaining durable working memory across conversations, and providing supportive morning briefings and evening reflections.
 
 ### 🔄 The Daily Loop
 
 ```
   ┌─────────────────┐       ┌─────────────────┐       ┌─────────────────┐       ┌─────────────────┐
-  │ 1. Thought      │  ──►  │ 2. Priority     │  ──►  │ 3. Focus Mode   │  ──►  │ 4. Evening      │
-  │    Stream       │       │    Board        │       │ Single-Task     │       │    Reflection   │
-  │ Voice or text   │       │ 5-tier triage   │       │ Ambient timer   │       │ Wins & habits   │
+  │ 1. Thought      │  ──►  │ 2. Priority     │  ──►  │ 3. Agentic      │  ──►  │ 4. Focus &      │
+  │    Stream       │       │    Board        │       │    Proxy (<holo>│       │    Reflection   │
+  │ Voice or text   │       │ 5-tier triage   │       │ 12 live APIs    │       │ Timer & wins    │
   └─────────────────┘       └─────────────────┘       └─────────────────┘       └─────────────────┘
 ```
 
 1. **Thought Stream (Capture)**: Speak into the microphone or paste an unfiltered stream-of-consciousness thought stream.
-2. **5-Tier Triage (Organize)**: An edge LLM cleans cognitive noise, extracts actionable commitments, ranks them against a 5-tier priority framework, and isolates durable life facts into working memory.
+2. **5-Tier Triage (Organize)**: An edge LLM (or OpenRouter specialist) cleans cognitive noise, extracts actionable commitments, ranks them against a 5-tier priority framework, and isolates durable life facts into working memory.
 3. **Today's Board & Lifecycle (Execute)**: Tactile daily board highlighting the single most critical task, with automatic daily recurring habit seeding, 1-click **"↻ Roll Over Unfinished"** task migration from prior days, 1-click **"🧩 Steps"** task decomposition, gamified checkmarks, and streak tracking.
 4. **Agentic Action Proxy & L0 Commands (Act)**:
-   - **Instant `<15µs` L0 CPU Commands**: `Add task`, `Complete task`, `Delete task`, `Show my tasks`, `Roll over unfinished tasks`, `Break down task into steps`, `Instead of X, remember that Y`.
-   - **Live Multi-Tool Agentic Proxy (`<holodata>` Dual-Engine) + G-Krusch Google Workspace Extensions**: Enables local 7B/14B models (or OpenRouter 32B/72B specialists) to execute 11 real APIs and multi-step chains: live weather (`get_weather`), web research (`web_research`), SSRF-guarded URL digests (`fetch_url_digest`), Google Drive RAG & Google Docs read/write (`gkrusch_drive`), Google Calendar events & scheduling (`gkrusch_calendar`), Gmail inbox search & email drafting/sending (`gkrusch_gmail`), local Markdown note vault (`save_note`, `list_notes`), push notifications (`send_notification`), host telemetry (`system_status`), and Sovereign Legal/Contract queries (`sovereign_gateway_query`).
+   - **Instant `<15µs` L0 CPU Commands (`$0.00` Token Cost)**: `Add task`, `Complete task`, `Delete task`, `Show my tasks`, `Roll over unfinished tasks`, `Break down task into steps`, `Instead of X, remember that Y`, plus safe AST arithmetic.
+   - **12-Tool `<holodata>` Dual-Engine Agentic Proxy + G-Krusch Google Workspace Extensions**: Enables local 7B/14B models (or OpenRouter 32B/72B specialists) to execute real APIs and multi-step chains with automatic upstream-to-downstream data piping.
 5. **Focus Mode & Coach Briefings (Deep Work & Review)**: Fullscreen distraction-free timer with ambient progress ring, AI micro-nudges (`"Just do 3 minutes"`), morning focus alignment, and evening wins reflection.
 
-### 🎯 Example Workflows
+---
 
-* **Voice/Text Thought Stream**:
-  > *"I need to send the updated invoice to Alex, fix the door latch before tonight, schedule a dentist checkup for next Tuesday, and I kept forgetting to stretch today."*
-  > 
-  > ➜ **Extracted into Tasks**:
-  > 1. `Send updated invoice to Alex` (Tier 5: Work & Mastery)
-  > 2. `Fix door latch before tonight` (Tier 4: Health & Self / Environment)
-  > 3. `Schedule dentist checkup for Tuesday` (Tier 4: Health & Self)
-  > 
-  > ➜ **Saved to Working Memory**: `Remember to take stretching breaks during desk work` (Category: `lesson`).
+## ⚡ The 12-Tool Agentic Proxy (`<holodata>` Dual-Engine) & G-Krusch Workspace
 
-* **Multi-Step Agentic Proxy Actions (`<holodata>` Dual-Engine + G-Krusch Workspace)**:
-  > *"What is the weather in Seattle right now and add a task to go for a 20-minute walk?"*
-  > ➜ **Tool 1 (`get_weather`)**: Queries live Open-Meteo API (`60.8°F / 16°C — Overcast ☁️, Wind 1.9 mph, Precip 10%`).
-  > ➜ **Tool 2 (`board_action`)**: Automatically creates **[Tier 4: Health & Self 💪] Go for a 20-minute walk** on Today's Board.
-  >
+Standard 7B/14B local models often struggle with deeply nested OpenAI JSON tool schemas when 10+ tools are injected into the prompt at once. Krusch Companion solves this by embedding the **`<holodata>` Dual-Engine Cognitive Blueprint** (adapted from [`krusch-agentic-mcp`](https://github.com/kruschdev/krusch-agentic-mcp)):
+1. **Intent-Scoped Tool Pruning (`<250` tokens)**: [`detectAgenticIntent()`](src/agent/agentic-proxy.js) prunes the tool catalog down to only the 1–3 tools relevant to the user's request before calling the LLM.
+2. **Unified `<holodata>` Thinker + Flat Tool Array**: The model first reasons through parameter constraints inside `<holodata>...</holodata>` XML tags and then emits a flat JSON tool array (`[{"name": "...", "arguments": {...}}]`).
+3. **Upstream-to-Downstream Live Data Piping**: When chaining multiple tools in one turn (e.g., `get_weather` ➔ `save_note` or `gkrusch_drive` ➔ `gkrusch_gmail`), [`executeAgenticProxyTurn()`](src/agent/agentic-proxy.js) automatically pipes live upstream API outputs directly into downstream notes, push notifications, Google Drive docs, or Gmail drafts.
+4. **Deterministic Offline Fallback**: Even if your local LLM or Google OAuth is temporarily offline, [`inferFallbackToolCalls()`](src/agent/agentic-proxy.js) and sovereign local fallbacks ensure tasks, notes, and drafts are never lost.
+
+### 🛠️ Complete 12-Tool Capability Matrix
+
+| Category | Tool Name | What It Accomplishes | Example Natural-Language Prompt |
+| :--- | :--- | :--- | :--- |
+| **☁️ Google Drive & Docs** | `gkrusch_drive` | Hybrid semantic + FTS5 BM25 RAG search across Google Drive, Google Docs Markdown export, Drive file creation (`G-Krusch/output/`), and `agent.md` cloud steering (with automatic local `data/notes/` mirror). | *"Search my Google Drive for the Q4 Architecture Spec"* |
+| **📅 Google Calendar** | `gkrusch_calendar` | Lists upcoming Google Calendar events or schedules new calendar meetings/appointments (with automatic fallback to Today's Priority Board if offline). | *"Schedule a meeting on Google Calendar titled Architecture Sync at 2026-10-14T15:00:00"* |
+| **✉️ Gmail Extension** | `gkrusch_gmail` | Searches Gmail messages (`from:`, `is:unread`), creates RFC-2822 MIME drafts in Gmail, or sends emails (with local `data/notes/email-draft-*.md` fallback). | *"Draft an email to team@krusch.dev about the Q4 Spec"* |
+| **🌤️ Live Weather** | `get_weather` | Live geocoding + current temperature, wind speed, precipitation probability, and daily highs/lows via Open-Meteo (zero API key required). | *"What's the weather in Seattle right now?"* |
+| **🔎 Web Research** | `web_research` | Queries DuckDuckGo Instant Answer & Wikipedia REST summaries for factual lookups and topic briefs. | *"Research the history of the Pomodoro Technique"* |
+| **📄 URL Digest** | `fetch_url_digest` | **SSRF-guarded** live web page reader—strips scripts/styles and extracts readable text while blocking localhost, LAN, and cloud metadata IPs. | *"Read and summarize https://example.com"* |
+| **📝 Notes Write** | `save_note` | Creates or updates clean Markdown documents inside your sandboxed local vault (`data/notes/`). | *"Save a note titled Weekly Goals: Ship v2.0 & review priorities"* |
+| **📂 Notes Read** | `list_notes` | Lists all saved Markdown notes in `data/notes/` or reads a specific note by title. | *"Show my saved notes"* |
+| **🔔 Push Alerts** | `send_notification` | Dispatches real-time push notifications to your phone or desktop via `ntfy.sh` or a custom self-hosted webhook topic. | *"Send a push notification to my phone: Pick up groceries at 5pm"* |
+| **🖥️ Host Telemetry** | `system_status` | Reports live host CPU load, RAM usage, uptime, SQLite WAL `PRAGMA integrity_check`, active memory count, and board completion streak. | *"Check system status and telemetry"* |
+| **⚖️ Sovereign Law/Biz** | `sovereign_gateway_query` | Queries local **KruschLaw (`:8085`)** for statutory RAG / tenant defense or **KruschBiz (`:8086`)** for corporate contract graphs. | *"Search KruschLaw statutes for California security deposit return deadlines"* |
+| **📋 Board & Memory** | `board_action` | Creates or completes tasks on Today's 5-Tier Priority Board or saves durable facts to Working Memory as part of a multi-step tool chain. | *"Check the weather in Seattle and add a task to go for a 3-mile run"* |
+
+### 🎯 Example Multi-Step Workflows
+
+* **Google Workspace Chain (`gkrusch_drive` ➔ `gkrusch_calendar` ➔ `gkrusch_gmail`)**:
   > *"Search my Google Drive for Q4 Architecture Spec, schedule an Architecture Sync on my Google Calendar, and draft an email to team@krusch.dev with the summary."*
   > ➜ **Tool 1 (`gkrusch_drive`)**: Runs hybrid semantic + BM25 search across your indexed Google Drive workspace.
   > ➜ **Tool 2 (`gkrusch_calendar`)**: Creates the event on Google Calendar (or falls back to Today's Priority Board if offline).
   > ➜ **Tool 3 (`gkrusch_gmail`)**: Automatically pipes the Google Drive RAG summary into a Gmail draft (with local Markdown mirror in `data/notes/`).
+
+* **Weather + Note + Push Notification + Priority Board Chain**:
+  > *"What is the weather in Seattle right now, save a note titled Run Forecast, and add a task to go for a 20-minute walk?"*
+  > ➜ **Tool 1 (`get_weather`)**: Queries live Open-Meteo API (`60.8°F / 16°C — Overcast ☁️, Wind 1.9 mph, Precip 10%`).
+  > ➜ **Tool 2 (`save_note`)**: Automatically pipes the live weather forecast into `data/notes/run-forecast.md`.
+  > ➜ **Tool 3 (`board_action`)**: Creates **[Tier 4: Health & Self 💪] Go for a 20-minute walk** on Today's Board.
+
+* **Voice/Text Thought Stream**:
+  > *"I need to send the updated invoice to Alex, fix the door latch before tonight, schedule a dentist checkup for next Tuesday, and I kept forgetting to stretch today."*
+  > ➜ **Extracted into Tasks**:
+  > 1. `Send updated invoice to Alex` (Tier 5: Work & Mastery)
+  > 2. `Fix door latch before tonight` (Tier 4: Health & Self / Environment)
+  > 3. `Schedule dentist checkup for Tuesday` (Tier 4: Health & Self)
+  > ➜ **Saved to Working Memory**: `Remember to take stretching breaks during desk work` (Category: `lesson`).
 
 * **Instant L0 Task & Board Commands in Chat (`<15µs` CPU, `$0.00` LLM Cost)**:
   > *"Add task: Schedule dentist cleaning at 2pm"* ➜ Automatically inferred as **Tier 4 (Health & Self)** and added to Today's Board.
@@ -70,7 +98,6 @@
 
 * **Working Memory with Fact Superseding**:
   > *"Instead of espresso, remember that I switched to green tea after lunch."*
-  > 
   > ➜ Persisted in local SQLite (`companion_context`). The obsolete coffee memory is atomically marked `superseded_by` with full lineage, preventing prompt contradiction on future turns.
 
 ---
@@ -91,20 +118,20 @@ The frontend is an installable Progressive Web App (PWA) built with React 19, Vi
 | 💬 Companion Chat | 🌊 Thought Stream |
 |:---:|:---:|
 | ![Companion Chat](docs/screenshots/companion-view.png) | ![Thought Stream](docs/screenshots/thought-stream.png) |
-| *Real-time L0/L1/L2/L3 routing badges, morning focus briefings, and fast local chat.* | *Live HTML5 microphone waveform visualizer and stream-of-consciousness text input.* |
+| *Real-time L0/L1/L2/L3 routing badges, expandable `<holodata>` Agentic Proxy traces, and morning focus briefings.* | *Live HTML5 microphone waveform visualizer and stream-of-consciousness text input.* |
 
 | 📋 Today's Board | 🎯 Focus Mode |
 |:---:|:---:|
 | ![Today's Board](docs/screenshots/today-board.png) | ![Focus Mode](docs/screenshots/focus-mode.png) |
-| *5-tier priority framework, gamified completion points, and streak counter.* | *Distraction-free single-task execution with ambient timer ring and hotkeys.* |
+| *5-tier priority framework, 1-click task rollover & step decomposition, and streak counter.* | *Distraction-free single-task execution with ambient timer ring and hotkeys.* |
 
 ---
 
 ## 🚀 Quickstart
 
 Krusch Companion supports two operating modes:
-* **Option A: 100% Sovereign Local-First (Default)**: Uses local Ollama on your machine or home server. Zero network egress.
-* **Option B: Zero-GPU Cloud Connector (OpenRouter)**: For laptops, cloud VPS, or devices without a discrete GPU. Uses [OpenRouter](https://openrouter.ai/) for inference with **Zero Data Retention** (`data_collection: "deny"`). Your database and working memory still remain 100% local in SQLite.
+* **Option A: 100% Sovereign Local-First (Default)**: Uses local Ollama on your machine or home server. Zero LLM network egress.
+* **Option B: Zero-GPU Cloud Connector (OpenRouter 3-Specialist Cascade)**: For laptops, cloud VPS, or devices without a discrete GPU. Uses [OpenRouter](https://openrouter.ai/) with enforced **Zero Data Retention** (`provider: { data_collection: "deny" }`) and dynamically routes across 3 specialized frontier models (`qwen-2.5-coder-32b-instruct`, `qwen-2.5-72b-instruct`, and `deepseek-chat-v3-0324`). Your database, notes vault, and working memory still remain 100% local in SQLite.
 
 ### Prerequisites
 
@@ -118,9 +145,9 @@ Krusch Companion supports two operating modes:
    * **GPU (Recommended)**: ~6–8 GB VRAM (RTX 2080 Ti, RTX 3060, Apple Silicon). ~30–50 tokens/sec.
    * **CPU (Usable)**: ~16 GB system RAM. ~5–10 tokens/sec.
 
-#### If running Option B (OpenRouter Zero-GPU):
+#### If running Option B (OpenRouter Zero-GPU Specialist Cascade):
 1. **Node.js**: `v22.0.0+`
-2. **OpenRouter API Key**: Obtain from [openrouter.ai](https://openrouter.ai/keys). (Works with free or cheap models like `qwen/qwen-2.5-7b-instruct` or `meta-llama/llama-3.1-8b-instruct:free`).
+2. **OpenRouter API Key**: Obtain from [openrouter.ai](https://openrouter.ai/keys). Defaults to `qwen/qwen-2.5-72b-instruct` with automatic dynamic cascade across `qwen/qwen-2.5-coder-32b-instruct` (for `<holodata>` tool calls) and `deepseek/deepseek-chat-v3-0324` (for deep reasoning).
 3. **No GPU or Ollama required**! Runs on any low-power device.
 
 ### 📦 Ecosystem & Monorepo Dependencies
@@ -129,6 +156,7 @@ Krusch Companion supports two operating modes:
 > Krusch Companion is part of the Krusch homelab ecosystem. It references sibling packages via local file paths in `package.json`:
 > - `@krusch/toolkit` (at `../../lib`)
 > - `krusch-cascade-router` (at `../krusch-cascade-router`)
+> - `g-krusch` (optional Google Workspace Extension service on `http://127.0.0.1:5446`)
 
 To run Companion, ensure your directory layout matches the monorepo structure:
 
@@ -137,7 +165,8 @@ homelab/
 ├── lib/                         # Shared @krusch/toolkit utilities
 └── projects/
     ├── krusch-cascade-router/   # Microsecond CPU Cascade Router
-    └── krusch-companion/        # This repository
+    ├── g-krusch/                # Optional Google Drive/Calendar/Gmail OAuth bridge (:5446)
+    └── krusch-companion/        # This repository (:3004)
 ```
 
 ### Installation & Run
@@ -154,14 +183,14 @@ cd client && npm install && cd ..
 # 3. Build the frontend client
 cd client && npm run build && cd ..
 
-# 4. Run automated tests (21 unit & integration tests)
+# 4. Run automated tests (34 unit & integration tests across 5 suites)
 npm test
 
 # 5. Start the server
 # Path A: Local Ollama (default)
 npm start
 
-# Path B: OpenRouter Zero-GPU Mode
+# Path B: OpenRouter Zero-GPU 3-Specialist Cascade Mode
 OPENROUTER_API_KEY="sk-or-v1-..." LLM_PROVIDER="openrouter" npm start
 ```
 
@@ -171,7 +200,7 @@ Visit **`http://localhost:3004`** in your browser, or install it as a PWA on you
 
 ## 🏛️ System Architecture
 
-Krusch Companion is built around the **Krusch Cascade Router** and the **KruschContext Engine**:
+Krusch Companion is built around the **Krusch Cascade Router**, the **`<holodata>` Dual-Engine Agentic Proxy**, the **KruschContext Engine**, and the **G-Krusch Google Workspace Bridge**:
 
 ```
                                  [ User Interaction ]
@@ -185,10 +214,10 @@ Krusch Companion is built around the **Krusch Cascade Router** and the **KruschC
                                           │
          ┌────────────────────────────────┼────────────────────────────────┐
          ▼                                ▼                                ▼
-   [ Tier 0: Direct ]             [ Tier 1: Edge Local ]          [ Tier 2: Deep Local ]
-   - Safe AST Arithmetic (<15µs)   - Local 7B Ollama               - Local 14B Swarm
-   - Direct Memory Persistence    - Sub-second daily chat,        - Complex life planning,
-   - Zero LLM Token Cost ($0.00)     triage, morning briefing        deep thought stream synthesis
+   [ Tier 0: Direct CPU ]     [ <holodata> Agentic Proxy ]     [ Tier 1 / 2 / Cloud ]
+   - Safe AST Arithmetic       - Intent-Scoped Tool Pruning     - Local: 7B Edge / 14B Swarm
+   - Direct Task/Board/Memory  - 12 Live Tools + Chaining       - OpenRouter 3-Specialist
+   - <15µs Latency ($0.00)     - G-Krusch Drive/Cal/Gmail         Dynamic Cascade (ZDR)
          │                                │                                │
          └────────────────────────────────┴────────────────────────────────┘
                                           │
@@ -198,19 +227,21 @@ Krusch Companion is built around the **Krusch Cascade Router** and the **KruschC
                       │  - Working Memory (5 Closed Taxonomies│
                       │  - Temporal Fact Superseding & Decay  │
                       │  - Knowledge Boundary Gate (Pruning)  │
-                      │  - SQLite WAL (Atomic VACUUM Backups) │
+                      │  - SQLite WAL + data/notes/ Vault     │
                       └───────────────────────────────────────┘
-                                          │ (Strictly Opt-in, default blocked)
-                                          ▼
-                      [ Tier 3: Sovereign Cloud Escalation ]
-                      (User-permissioned frontier reasoning only)
 ```
 
-### 1. Sub-15µs CPU Cascade Router
-* **L0 Deterministic Heuristic**: Captures commands like `"Remember that my dentist is on Friday"` or evaluates math expressions on CPU in microseconds with zero token cost.
-* **L1 Local Edge**: Dispatches daily conversational queries to local Ollama (`qwen2.5-coder:7b`) with sub-second response times.
-* **L2 Compute Swarm**: Transparently escalates heavy, multi-paragraph prompts to local network compute nodes (e.g. dual-GPU servers on LAN) with automatic fallback hedging.
-* **L3 Cloud Privacy Gate**: External cloud escalation is strictly disabled by default (`allowCloudEscalation: false`).
+### 1. Sub-15µs CPU Cascade Router & Dynamic Specialist Routing
+* **L0 Deterministic Heuristic (`<15µs` CPU, `$0.00` Cost)**: Captures commands like `"Add task: ..."`, `"Complete task: ..."`, `"Show my tasks"`, `"Roll over unfinished tasks"`, `"Instead of X, remember that Y"`, or evaluates math expressions on CPU in microseconds with zero token cost.
+* **L1 Local Edge (`Ollama`)**: Dispatches daily conversational queries and `<holodata>` tool calls to local Ollama (`qwen2.5-coder:7b`) with sub-second response times.
+* **L2 Compute Swarm (`vLLM` / `Ollama 14B`)**: Transparently escalates heavy, multi-paragraph prompts to local network compute nodes with automatic fallback hedging.
+* **OpenRouter 3-Specialist Dynamic Cascade (Zero-GPU Mode)**: When `LLM_PROVIDER="openrouter"` (or hybrid escalation is enabled), [`selectOpenRouterSpecialistModel()`](src/router/cascade-client.js) inspects each turn and dynamically selects the optimal Zero-Data-Retention (`data_collection: "deny"`) specialist model:
+
+| Specialist Role | Selected OpenRouter Model | Live ZDR Benchmark Latency (2-Tool / 3-Tool Chain) | `<holodata>` Accuracy |
+| :--- | :--- | :---: | :---: |
+| **🛠️ Tool Calling, `<holodata>` Proxy & JSON Triage** | `qwen/qwen-2.5-coder-32b-instruct` | **`444ms` / `403ms`** | **100%** |
+| **💬 Daily Companion, Coaching & Morning Briefings** *(Default)* | `qwen/qwen-2.5-72b-instruct` | **`544ms` / `1135ms`** | **100%** |
+| **🧠 Deep Multi-Step Reasoning & Architecture Analysis** | `deepseek/deepseek-chat-v3-0324` | **`1788ms` / `1314ms`** | **100%** |
 
 ### 2. KruschContext Working Memory & Temporal Superseding
 Unlike naive vector memory that hoards contradictory entries:
@@ -226,8 +257,9 @@ Unlike naive vector memory that hoards contradictory entries:
 ### 3. Knowledge Boundary Gating
 Injecting long-term personal context into mathematically or syntactically self-contained tasks (e.g. arithmetic, simple timers) can introduce cognitive interference (*"Memory Is Not Always Needed"*, arXiv: 2608.23982). Companion gates memory retrieval, suppressing irrelevant backstory when executing closed-world tasks.
 
-### 4. Enterprise Hardening & Zero-Lock Backups
+### 4. Enterprise Hardening, SSRF Shield & Zero-Lock Backups
 * **AST Recursive-Descent Evaluator**: Replaces dangerous `eval` and `Function` calls with a pure AST arithmetic tokenizer supporting powers, decimals, and parentheses while safely rejecting code injection and division-by-zero.
+* **SSRF Network Guard (`isSafeExternalUrl`)**: Blocks loopback (`127.0.0.1`, `localhost`), RFC1918 private LAN ranges, and cloud metadata IPs (`169.254.169.254`) on external URL digest requests.
 * **Prompt Injection Shield**: Integrated `sanitizeAgentMessage` from `@krusch/toolkit/trajectory-guard` filters ChatML breakouts, Llama tags, and prompt injection patterns (*arXiv: 2608.10218*).
 * **Sovereign Backup API**: Creates zero-lock SQLite snapshots in milliseconds using `VACUUM INTO` (`POST /api/backup`).
 
@@ -235,15 +267,16 @@ Injecting long-term personal context into mathematically or syntactically self-c
 
 ## ⚖️ Why This Exists: The Big Tech Tradeoff
 
-| Dimension | Meta Muse / xAI Grok / OpenAI Dot | **Krusch Companion** |
+| Dimension | OpenClaw / Grokbot / Meta Muse / OpenAI Dot | **Krusch Companion** |
 |:---|:---|:---|
-| **Data Ownership** | Centralized cloud data centers | **100% Local SQLite WAL on your hardware** |
-| **Privacy Policy** | Chats mined for training & profiling | **Zero telemetry; zero cloud exfiltration by default** |
-| **Inference Cost** | $20+/month subscription or ad-tracking | **$0.00 / Zero-token cost** once local models are running |
+| **Data Ownership** | Centralized cloud data centers | **100% Local SQLite WAL & `data/notes/` on your hardware** |
+| **Privacy Policy** | Chats mined for training & profiling | **Zero telemetry; enforced `data_collection: "deny"` in cloud mode** |
+| **Inference Cost** | $20+/month subscription or ad-tracking | **$0.00 / Zero-token cost** on local Ollama (or pennies/mo via OpenRouter) |
 | **Offline Operation** | ❌ Fails without active internet connection | ✅ **Fully operational offline on local network** |
-| **Task Routing** | Monolithic cloud roundtrips for all queries | **Cascade Router**: L0 Heuristic (<15µs) + L1 7B Edge + L2 14B Swarm |
+| **Live Action & Tool Execution** | Cloud-locked proprietary plugins | **12-Tool `<holodata>` Agentic Proxy** (Weather, Web, Notes, Alerts, Telemetry, Legal/Biz RAG) |
+| **Google Workspace Integration** | Full cloud read access to your account | **Sovereign `G-Krusch` Bridge** (Drive Hybrid RAG, Docs, Calendar, Gmail + local offline fallbacks) |
+| **Task Routing** | Monolithic cloud roundtrips for all queries | **Cascade Router**: L0 Heuristic (<15µs) + L1 Edge + L2/Specialist Cascade |
 | **Context Hygiene** | Unbounded vector RAG (prone to hallucinations) | **KruschContext**: 5 closed taxonomies + temporal superseding |
-| **Reasoning Depth** | Frontier models (70B–400B cloud parameters) | **Local 7B/14B models** (optimized for triage, not frontier research) |
 | **Actionable Priority Triage**| Conversational chitchat and journaling | **Thought Stream Engine**: Rambling speech triaged into 5-tier board |
 
 ---
@@ -260,7 +293,7 @@ For most developers and privacy-conscious users, **OpenRouter is the most practi
 | **Physical Perimeter**| 100% on `localhost` (`127.0.0.1`) or LAN | Ephemeral prompt text travels over TLS to OpenRouter |
 | **Database & History**| **100% Local SQLite WAL** (`data/companion.db`) | **100% Local SQLite WAL** (database is never uploaded) |
 | **Long-term Memory** | Stays on local disk | Stays on local disk |
-| **L0 Heuristics (Math)**| Evaluated on local CPU in <15µs | Evaluated on local CPU in <15µs (never hits the network) |
+| **L0 Heuristics (Math/Tasks)**| Evaluated on local CPU in <15µs | Evaluated on local CPU in <15µs (never hits the network) |
 | **Intermediary Trust** | None (self-hosted bare metal) | OpenRouter proxy + Upstream Model Provider |
 | **Model Training Risk**| Physically impossible (weights run read-only) | Prevented via enforced `provider: { data_collection: "deny" }` |
 | **Logging / Retention**| Zero external logs | Ephemeral transit; upstream hosts may retain 30-day abuse logs |
@@ -268,7 +301,7 @@ For most developers and privacy-conscious users, **OpenRouter is the most practi
 ### The 5 Key Privacy Considerations
 
 1. **Transit vs. Storage**:
-   * **What never leaves your machine**: Your task lists, 5-tier priority board, completed task timestamps, streak counts, and KruschContext memory store stay **strictly on your local drive**.
+   * **What never leaves your machine**: Your task lists, 5-tier priority board, completed task timestamps, streak counts, local Markdown vault (`data/notes/`), and KruschContext memory store stay **strictly on your local drive**.
    * **What travels in transit**: During an active turn, only the prompt text and immediate session context travel over TLS to OpenRouter for inference.
 2. **The Intimate Nature of Personal Journaling & Daily Thoughts**:
    * A personal AI companion is uniquely intimate. Stream-of-consciousness Thought Streams often mention medical prescriptions (*"refill medication"*), therapy appointments, relationship friction, or sensitive financial notes.
@@ -279,7 +312,7 @@ For most developers and privacy-conscious users, **OpenRouter is the most practi
 4. **Enforced Zero Data Retention (`data_collection: "deny"`)**:
    * Krusch Companion automatically injects `provider: { data_collection: "deny" }` on every OpenRouter request. This parameter instructs OpenRouter to **strictly reject upstream providers that log prompts for model training**.
 5. **Paid Endpoints vs. Free Endpoints**:
-   * **Paid models** (such as `qwen/qwen-2.5-7b-instruct` at pennies per month) operate under commercial API privacy protections.
+   * **Paid models** (such as `qwen/qwen-2.5-72b-instruct`, `qwen/qwen-2.5-coder-32b-instruct`, and `deepseek/deepseek-chat-v3-0324` at pennies per month) operate under commercial API privacy protections and support strict Zero Data Retention (`data_collection: "deny"`).
    * **Free models** (endpoints with the `:free` suffix) often explicitly trade free compute in exchange for allowing upstream providers to log prompts for safety tuning.
    * **Recommendation**: If using OpenRouter, stick to paid models and keep `OPENROUTER_ZDR=true`. For sensitive journaling, use **Hybrid Mode** or switch to local Ollama.
 
@@ -303,6 +336,7 @@ The server configuration is located in `config.json` at the project root (and ov
 | `cascade.swarmModel` | `"qwen2.5-coder:14b"`| `SWARM_MODEL` | Name of compute server model for deep reasoning. |
 | `cascade.ollamaUrl` | `"http://127.0.0.1:11434"` | `OLLAMA_HOST` | URL of local Ollama instance. |
 | `cascade.swarmUrl` | `"http://127.0.0.1:8000/v1"` | `SWARM_VLLM_URL` | URL of local network compute node or secondary vLLM server. |
+| — | `"http://127.0.0.1:5446"` | `G_KRUSCH_URL` | URL of local G-Krusch Google Workspace Extension server (Drive RAG, Calendar, Gmail). |
 | `db.path` | `"./data/companion.db"` | `DB_PATH` | Path to SQLite WAL database file. |
 | `context.decayDays` | `30` | `CONTEXT_DECAY_DAYS` | Age threshold in days before memories are flagged for decay review. |
 
@@ -329,9 +363,9 @@ The server configuration is located in `config.json` at the project root (and ov
 | `GET` | `/api/streak` | Retrieves continuous task completion streak data. |
 | `GET` | `/api/gamify/today` | Retrieves today's gamification points and opt-in status. |
 | `POST` | `/api/gamify/opt-in` | Updates gamification opt-in status (`{ optedIn: boolean }`). |
-| `POST` | `/api/companion/chat` | Main conversational & Agentic Proxy endpoint routed via Cascade Router (`{ prompt, history, sessionId }`). |
-| `GET` | `/api/companion/tools` | Lists all registered Agentic Proxy (`<holodata>` Dual-Engine) tools and parameter schemas. |
-| `POST` | `/api/companion/action` | Directly executes a sandboxed Agentic Proxy tool (`{ tool, arguments }`). |
+| `POST` | `/api/companion/chat` | Main conversational & `<holodata>` Agentic Proxy endpoint routed via Cascade Router (`{ prompt, history, sessionId }`). |
+| `GET` | `/api/companion/tools` | Lists all 12 registered Agentic Proxy (`<holodata>` Dual-Engine) tools and parameter schemas (aliases `/api/agent/tools`). |
+| `POST` | `/api/companion/action` | Directly executes a sandboxed Agentic Proxy tool (`{ tool, arguments }`, aliases `/api/agent/execute`). |
 | `POST` | `/api/companion/stream` | Ingests unformatted Thought Stream text and triages into 5-tier tasks and memories (aliases `/api/companion/dump`). |
 | `POST` | `/api/companion/voice` | Accepts multipart `audio` (WebM/WAV) -> Whisper STT -> Thought Stream pipeline. |
 | `GET` | `/api/coach/focus` | Retrieves today's active morning focus briefing. |
@@ -368,8 +402,9 @@ docker compose ps
 
 | Symptom | Probable Cause | Resolution |
 |:---|:---|:---|
-| `fetch failed: ECONNREFUSED 127.0.0.1:11434` | Ollama is not running. | Run `ollama serve` or ensure the Ollama system service is active. |
+| `fetch failed: ECONNREFUSED 127.0.0.1:11434` | Ollama is not running. | Run `ollama serve`, or switch to OpenRouter mode (`LLM_PROVIDER="openrouter"`). |
 | `Ollama error: model 'qwen2.5-coder:7b' not found` | Recommended model has not been pulled. | Execute `ollama pull qwen2.5-coder:7b`. |
+| `G-Krusch Google Drive/Calendar/Gmail returned: Not authenticated` | Google OAuth not connected on `g-krusch` (`:5446`). | Connect Google OAuth at `http://localhost:5446/auth/google` (while disconnected, Companion automatically falls back to saving notes/drafts in `data/notes/` and tasks on Today's Board). |
 | `Cannot find module '@krusch/toolkit'` | Monorepo layout path mismatch. | Ensure sibling directories exist (`../../lib` and `../krusch-cascade-router`). |
 | `No audible speech detected` on voice upload | Microphone muted or Whisper server down. | Verify microphone permissions in browser or check Whisper service on port 9000. |
 | Tasks not persisting across container restarts | Docker volume not mounted. | Ensure `./data` is mounted to `/app/data` in `docker-compose.yml`. |
@@ -378,9 +413,9 @@ docker compose ps
 
 ## 📌 Project Status & Known Limitations
 
-* **Current Stage**: Active daily driver in the Krusch homelab fleet. Single-user architecture; code is tightly coupled to the `@krusch/toolkit` and `krusch-cascade-router` monorepo layout.
+* **Current Stage**: Active daily driver in the Krusch homelab fleet (`34/34` unit & integration tests passing). Single-user architecture; code integrates with the `@krusch/toolkit`, `krusch-cascade-router`, and `g-krusch` monorepo ecosystem.
 * **Single User**: No authentication or multi-tenant user segregation out of the box (intended for private home networks or Tailscale mesh).
-* **Hardware Sensitivity**: Speech-to-text and LLM inference response times depend directly on host GPU/CPU capabilities.
+* **Hardware Sensitivity**: Local speech-to-text and Ollama LLM inference response times depend directly on host GPU/CPU capabilities (or use OpenRouter Zero-GPU mode for `<500ms` cloud specialist execution).
 
 ---
 
@@ -388,6 +423,8 @@ docker compose ps
 
 * [`krusch-cascade-router`](https://github.com/kruschdev/krusch-cascade-router): Sub-15µs CPU routing substrate with AST arithmetic evaluation and fallback hedging.
 * [`krusch-context-mcp`](https://github.com/kruschdev/krusch-context-mcp): Model Context Protocol server providing working memory, invariant steering, and fact superseding.
+* [`krusch-agentic-mcp`](https://github.com/kruschdev/krusch-agentic-mcp): Dual-Engine `<holodata>` cognitive blueprint & tool execution proxy for 7B/14B models.
+* [`G-krusch`](https://github.com/kruschdev/G-krusch): Sovereign Google Workspace Extension bridge (Google Drive Hybrid RAG, Google Docs, Google Calendar, and Gmail).
 
 ---
 
