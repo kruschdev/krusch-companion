@@ -230,6 +230,43 @@ Injecting long-term personal context into mathematically or syntactically self-c
 
 ---
 
+## 🛡️ Privacy Deep-Dive: Local Ollama vs. OpenRouter
+
+For most developers and privacy-conscious users, **OpenRouter is the most practical entry point** because running local 24/7 GPU hardware involves real operational overhead. However, switching from local inference to an API proxy introduces architectural differences that every privacy-minded user should understand.
+
+### Comparative Threat Model
+
+| Dimension | Option A: Local Ollama (Sovereign Default) | Option B: OpenRouter Cloud Connector |
+|:---|:---|:---|
+| **Hardware Barrier** | Requires 6–8 GB VRAM or 16 GB system RAM | **Zero GPU required** (MacBook Air, Raspberry Pi, VPS) |
+| **Physical Perimeter**| 100% on `localhost` (`127.0.0.1`) or LAN | Ephemeral prompt text travels over TLS to OpenRouter |
+| **Database & History**| **100% Local SQLite WAL** (`data/companion.db`) | **100% Local SQLite WAL** (database is never uploaded) |
+| **Long-term Memory** | Stays on local disk | Stays on local disk |
+| **L0 Heuristics (Math)**| Evaluated on local CPU in <15µs | Evaluated on local CPU in <15µs (never hits the network) |
+| **Intermediary Trust** | None (self-hosted bare metal) | OpenRouter proxy + Upstream Model Provider |
+| **Model Training Risk**| Physically impossible (weights run read-only) | Prevented via enforced `provider: { data_collection: "deny" }` |
+| **Logging / Retention**| Zero external logs | Ephemeral transit; upstream hosts may retain 30-day abuse logs |
+
+### The 5 Key Privacy Considerations
+
+1. **Transit vs. Storage**:
+   * **What never leaves your machine**: Your task lists, 5-tier priority board, completed task timestamps, streak counts, and KruschContext memory store stay **strictly on your local drive**.
+   * **What travels in transit**: During an active turn, only the prompt text and immediate session context travel over TLS to OpenRouter for inference.
+2. **The Intimate Nature of Executive / ADHD Data**:
+   * An executive co-pilot is uniquely personal. Stream-of-consciousness Chaos Dumps often mention medical prescriptions (*"refill Adderall"*), therapy sessions, relationship friction, or sensitive financial notes.
+   * If you are dumping highly confidential personal or medical data, **Option A (Local Ollama)** guarantees that not a single byte leaves your physical machine.
+3. **The Two-Hop Trust Chain**:
+   * Calling OpenRouter involves two hops: `[Your Companion] ──► [OpenRouter Proxy] ──► [Upstream Host (e.g. Together, DeepInfra, Fireworks, Azure)]`.
+   * OpenRouter sees the plaintext request to count billing tokens, and forwards it to the model host.
+4. **Enforced Zero Data Retention (`data_collection: "deny"`)**:
+   * Krusch Companion automatically injects `provider: { data_collection: "deny" }` on every OpenRouter request. This parameter instructs OpenRouter to **strictly reject upstream providers that log prompts for model training**.
+5. **Paid Endpoints vs. Free Endpoints**:
+   * **Paid models** (such as `qwen/qwen-2.5-7b-instruct` at pennies per month) operate under commercial API privacy protections.
+   * **Free models** (endpoints with the `:free` suffix) often explicitly trade free compute in exchange for allowing upstream providers to log prompts for safety tuning.
+   * **Recommendation**: If using OpenRouter, stick to paid models and keep `OPENROUTER_ZDR=true`. For sensitive journaling, use **Hybrid Mode** or switch to local Ollama.
+
+---
+
 ## ⚙️ Configuration (`config.json`)
 
 The server configuration is located in `config.json` at the project root (and overridable via environment variables):
