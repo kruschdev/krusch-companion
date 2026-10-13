@@ -219,7 +219,7 @@ export function classifyCompanionPrompt(prompt) {
 /**
  * Call local Ollama chat endpoint with hardened timeout and circuit breaking.
  */
-async function callOllama({ prompt, history = [], systemPrompt = '', model = null, timeoutMs = 12000 }) {
+async function callOllama({ prompt, history = [], systemPrompt = '', model = null, timeoutMs = 25000 }) {
   const ollamaUrl = config.cascade.ollamaUrl;
   const targetModel = model || config.cascade.edgeModel;
 
@@ -435,7 +435,7 @@ All personal data is private and sovereign. When referencing personal context, b
       history,
       systemPrompt: fullSystemPrompt,
       model: config.cascade.edgeModel,
-      timeoutMs: 12000
+      timeoutMs: 25000
     });
 
     return {
@@ -453,7 +453,7 @@ All personal data is private and sovereign. When referencing personal context, b
           history,
           systemPrompt: fullSystemPrompt,
           model: 'hermes3:latest',
-          timeoutMs: 12000
+          timeoutMs: 25000
         });
         return {
           content: fallbackContent,

@@ -118,7 +118,7 @@ export function AudioRecorder({ onAudioReady, isProcessing }) {
         className={`btn-mic ${isRecording ? 'recording' : ''}`}
         onClick={isRecording ? stopRecording : startRecording}
         disabled={isProcessing}
-        title={isRecording ? 'Click to stop & analyze' : 'Click to start voice dump'}
+        title={isRecording ? 'Click to stop & analyze' : 'Click to speak your thoughts'}
       >
         {isRecording ? '⏹️' : '🎙️'}
       </button>
@@ -143,10 +143,10 @@ export function AudioRecorder({ onAudioReady, isProcessing }) {
 
       <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>
         {isRecording
-          ? 'Listening... Talk freely. Unload everything on your mind.'
+          ? 'Listening... Talk freely. Speak whatever is on your mind.'
           : isProcessing
-          ? 'Processing with local Cascade Router...'
-          : 'Tap the mic to start an ADHD Chaos Dump'}
+          ? 'Processing with Cascade Router...'
+          : 'Tap the mic to speak your Thought Stream'}
       </p>
     </div>
   );

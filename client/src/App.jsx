@@ -18,7 +18,11 @@ export function App() {
     return 'companion';
   });
   const [streak, setStreak] = useState(0);
-  const [focusTask, setFocusTask] = useState(null);
+  const [focusTask, setFocusTask] = useState({
+    id: 4,
+    title: 'Review top priority for today',
+    notes: 'Priority Tier 5: Work & Mastery'
+  });
   const [backendHealth, setBackendHealth] = useState(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 

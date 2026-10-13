@@ -2,6 +2,7 @@ import { spawn } from 'child_process';
 import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import path from 'path';
+import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -28,10 +29,12 @@ try {
   for (const v of views) {
     const outPath = path.join(projectRoot, v.file);
     const url = `http://localhost:3004/?tab=${v.tab}`;
+    const tmpProfile = path.join('/tmp', `chrome-profile-${Date.now()}`);
     console.log(`Capturing ${v.tab} -> ${v.file}...`);
-    execSync(`google-chrome --headless --disable-gpu --no-sandbox --hide-scrollbars --window-size=1200,800 --virtual-time-budget=2000 --screenshot="${outPath}" "${url}"`, {
+    execSync(`google-chrome --headless --disable-gpu --no-sandbox --hide-scrollbars --incognito --user-data-dir="${tmpProfile}" --window-size=1200,800 --virtual-time-budget=3000 --screenshot="${outPath}" "${url}"`, {
       stdio: 'inherit'
     });
+    try { fs.rmSync(tmpProfile, { recursive: true, force: true }); } catch {}
   }
   console.log('✅ All screenshots captured successfully.');
 } catch (err) {
