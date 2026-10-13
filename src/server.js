@@ -10,6 +10,7 @@ import * as db from './db/index.js';
 import { rememberMemory, getActiveMemories, supersedeMemory, compileStateBriefing, createDatabaseBackup, getDecayCandidates } from './context/memory-store.js';
 import { evaluateCompanionContext } from './context/boundary-gate.js';
 import { dispatchCompanionChat, classifyCompanionPrompt, breakdownTaskIntoSubtasks } from './router/cascade-client.js';
+import { COMPANION_TOOLS, executeCompanionTool } from './agent/tools.js';
 import { processThoughtStream, processChaosDump } from './services/chaos-dump.js';
 import { generateDailyFocus, generateDailyReflection, generateNudge } from './services/coach.js';
 import { transcribeAudio } from './services/stt.js';
@@ -201,8 +202,37 @@ app.post('/api/companion/chat', async (req, res) => {
       latencyMs: result.latencyMs,
       reason: result.reason,
       contextActivated: contextEval.shouldInjectContext,
-      actionExecuted: result.actionExecuted || null
+      actionExecuted: result.actionExecuted || null,
+      agenticTrace: result.agenticTrace || null
     });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Agentic Proxy Tools & Direct Action Execution ───────────────────────────
+app.get('/api/companion/tools', (_req, res) => {
+  res.json({
+    engine: 'krusch-agentic-proxy-dual-engine',
+    protocol: '<holodata> Cognitive Blueprint + Flat Tool Array',
+    tools: COMPANION_TOOLS.map(t => ({
+      name: t.name,
+      category: t.category,
+      description: t.description,
+      parameters: t.parameters,
+      required: t.required
+    }))
+  });
+});
+
+app.post('/api/companion/action', async (req, res) => {
+  try {
+    const { tool, arguments: toolArgs = {} } = req.body || {};
+    if (!tool || typeof tool !== 'string') {
+      return res.status(400).json({ error: 'Tool name is required' });
+    }
+    const result = await executeCompanionTool(tool, toolArgs);
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

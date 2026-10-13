@@ -3,6 +3,7 @@ import { sanitizeAgentMessage } from '../toolkit/trajectory-guard.js';
 import { parseAIJson } from '../toolkit/json-parse.js';
 import config from '../config.js';
 import { rememberMemory, supersedeMemory, searchMemories } from '../context/memory-store.js';
+import { executeAgenticProxyTurn, detectAgenticIntent } from '../agent/agentic-proxy.js';
 import {
   getPriorities,
   getTasksForDate,
@@ -713,6 +714,25 @@ export async function dispatchCompanionChat({ prompt, history = [], contextBrief
       return await breakdownTaskIntoSubtasks({
         taskQuery: isTopTask ? '' : targetQuery
       });
+    }
+
+    // 2c. Agentic Proxy (<holodata> Dual-Engine Tool & API Executor for 7B/14B models)
+    if (detectAgenticIntent(cleanPrompt).shouldUseAgenticProxy) {
+      const agenticRes = await executeAgenticProxyTurn({
+        prompt: cleanPrompt,
+        history,
+        contextBriefing,
+        callLlm: async ({ prompt: subPrompt, systemPrompt: subSystem, history: subHistory }) => {
+          return await dispatchCompanionChat({
+            prompt: subPrompt,
+            history: subHistory,
+            systemPrompt: subSystem
+          });
+        }
+      });
+      if (agenticRes) {
+        return agenticRes;
+      }
     }
   }
 

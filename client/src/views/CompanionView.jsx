@@ -9,7 +9,16 @@ const ACTION_LABELS = {
   tasks_listed: { icon: '📋', label: 'Live SQLite Board Snapshot', color: '#00f0ff' },
   task_breakdown: { icon: '🧩', label: 'Task Decomposed into Subtasks', color: '#a78bfa' },
   memory_saved: { icon: '🧠', label: 'Committed to Working Memory', color: '#a78bfa' },
-  memory_superseded: { icon: '🔄', label: 'Working Memory Superseded', color: '#f0c040' }
+  memory_superseded: { icon: '🔄', label: 'Working Memory Superseded', color: '#f0c040' },
+  api_weather: { icon: '🌤️', label: 'Agentic Proxy: Live Weather API', color: '#38bdf8' },
+  api_web_research: { icon: '🔎', label: 'Agentic Proxy: Web Research API', color: '#a78bfa' },
+  api_url_digest: { icon: '📄', label: 'Agentic Proxy: URL Digest', color: '#60a5fa' },
+  note_saved: { icon: '📝', label: 'Agentic Proxy: Note Saved to Vault', color: '#2dd4bf' },
+  note_read: { icon: '📂', label: 'Agentic Proxy: Sovereign Notes Vault', color: '#00f0ff' },
+  notification_sent: { icon: '🔔', label: 'Agentic Proxy: Push Notification Sent', color: '#f0c040' },
+  system_telemetry: { icon: '🖥️', label: 'Agentic Proxy: System Telemetry', color: '#2dd4bf' },
+  sovereign_gateway: { icon: '⚖️', label: 'Agentic Proxy: Sovereign Gateway', color: '#f0c040' },
+  agentic_tool: { icon: '⚡', label: 'Agentic Proxy: Tool Executed', color: '#00f0ff' }
 };
 
 export function CompanionView({ streak, onActionExecuted }) {
@@ -17,7 +26,7 @@ export function CompanionView({ streak, onActionExecuted }) {
     {
       id: 'welcome',
       role: 'assistant',
-      content: "Hello! I'm your sovereign companion. You can chat with me, ask what's on your board, or tell me directly to add, complete, roll over, or break down tasks. How are you feeling today?",
+      content: "Hello! I'm your sovereign personal assistant. Through the Krusch Agentic Proxy (<holodata> Dual-Engine), I can execute live actions for you—check the weather, research topics on the web, save Markdown notes, send push notifications, inspect system telemetry, or manage Today's Priority Board. What can I get done for you?",
       tierUsed: 'L1_edge',
       latencyMs: 12
     }
@@ -26,6 +35,7 @@ export function CompanionView({ streak, onActionExecuted }) {
   const [isLoading, setIsLoading] = useState(false);
   const [dailyFocus, setDailyFocus] = useState(null);
   const [isFocusLoading, setIsFocusLoading] = useState(false);
+  const [expandedTraceIds, setExpandedTraceIds] = useState({});
   const chatEndRef = useRef(null);
 
   useEffect(() => {
@@ -35,6 +45,10 @@ export function CompanionView({ streak, onActionExecuted }) {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
+
+  const toggleTrace = (id) => {
+    setExpandedTraceIds(prev => ({ ...prev, [id]: !prev[id] }));
+  };
 
   const fetchFocus = async () => {
     try {
@@ -105,7 +119,8 @@ export function CompanionView({ streak, onActionExecuted }) {
           tierUsed: data.tierUsed,
           latencyMs: data.latencyMs,
           reason: data.reason,
-          actionExecuted: data.actionExecuted || null
+          actionExecuted: data.actionExecuted || null,
+          agenticTrace: data.agenticTrace || null
         }
       ]);
     } catch (err) {
@@ -151,6 +166,8 @@ export function CompanionView({ streak, onActionExecuted }) {
       <div className="glass-panel" style={{ flex: 1, padding: 20, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
         {messages.map(m => {
           const actionMeta = m.actionExecuted?.type ? ACTION_LABELS[m.actionExecuted.type] : null;
+          const hasTrace = Boolean(m.agenticTrace && m.agenticTrace.toolCalls?.length > 0);
+          const isTraceOpen = Boolean(expandedTraceIds[m.id]);
           return (
             <div
               key={m.id}
@@ -176,7 +193,7 @@ export function CompanionView({ streak, onActionExecuted }) {
               >
                 {m.content}
               </div>
-              {m.role === 'assistant' && (m.tierUsed || actionMeta) && (
+              {m.role === 'assistant' && (m.tierUsed || actionMeta || hasTrace) && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   {m.tierUsed && <TierBadge tier={m.tierUsed} latencyMs={m.latencyMs} />}
                   {actionMeta && (
@@ -199,6 +216,56 @@ export function CompanionView({ streak, onActionExecuted }) {
                       <span>{actionMeta.label}</span>
                     </span>
                   )}
+                  {hasTrace && (
+                    <button
+                      type="button"
+                      onClick={() => toggleTrace(m.id)}
+                      style={{
+                        fontSize: '0.7rem',
+                        fontFamily: 'var(--font-mono)',
+                        padding: '2px 8px',
+                        borderRadius: 'var(--radius-full)',
+                        background: 'rgba(167, 139, 250, 0.12)',
+                        border: '1px solid rgba(167, 139, 250, 0.45)',
+                        color: '#a78bfa',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {isTraceOpen ? '▾ Hide <holodata> Trace' : `▸ <holodata> Proxy (${m.agenticTrace.toolCalls.length} tool${m.agenticTrace.toolCalls.length > 1 ? 's' : ''})`}
+                    </button>
+                  )}
+                </div>
+              )}
+              {hasTrace && isTraceOpen && (
+                <div
+                  style={{
+                    maxWidth: '85%',
+                    padding: '10px 14px',
+                    borderRadius: 10,
+                    background: 'rgba(10, 14, 24, 0.85)',
+                    border: '1px solid rgba(167, 139, 250, 0.35)',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: '0.75rem',
+                    color: 'var(--text-dim)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 6
+                  }}
+                >
+                  {m.agenticTrace.blueprint && (
+                    <div>
+                      <strong style={{ color: '#a78bfa' }}>&lt;holodata&gt; Blueprint:</strong>{' '}
+                      {m.agenticTrace.blueprint.cognitive_scratchpad || m.agenticTrace.blueprint.tool_plan || JSON.stringify(m.agenticTrace.blueprint)}
+                    </div>
+                  )}
+                  <div>
+                    <strong style={{ color: '#2dd4bf' }}>Executed Tool Calls:</strong>
+                    {m.agenticTrace.toolCalls.map((tc, i) => (
+                      <div key={i} style={{ marginTop: 3 }}>
+                        • <code>{tc.name}({JSON.stringify(tc.arguments)})</code> → {tc.ok ? '✅ OK' : '⚠️ Error'} ({tc.latencyMs}ms)
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -207,7 +274,7 @@ export function CompanionView({ streak, onActionExecuted }) {
         {isLoading && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-dim)', fontSize: '0.88rem' }}>
             <span style={{ animation: 'spin 1s infinite linear' }}>⚡</span>
-            <span>Cascade Router evaluating &amp; generating response...</span>
+            <span>Cascade Router &amp; Agentic Proxy evaluating...</span>
           </div>
         )}
         <div ref={chatEndRef} />
@@ -216,11 +283,11 @@ export function CompanionView({ streak, onActionExecuted }) {
       {/* Quick Starters */}
       <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
         {[
+          "What's the weather in Seattle?",
+          'Check system status',
+          'Save a note titled Weekly Goals: Ship v2.0 & review priorities',
           'Show my tasks for today',
-          'Add task: Drink 500ml water',
-          'Break down my top task into steps',
-          'What should I tackle next?',
-          'Remember that I take vitamins with lunch'
+          'Break down my top task into steps'
         ].map((quick, idx) => (
           <button
             key={idx}
@@ -240,7 +307,7 @@ export function CompanionView({ streak, onActionExecuted }) {
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Add/complete a task, break down a goal, or ask what's next..."
+          placeholder="Ask for weather, web research, notes, notifications, or task actions..."
           disabled={isLoading}
         />
         <button id="btn-companion-send" type="submit" className="btn-primary" disabled={isLoading || !input.trim()}>
