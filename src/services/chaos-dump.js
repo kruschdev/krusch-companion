@@ -25,11 +25,18 @@ export async function processThoughtStream({
     .join('\n');
 
   const systemPrompt = `You are Krusch Companion's Executive Triage Engine.
-Your task is to analyze an unformatted, rambling stream-of-consciousness thought stream from the user (who may feel overwhelmed or have high cognitive load).
-Extract actionable tasks, categorize each task into the user's 5-Tier Priority Framework, and extract any lasting life facts, habits, or commitments into working memories.
+Your task is to analyze an unformatted, rambling stream-of-consciousness thought stream from the user.
+Extract actionable tasks using the Dual-Axis Priority Framework (Execution Priority + Life Pillar Tag), and extract any lasting life facts, habits, or commitments into working memories.
 
-User's 5-Tier Priority Framework:
+Axis 1 — Execution Priority (1 to 4, controls Today's Board order):
+- 1: Must Happen Today — Deadlines & Provision (urgent bills, invoices, family provision, hard deadlines, medical/time-locked appointments)
+- 2: High-Impact Focus — Move the Needle (important non-recurring projects, family commitments, or health goals)
+- 3: Daily Habits & Care (recurring routines and daily habits)
+- 4: Backlog — When Time Permits (low-urgency ideas or errands)
+
+Axis 2 — Life Pillar & Tier (1 to 5, shows WHO/WHAT domain the task serves):
 ${priorityGuide}
+(Or use pillar: "Provision & Finance" for bills, taxes, invoices, mortgage/rent, and household provision.)
 
 Category Taxonomy for Memories:
 - 'decision': Established choices or firm commitments.
@@ -44,7 +51,9 @@ You MUST respond with valid JSON ONLY in the following format:
   "tasks": [
     {
       "title": "Clean, imperative task title",
+      "execution_priority": 1 to 4,
       "tier": 1 to 5,
+      "pillar": "Provision & Finance" | "Work & Mastery" | "Family & Partner" | "Children & Loved Ones" | "Health & Self" | "Core Values & Faith",
       "notes": "Optional deadline, sub-detail, or null",
       "energy_level": "low" | "medium" | "high"
     }
@@ -56,7 +65,7 @@ You MUST respond with valid JSON ONLY in the following format:
       "key": "optional_slug_key_or_null"
     }
   ],
-  "companionNotes": "A warm, grounding 2-sentence empathetic note acknowledging their current state, reducing anxiety, and highlighting the #1 top-priority thing to do first."
+  "companionNotes": "A warm, grounding 2-sentence empathetic note acknowledging their current state, reducing anxiety, and highlighting the #1 Must-Happen-Today item to tackle first."
 }`;
 
   const userPrompt = `Here is my thought dump:\n"""\n${text.trim()}\n"""\nExtract tasks and memories in JSON now.`;
@@ -98,6 +107,8 @@ You MUST respond with valid JSON ONLY in the following format:
       const created = createTask({
         title: t.title,
         priority_id: priorityId,
+        execution_priority: t.execution_priority || null,
+        pillar: t.pillar || null,
         notes: t.notes || null,
         energy_level: t.energy_level || 'medium',
         date: targetDate

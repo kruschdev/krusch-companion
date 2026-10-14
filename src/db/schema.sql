@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS priorities (
 CREATE TABLE IF NOT EXISTS tasks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   priority_id INTEGER NOT NULL REFERENCES priorities(id),
+  execution_priority INTEGER NOT NULL DEFAULT 2,
+  pillar TEXT,
   title TEXT NOT NULL,
   notes TEXT,
   completed INTEGER DEFAULT 0,

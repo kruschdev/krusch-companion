@@ -8,6 +8,8 @@ import {
   getPriorities,
   getTasksForDate,
   createTask,
+  updateTaskPriority,
+  inferExecutionPriorityAndPillar,
   toggleTask,
   deleteTask,
   findTaskByQuery,
@@ -16,6 +18,7 @@ import {
   addGamifyPoints,
   getStreak,
   TIER_POINTS,
+  EXECUTION_PRIORITY_POINTS,
   today
 } from '../db/index.js';
 
@@ -27,7 +30,7 @@ export const TIERS = {
 };
 
 /**
- * Infer priority tier (1-5) and clean title from natural language task text.
+ * Infer Life Pillar tier (1-5), Execution Priority (1-4), and clean title from natural language task text.
  */
 export function inferPriorityTierFromText(rawTitle) {
   let cleanTitle = String(rawTitle || '').trim();
@@ -63,13 +66,20 @@ export function inferPriorityTierFromText(rawTitle) {
 
   const priorities = getPriorities();
   const matchedPriority = priorities.find(p => p.tier === tier) || priorities[priorities.length - 1] || { id: tier, tier, name: 'Work & Mastery', emoji: '🔧' };
+  const cleaned = cleanTitle.replace(/^["']|["']$/g, '').trim();
+  const dualAxis = inferExecutionPriorityAndPillar({
+    title: cleaned,
+    priority_id: matchedPriority.id
+  });
 
   return {
-    cleanTitle: cleanTitle.replace(/^["']|["']$/g, '').trim(),
+    cleanTitle: cleaned,
     tier: matchedPriority.tier,
     priorityId: matchedPriority.id,
     priorityName: matchedPriority.name,
-    priorityEmoji: matchedPriority.emoji
+    priorityEmoji: matchedPriority.emoji,
+    executionPriority: dualAxis.execution_priority,
+    pillar: dualAxis.pillar
   };
 }
 
@@ -287,10 +297,11 @@ export function evaluateL0Heuristic(rawText) {
     }
   }
 
-  // 4. Add / Create Task on Today's Board
-  const addTierMatch = text.match(/^(?:add|create|schedule)\s+(?:task\s+)?(?:to|in|for)\s+tier\s*([1-5])\s*[:\-]?\s+(.+)$/i);
-  const addGeneralMatch = text.match(/^(?:add\s+task|create\s+task|new\s+task|todo|remind\s+me\s+to)\s*[:\-]?\s+(.+)$/i);
+  // 4. Add / Create Task on Today's Board (with Dual-Axis Execution Priority + Life Pillar)
+  const addTierMatch = text.match(/^(?:add|create|schedule)\s+(?:urgent\s+)?(?:task\s+)?(?:to|in|for)\s+tier\s*([1-5])\s*[:\-]?\s+(.+)$/i);
+  const addGeneralMatch = text.match(/^(?:add\s+(?:urgent\s+)?task|create\s+(?:urgent\s+)?task|new\s+task|urgent\s+task|must\s+do|todo|remind\s+me\s+to)\s*[:\-]?\s+(.+)$/i);
   if (addTierMatch || addGeneralMatch) {
+    const isExplicitUrgent = /\b(urgent|must\s+do)\b/i.test(text.split(':')[0] || '');
     const rawTitle = addTierMatch
       ? `[Tier ${addTierMatch[1]}] ${addTierMatch[2].trim()}`
       : addGeneralMatch[1].trim();
@@ -300,19 +311,44 @@ export function evaluateL0Heuristic(rawText) {
         const created = createTask({
           title: inferred.cleanTitle,
           priority_id: inferred.priorityId,
+          execution_priority: isExplicitUrgent ? 1 : inferred.executionPriority,
+          pillar: inferred.pillar,
           energy_level: 'medium',
           date: today()
         });
         return {
           handled: true,
           tier: TIERS.L0_HEURISTIC,
-          content: `✅ Added to **Today's Priority Board** under **Tier ${created.tier}: ${created.priority_name} ${created.priority_emoji}**:\n> **[#${created.id}]** ${created.title}`,
-          reason: 'L0 Heuristic: deterministic task creation',
+          content: `✅ Added to **${created.execution_lane_emoji} ${created.execution_lane_short}** *(Life Pillar: ${created.pillar_emoji} ${created.pillar})*:\n> **[#${created.id}]** ${created.title}`,
+          reason: 'L0 Heuristic: deterministic dual-axis task creation',
           actionExecuted: { type: 'task_created', task: created }
         };
       } catch {
         // Fall through
       }
+    }
+  }
+
+  // 4b. Promote / Prioritize an existing task to "Must Happen Today" (Execution Priority 1)
+  const promoteMatch =
+    text.match(/^(?:prioritize|escalate|pin)\s+(?:task\s+)?(.+)$/i) ||
+    text.match(/^make\s+(?:task\s+)?(.+?)\s+(?:urgent|must[\s\-]do|priority\s*1|top\s+priority)$/i);
+  if (promoteMatch) {
+    const query = promoteMatch[1].trim();
+    try {
+      const target = findTaskByQuery(query, today(), { onlyIncomplete: true }) || findTaskByQuery(query, today());
+      if (target) {
+        const updated = updateTaskPriority(target.id, { execution_priority: 1 });
+        return {
+          handled: true,
+          tier: TIERS.L0_HEURISTIC,
+          content: `🚨 Promoted **[#${updated.id}] ${updated.title}** to **Priority 1: Must Happen Today — Deadlines & Provision** *(Pillar: ${updated.pillar_emoji} ${updated.pillar})*!`,
+          reason: 'L0 Heuristic: task promoted to Must Happen Today',
+          actionExecuted: { type: 'task_prioritized', task: updated }
+        };
+      }
+    } catch {
+      // Fall through
     }
   }
 
@@ -329,14 +365,14 @@ export function evaluateL0Heuristic(rawText) {
         const dateStr = updated.date || today();
         const status = getGamifyStatus(dateStr);
         let gamify = null;
+        const pts = EXECUTION_PRIORITY_POINTS[updated.execution_priority] || TIER_POINTS[updated.tier] || 20;
         if (!target.completed && status.opted_in) {
-          const pts = TIER_POINTS[updated.tier] || 15;
           gamify = addGamifyPoints(dateStr, pts);
         }
         return {
           handled: true,
           tier: TIERS.L0_HEURISTIC,
-          content: `🎉 Marked **[#${updated.id}] ${updated.title}** (*Tier ${updated.tier}: ${updated.priority_name}*) as **COMPLETED**!${gamify ? ` (+${TIER_POINTS[updated.tier] || 15} pts → ${gamify.points} total)` : ''}`,
+          content: `🎉 Marked **[#${updated.id}] ${updated.title}** (*${updated.execution_lane_emoji} ${updated.execution_lane_short} • ${updated.pillar_emoji} ${updated.pillar}*) as **COMPLETED**!${gamify ? ` (+${pts} pts → ${gamify.points} total)` : ''}`,
           reason: 'L0 Heuristic: deterministic task completion',
           actionExecuted: { type: 'task_completed', task: updated, gamify }
         };
@@ -380,7 +416,7 @@ export function evaluateL0Heuristic(rawText) {
           actionExecuted: { type: 'tasks_rolled_over', rolledOverCount: 0, tasks: [] }
         };
       }
-      const list = res.tasks.map(t => `- **[#${t.id}] [Tier ${t.tier} ${t.priority_emoji}]** ${t.title}`).join('\n');
+      const list = res.tasks.map(t => `- **[#${t.id}] [${t.execution_lane_emoji} ${t.execution_lane_short} | ${t.pillar_emoji} ${t.pillar}]** ${t.title}`).join('\n');
       return {
         handled: true,
         tier: TIERS.L0_HEURISTIC,
@@ -406,9 +442,9 @@ export function evaluateL0Heuristic(rawText) {
         `📋 **Today's Priority Board (${today()})** — **${completed.length}/${tasks.length}** completed *(🔥 ${streak.streak} day streak)*`
       ];
       if (pending.length > 0) {
-        lines.push('\n**⏳ Pending:**');
+        lines.push('\n**⏳ Pending (Ordered by Execution Priority):**');
         for (const t of pending) {
-          lines.push(`- **[#${t.id}] [Tier ${t.tier} ${t.priority_emoji}]** ${t.title}`);
+          lines.push(`- **[#${t.id}] [${t.execution_lane_emoji} ${t.execution_lane_short} • ${t.pillar_emoji} ${t.pillar}]** ${t.title}`);
         }
       } else {
         lines.push('\n🎉 **All tasks completed for today!**');

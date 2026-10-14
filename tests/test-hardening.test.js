@@ -115,6 +115,30 @@ test('Hardening: Live Daily Task Board & Streak State injected into Companion Co
   assert.ok(evalRes.contextPrompt.includes('Prepare quarterly strategy memo'));
 });
 
+test('Hardening: Dual-Axis Priority Board ranks urgent life provision & deadlines above recurring habits while preserving Life Pillar tags', () => {
+  // 1. Add a recurring habit (Core Values & Faith) and an urgent life provision bill (Provision & Finance)
+  const billRes = evaluateL0Heuristic('Add task: Pay electric bill before 5pm');
+  assert.ok(billRes && billRes.handled);
+  const billTask = billRes.actionExecuted.task;
+  assert.strictEqual(billTask.execution_priority, 1, 'Urgent bill deadline should auto-rank as Execution Priority 1 (Must Happen Today)');
+  assert.strictEqual(billTask.pillar, 'Provision & Finance', 'Electric bill should carry the Provision & Finance Life Pillar tag');
+
+  // 2. Verify Today Board orders Execution Priority 1 (Must Happen Today) BEFORE Execution Priority 3 (Daily Habits)
+  const board = getTasksForDate(today());
+  const billIndex = board.findIndex(t => t.id === billTask.id);
+  const habitIndex = board.findIndex(t => t.recurring === 1 && !t.completed);
+  assert.ok(billIndex !== -1 && habitIndex !== -1);
+  assert.ok(billIndex < habitIndex, 'Must-Happen-Today provision task must appear above recurring daily habits on Today Board');
+
+  // 3. Verify L0 promotion of an existing focus task to Priority 1 (Must Happen Today)
+  const strategyTask = createTask({ title: 'Finalize client renewal proposal', priority_id: 5, date: today() });
+  assert.strictEqual(strategyTask.execution_priority, 2);
+  const promoteRes = evaluateL0Heuristic('Prioritize task: Finalize client renewal proposal');
+  assert.ok(promoteRes && promoteRes.handled);
+  assert.strictEqual(promoteRes.actionExecuted.type, 'task_prioritized');
+  assert.strictEqual(promoteRes.actionExecuted.task.execution_priority, 1);
+});
+
 test('Hardening: Daily Task Lifecycle — Recurring Auto-Seed & Unfinished Task Rollover', () => {
   // 1. Recurring tasks auto-seed onto a future date
   const futureDate = '2026-12-31';

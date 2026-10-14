@@ -10,7 +10,161 @@ const __dirname = path.dirname(__filename);
 let db = null;
 
 export const TIER_POINTS = { 1: 50, 2: 30, 3: 20, 4: 15, 5: 10 };
+export const EXECUTION_PRIORITY_POINTS = { 1: 50, 2: 35, 3: 25, 4: 15 };
 export const COMPLETION_BONUS = 50;
+
+/**
+ * Axis 1: Execution Priority Lanes (Controls Today's Board Order — What Must Happen First Today)
+ */
+export const EXECUTION_LANES = [
+  {
+    level: 1,
+    key: 'must_do',
+    name: 'Must Happen Today — Deadlines & Provision',
+    shortName: 'Must Happen Today',
+    emoji: '🚨',
+    color: '#ef4444',
+    description: 'Urgent life necessities, bills/invoices, hard deadlines, appointments & family provision.'
+  },
+  {
+    level: 2,
+    key: 'high_impact',
+    name: 'High-Impact Focus — Move the Needle',
+    shortName: 'High-Impact Focus',
+    emoji: '⚡',
+    color: '#38bdf8',
+    description: 'Key daily deliverables, projects, family commitments & health goals.'
+  },
+  {
+    level: 3,
+    key: 'daily_habits',
+    name: 'Daily Habits & Anchors',
+    shortName: 'Daily Habits',
+    emoji: '🌱',
+    color: '#2dd4bf',
+    description: 'Recurring daily grounding routines — never buries urgent deadlines or provision.'
+  },
+  {
+    level: 4,
+    key: 'backlog',
+    name: 'Backlog — When Time Permits',
+    shortName: 'Backlog',
+    emoji: '📥',
+    color: '#94a3b8',
+    description: 'Low-urgency errands, ideas, and tasks that can wait.'
+  }
+];
+
+/**
+ * Axis 2: Life Pillar Tags (Color-coded badges showing WHO/WHAT domain a task serves)
+ */
+export const LIFE_PILLARS = [
+  { key: 'values', name: 'Core Values & Faith', emoji: '🙏', color: '#f0c040', tier: 1 },
+  { key: 'family', name: 'Family & Partner', emoji: '💕', color: '#e8587a', tier: 2 },
+  { key: 'kids', name: 'Children & Loved Ones', emoji: '👧', color: '#a78bfa', tier: 3 },
+  { key: 'health', name: 'Health & Self', emoji: '💪', color: '#2dd4bf', tier: 4 },
+  { key: 'work', name: 'Work & Mastery', emoji: '🔧', color: '#60a5fa', tier: 5 },
+  { key: 'finance', name: 'Provision & Finance', emoji: '🏠', color: '#f59e0b', tier: 5 }
+];
+
+export function getExecutionLanes() {
+  return EXECUTION_LANES;
+}
+
+export function getLifePillars() {
+  return LIFE_PILLARS;
+}
+
+/**
+ * Automatically infer Execution Priority (1..4) and Life Pillar tag from task metadata & text.
+ * Ensures urgent bills, family provision, deadlines, and appointments float to Priority 1 (Must Happen Today)
+ * while recurring habits stay in Priority 3 (Daily Habits).
+ */
+export function inferExecutionPriorityAndPillar({
+  title = '',
+  notes = '',
+  recurring = 0,
+  priority_id = 5,
+  execution_priority = null,
+  pillar = null
+} = {}) {
+  const combined = `${title} ${notes || ''}`.toLowerCase();
+
+  // 1. Determine Life Pillar tag
+  let resolvedPillar = pillar;
+  if (!resolvedPillar) {
+    if (/\b(bill|invoice|mortgage|rent|tax|taxes|insurance|paycheck|budget|bank|payment|utility|electric|water heater|plumb|car repair|lease|contract)\b/.test(combined)) {
+      resolvedPillar = 'Provision & Finance';
+    } else if (priority_id === 1 || /\b(pray|prayer|gratitude|meditat|faith|church|scripture|devotional|worship)\b/.test(combined)) {
+      resolvedPillar = 'Core Values & Faith';
+    } else if (priority_id === 2 || /\b(wife|husband|partner|spouse|marriage|anniversary|date night|reservation)\b/.test(combined)) {
+      resolvedPillar = 'Family & Partner';
+    } else if (priority_id === 3 || /\b(daughter|son|kid|kids|children|school|teacher|parent|mom|dad)\b/.test(combined)) {
+      resolvedPillar = 'Children & Loved Ones';
+    } else if (priority_id === 4 || /\b(water|hydrat|vitamin|medication|prescription|doctor|dentist|workout|gym|walk|run|stretch|sleep|exercise)\b/.test(combined)) {
+      resolvedPillar = 'Health & Self';
+    } else {
+      resolvedPillar = 'Work & Mastery';
+    }
+  }
+
+  // 2. Determine Execution Priority (1 = Must Happen Today, 2 = High-Impact Focus, 3 = Daily Habits, 4 = Backlog)
+  let resolvedExec = execution_priority ? Number(execution_priority) : null;
+  if (!resolvedExec || resolvedExec < 1 || resolvedExec > 4) {
+    const isUrgentOrDeadline =
+      /\b(urgent|asap|must|critical|emergency|immediately|deadline|due today|overdue|shutoff)\b/.test(combined) ||
+      /\b(before|by|at)\s+\d{1,2}(:\d{2})?\s*(am|pm)?\b/.test(combined) ||
+      /\b(pay|bill|invoice|mortgage|rent|tax|taxes|prescription|dentist|doctor|appointment|reservation hold)\b/.test(combined) ||
+      combined.includes('[email action]') ||
+      combined.includes('[urgent]');
+
+    const isBacklog = /\b(backlog|someday|eventually|when time permits|maybe later|low priority|nice to have)\b/.test(combined);
+
+    if (isUrgentOrDeadline && !recurring) {
+      resolvedExec = 1; // 🚨 Must Happen Today — Deadlines & Provision
+    } else if (recurring) {
+      resolvedExec = 3; // 🌱 Daily Habits & Anchors
+    } else if (isBacklog) {
+      resolvedExec = 4; // 📥 Backlog — When Time Permits
+    } else {
+      resolvedExec = 2; // ⚡ High-Impact Focus
+    }
+  }
+
+  return {
+    execution_priority: resolvedExec,
+    pillar: resolvedPillar
+  };
+}
+
+export function enrichTaskWithDualAxis(row) {
+  if (!row) return null;
+  const inferred = inferExecutionPriorityAndPillar(row);
+  const execLevel = row.execution_priority || inferred.execution_priority || 2;
+  const lane = EXECUTION_LANES.find(l => l.level === execLevel) || EXECUTION_LANES[1];
+  const pillarName = row.pillar || inferred.pillar || row.priority_name || 'Work & Mastery';
+  const pillarMeta = LIFE_PILLARS.find(
+    p => p.name.toLowerCase() === pillarName.toLowerCase() || p.key === pillarName.toLowerCase()
+  ) || {
+    key: 'work',
+    name: row.priority_name || pillarName,
+    emoji: row.priority_emoji || '🔧',
+    color: row.priority_color || '#60a5fa'
+  };
+
+  return {
+    ...row,
+    execution_priority: execLevel,
+    execution_lane_key: lane.key,
+    execution_lane_name: lane.name,
+    execution_lane_short: lane.shortName,
+    execution_lane_emoji: lane.emoji,
+    execution_lane_color: lane.color,
+    pillar: pillarMeta.name,
+    pillar_emoji: pillarMeta.emoji,
+    pillar_color: pillarMeta.color
+  };
+}
 
 export function today() {
   return new Date().toISOString().split('T')[0];
@@ -34,6 +188,16 @@ export function initCompanionDb(customPath = null) {
   const schemaSql = fs.readFileSync(schemaPath, 'utf-8');
   db.exec(schemaSql);
 
+  // Safe idempotent migration for existing databases created prior to Dual-Axis Priority upgrade
+  const cols = db.prepare("PRAGMA table_info('tasks')").all().map(c => c.name);
+  if (!cols.includes('execution_priority')) {
+    db.exec('ALTER TABLE tasks ADD COLUMN execution_priority INTEGER NOT NULL DEFAULT 2');
+    db.exec('UPDATE tasks SET execution_priority = 3 WHERE recurring = 1');
+  }
+  if (!cols.includes('pillar')) {
+    db.exec('ALTER TABLE tasks ADD COLUMN pillar TEXT');
+  }
+
   // Seed default priorities if empty
   const count = db.prepare('SELECT COUNT(*) as count FROM priorities').get().count;
   if (count === 0) {
@@ -48,12 +212,12 @@ export function initCompanionDb(customPath = null) {
 
     const dateToday = today();
     const insertTask = db.prepare(
-      'INSERT INTO tasks (priority_id, title, recurring, date) VALUES (?, ?, 1, ?)'
+      'INSERT INTO tasks (priority_id, execution_priority, pillar, title, recurring, date) VALUES (?, 3, ?, ?, 1, ?)'
     );
-    insertTask.run(1, 'Morning gratitude & prayer', dateToday);
-    insertTask.run(2, 'Check in with partner', dateToday);
-    insertTask.run(4, 'Hydrate & morning movement', dateToday);
-    insertTask.run(5, 'Review top priority for today', dateToday);
+    insertTask.run(1, 'Core Values & Faith', 'Morning gratitude & prayer', dateToday);
+    insertTask.run(2, 'Family & Partner', 'Check in with partner', dateToday);
+    insertTask.run(4, 'Health & Self', 'Hydrate & morning movement', dateToday);
+    insertTask.run(5, 'Work & Mastery', 'Review top priority for today', dateToday);
   }
 
   return db;
@@ -81,7 +245,7 @@ export function ensureRecurringTasksForDate(date = null) {
   if (alreadySeeded) return 0;
 
   const recurringTemplates = database.prepare(`
-    SELECT priority_id, title, notes, energy_level
+    SELECT priority_id, pillar, title, notes, energy_level
     FROM tasks
     WHERE recurring = 1
     GROUP BY lower(trim(title))
@@ -99,13 +263,21 @@ export function ensureRecurringTasksForDate(date = null) {
   let inserted = 0;
   const tx = database.transaction(() => {
     const insertStmt = database.prepare(`
-      INSERT INTO tasks (priority_id, title, notes, recurring, energy_level, date)
-      VALUES (?, ?, ?, 1, ?, ?)
+      INSERT INTO tasks (priority_id, execution_priority, pillar, title, notes, recurring, energy_level, date)
+      VALUES (?, 3, ?, ?, ?, 1, ?, ?)
     `);
     for (const tmpl of recurringTemplates) {
       const norm = tmpl.title.toLowerCase().trim();
       if (!existingTitles.has(norm)) {
-        insertStmt.run(tmpl.priority_id, tmpl.title, tmpl.notes || null, tmpl.energy_level || 'medium', targetDate);
+        const inferred = inferExecutionPriorityAndPillar({ ...tmpl, recurring: 1 });
+        insertStmt.run(
+          tmpl.priority_id,
+          tmpl.pillar || inferred.pillar,
+          tmpl.title,
+          tmpl.notes || null,
+          tmpl.energy_level || 'medium',
+          targetDate
+        );
         existingTitles.add(norm);
         inserted++;
       }
@@ -120,13 +292,14 @@ export function ensureRecurringTasksForDate(date = null) {
 export function getTasksForDate(date) {
   const targetDate = date || today();
   ensureRecurringTasksForDate(targetDate);
-  return getDb().prepare(`
+  const rows = getDb().prepare(`
     SELECT t.*, p.name as priority_name, p.emoji as priority_emoji, p.color as priority_color, p.tier
     FROM tasks t
     JOIN priorities p ON t.priority_id = p.id
     WHERE t.date = ?
-    ORDER BY p.tier ASC, t.completed ASC, t.id ASC
+    ORDER BY t.completed ASC, COALESCE(t.execution_priority, 2) ASC, p.tier ASC, t.id ASC
   `).all(targetDate);
+  return rows.map(enrichTaskWithDualAxis);
 }
 
 export function rolloverUnfinishedTasks(targetDate = null) {
@@ -178,7 +351,7 @@ export function rolloverUnfinishedTasks(targetDate = null) {
         FROM tasks t
         JOIN priorities p ON t.priority_id = p.id
         WHERE t.id IN (${rolledIds.map(() => '?').join(',')})
-      `).all(...rolledIds)
+      `).all(...rolledIds).map(enrichTaskWithDualAxis)
     : [];
 
   return {
@@ -232,20 +405,71 @@ export function findTaskByQuery(query, date = null, { onlyIncomplete = false } =
   return null;
 }
 
-export function createTask({ title, priority_id = 5, notes = null, recurring = 0, energy_level = 'medium', date = null }) {
+export function createTask({
+  title,
+  priority_id = 5,
+  execution_priority = null,
+  pillar = null,
+  notes = null,
+  recurring = 0,
+  energy_level = 'medium',
+  date = null
+}) {
   const targetDate = date || today();
   ensureRecurringTasksForDate(targetDate);
+  const inferred = inferExecutionPriorityAndPillar({
+    title,
+    notes,
+    recurring,
+    priority_id,
+    execution_priority,
+    pillar
+  });
   const stmt = getDb().prepare(`
-    INSERT INTO tasks (priority_id, title, notes, recurring, energy_level, date)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO tasks (priority_id, execution_priority, pillar, title, notes, recurring, energy_level, date)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  const info = stmt.run(priority_id, title, notes, recurring ? 1 : 0, energy_level, targetDate);
-  return getDb().prepare(`
+  const info = stmt.run(
+    priority_id,
+    inferred.execution_priority,
+    inferred.pillar,
+    title,
+    notes,
+    recurring ? 1 : 0,
+    energy_level,
+    targetDate
+  );
+  const row = getDb().prepare(`
     SELECT t.*, p.name as priority_name, p.emoji as priority_emoji, p.color as priority_color, p.tier
     FROM tasks t
     JOIN priorities p ON t.priority_id = p.id
     WHERE t.id = ?
   `).get(info.lastInsertRowid);
+  return enrichTaskWithDualAxis(row);
+}
+
+export function updateTaskPriority(id, { execution_priority = null, priority_id = null, pillar = null } = {}) {
+  const database = getDb();
+  const existing = database.prepare('SELECT * FROM tasks WHERE id = ?').get(id);
+  if (!existing) return null;
+
+  const nextExec = execution_priority !== null ? Math.min(4, Math.max(1, Number(execution_priority))) : existing.execution_priority;
+  const nextPriId = priority_id !== null ? Number(priority_id) : existing.priority_id;
+  const nextPillar = pillar !== null ? String(pillar) : existing.pillar;
+
+  database.prepare(`
+    UPDATE tasks
+    SET execution_priority = ?, priority_id = ?, pillar = ?
+    WHERE id = ?
+  `).run(nextExec, nextPriId, nextPillar, id);
+
+  const row = database.prepare(`
+    SELECT t.*, p.name as priority_name, p.emoji as priority_emoji, p.color as priority_color, p.tier
+    FROM tasks t
+    JOIN priorities p ON t.priority_id = p.id
+    WHERE t.id = ?
+  `).get(id);
+  return enrichTaskWithDualAxis(row);
 }
 
 export function toggleTask(id) {
@@ -260,12 +484,13 @@ export function toggleTask(id) {
     UPDATE tasks SET completed = ?, completed_at = ? WHERE id = ?
   `).run(newCompleted, completedAt, id);
 
-  return getDb().prepare(`
+  const row = getDb().prepare(`
     SELECT t.*, p.name as priority_name, p.emoji as priority_emoji, p.color as priority_color, p.tier
     FROM tasks t
     JOIN priorities p ON t.priority_id = p.id
     WHERE t.id = ?
   `).get(id);
+  return enrichTaskWithDualAxis(row);
 }
 
 export function deleteTask(id) {

@@ -14,30 +14,36 @@
   <a href="https://github.com/kruschdev/krusch-agentic-mcp"><img src="https://img.shields.io/badge/Agentic%20Proxy-%3Cholodata%3E%20Dual--Engine-orange.svg?style=flat-square" alt="Krusch Agentic Proxy"></a>
   <a href="https://github.com/kruschdev/G-krusch"><img src="https://img.shields.io/badge/Workspace-G--Krusch%20Extensions-4285F4.svg?style=flat-square" alt="G-Krusch Google Workspace Extensions"></a>
   <a href="https://github.com/kruschdev/krusch-companion/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/CI-passing-brightgreen.svg?style=flat-square" alt="CI"></a>
-  <img src="https://img.shields.io/badge/tests-38%20passed-brightgreen.svg?style=flat-square" alt="Tests Passed">
+  <img src="https://img.shields.io/badge/tests-39%20passed-brightgreen.svg?style=flat-square" alt="Tests Passed">
 </p>
 
 ---
 
 ## 💡 What It Does For You
 
-**Krusch Companion** is a sovereign, local-first personal AI assistant and daily companion—a 100% private, user-owned alternative to **OpenClaw / Grokbot**, **Meta Muse**, or **OpenAI Dot**. Instead of surrendering your personal thoughts, daily schedule, and life notes to centralized cloud data centers, Companion runs on your own hardware—turning raw voice streams into clear daily priorities, executing **14 live external APIs, concierge reservations, live traffic & Time-to-Leave alerts, Google Workspace extensions, and multi-step personal assistant actions** via the **Krusch Agentic Proxy (`<holodata>` Dual-Engine)**, running a **Multi-Channel Zero-Token Proactive Sentinel Watchdog Daemon** that polls **Gmail, Google Calendar, and Live Route Traffic** on CPU and wakes the LLM only when an actionable event occurs, maintaining durable working memory across conversations, and providing supportive morning briefings and evening reflections.
+**Krusch Companion** is a sovereign, local-first personal AI assistant and daily companion—a 100% private, user-owned alternative to **OpenClaw / Grokbot**, **Meta Muse**, or **OpenAI Dot**. Instead of surrendering your personal thoughts, daily schedule, and life notes to centralized cloud data centers, Companion runs on your own hardware—turning raw voice streams into clear daily priorities via a **Dual-Axis Priority Board (`Execution Priority Lanes 1–4` × `6 Life Pillar Tags`)**, executing **14 live external APIs, concierge reservations, live traffic & Time-to-Leave alerts, Google Workspace extensions, and multi-step personal assistant actions** via the **Krusch Agentic Proxy (`<holodata>` Dual-Engine)**, running a **Multi-Channel Zero-Token Proactive Sentinel Watchdog Daemon** that polls **Gmail, Google Calendar, and Live Route Traffic** on CPU and wakes the LLM only when an actionable event occurs, maintaining durable working memory across conversations, and providing supportive morning briefings and evening reflections.
 
 ### 🔄 The Daily Loop
 
 ```
   ┌─────────────────┐       ┌─────────────────┐       ┌─────────────────┐       ┌─────────────────┐
-  │ 1. Thought      │  ──►  │ 2. Priority     │  ──►  │ 3. Agentic      │  ──►  │ 4. Focus &      │
+  │ 1. Thought      │  ──►  │ 2. Dual-Axis    │  ──►  │ 3. Agentic      │  ──►  │ 4. Focus &      │
   │    Stream       │       │    Board        │       │    Proxy (<holo>│       │    Reflection   │
-  │ Voice or text   │       │ 5-tier triage   │       │ 14 live APIs    │       │ Timer & wins    │
+  │ Voice or text   │       │ 4 lanes × 6 tags│       │ 14 live APIs    │       │ Timer & wins    │
   └─────────────────┘       └─────────────────┘       └─────────────────┘       └─────────────────┘
 ```
 
 1. **Thought Stream (Capture)**: Speak into the microphone or paste an unfiltered stream-of-consciousness thought stream.
-2. **5-Tier Triage (Organize)**: An edge LLM (or OpenRouter specialist) cleans cognitive noise, extracts actionable commitments, ranks them against a 5-tier priority framework, and isolates durable life facts into working memory.
-3. **Today's Board & Lifecycle (Execute)**: Tactile daily board highlighting the single most critical task, with automatic daily recurring habit seeding, 1-click **"↻ Roll Over Unfinished"** task migration from prior days, 1-click **"🧩 Steps"** task decomposition, gamified checkmarks, and streak tracking.
+2. **Dual-Axis Triage (Organize)**: Traditional single-tier boards suffer from the *"Priority Paradox"*—even though *Core Values & Faith* or *Family* are your highest macro values, real-life responsibilities that provide for your family (paying the electric bill before 5pm, shipping a client deliverable, or fixing a broken lock) cannot sit at the bottom of the board underneath non-urgent daily habits. Companion resolves this by classifying every task across **two orthogonal axes**:
+   - **Axis 1 — Execution Priority Lanes (Board Order)**:
+     1. **`🚨 Must Happen Today — Deadlines & Provision`**: Time-sensitive deadlines, bills, client deliverables, appointments, and urgent life necessities that keep life running.
+     2. **`⚡ High-Impact Focus — Move the Needle`**: Important daily work, family commitments, and meaningful progress.
+     3. **`🌱 Daily Habits & Anchors`**: Recurring daily anchors (prayer/reflection, hydration, reading, stretching) that keep you grounded without burying urgent deadlines.
+     4. **`📥 Backlog — When Time Permits`**: Low-urgency ideas and someday tasks.
+   - **Axis 2 — Life Pillar Tags (Color-Coded Badges)**: `🙏 Core Values & Faith`, `💕 Family & Partner`, `👧 Children & Loved Ones`, `💪 Health & Self`, `🔧 Work & Mastery`, and `🏠 Provision & Finance`.
+3. **Today's Board & Lifecycle (Execute)**: Tactile daily board grouped by **Execution Priority** (with a 1-click toggle to group by **Life Pillar**), 1-click **`🚨 Must-Do`** promotion on any task card, automatic daily recurring habit seeding, 1-click **"↻ Roll Over Unfinished"** task migration from prior days, 1-click **"🧩 Steps"** task decomposition, gamified checkmarks, and streak tracking.
 4. **Agentic Action Proxy & L0 Commands (Act)**:
-   - **Instant `<15µs` L0 CPU Commands (`$0.00` Token Cost)**: `Add task`, `Complete task`, `Delete task`, `Show my tasks`, `Roll over unfinished tasks`, `Break down task into steps`, `Instead of X, remember that Y`, plus safe AST arithmetic.
+   - **Instant `<15µs` L0 CPU Commands (`$0.00` Token Cost)**: `Add task`, `Prioritize task / Make task urgent`, `Complete task`, `Delete task`, `Show my tasks`, `Roll over unfinished tasks`, `Break down task into steps`, `Instead of X, remember that Y`, plus safe AST arithmetic.
    - **14-Tool `<holodata>` Dual-Engine Agentic Proxy + G-Krusch Google Workspace Extensions**: Enables local 7B/14B models (or OpenRouter 32B/72B specialists) to execute real APIs and multi-step chains with automatic upstream-to-downstream data piping.
 5. **Focus Mode & Coach Briefings (Deep Work & Review)**: Fullscreen distraction-free timer with ambient progress ring, AI micro-nudges (`"Just do 3 minutes"`), morning focus alignment, and evening wins reflection.
 
@@ -92,17 +98,19 @@ Instead of burning LLM tokens polling for changes in a loop, [`src/services/sent
   > ➜ **Tool 2 (`save_note`)**: Automatically pipes the live weather forecast into `data/notes/run-forecast.md`.
   > ➜ **Tool 3 (`board_action`)**: Creates **[Tier 4: Health & Self 💪] Go for a 20-minute walk** on Today's Board.
 
-* **Voice/Text Thought Stream**:
-  > *"I need to send the updated invoice to Alex, fix the door latch before tonight, schedule a dentist checkup for next Tuesday, and I kept forgetting to stretch today."*
-  > ➜ **Extracted into Tasks**:
-  > 1. `Send updated invoice to Alex` (Tier 5: Work & Mastery)
-  > 2. `Fix door latch before tonight` (Tier 4: Health & Self / Environment)
-  > 3. `Schedule dentist checkup for Tuesday` (Tier 4: Health & Self)
+* **Voice/Text Thought Stream (Dual-Axis Triage)**:
+  > *"I need to pay the electric bill before 5pm, send the updated invoice to Alex, fix the door latch before tonight, and I kept forgetting to stretch today."*
+  > ➜ **Extracted onto Today's Dual-Axis Board**:
+  > 1. `Pay the electric bill before 5pm` — **`🚨 Must Happen Today — Deadlines & Provision`** · Tag: `🏠 Provision & Finance`
+  > 2. `Send updated invoice to Alex` — **`🚨 Must Happen Today — Deadlines & Provision`** · Tag: `🔧 Work & Mastery`
+  > 3. `Fix door latch before tonight` — **`🚨 Must Happen Today — Deadlines & Provision`** · Tag: `🏠 Provision & Finance`
+  > *(All three sit at the very top of Today's Board above non-urgent `🌱 Daily Habits & Anchors` like morning prayer or reading, while preserving their Life Pillar badges.)*
   > ➜ **Saved to Working Memory**: `Remember to take stretching breaks during desk work` (Category: `lesson`).
 
 * **Instant L0 Task & Board Commands in Chat (`<15µs` CPU, `$0.00` LLM Cost)**:
-  > *"Add task: Schedule dentist cleaning at 2pm"* ➜ Automatically inferred as **Tier 4 (Health & Self)** and added to Today's Board.
-  > *"Complete task: dentist cleaning"* ➜ Marks the matching task completed on Today's Board and awards gamification points.
+  > *"Add task: Pay electric bill before 5pm"* ➜ Automatically inferred as **`🚨 Must Happen Today — Deadlines & Provision`** (`🏠 Provision & Finance`) and placed at the top of Today's Board.
+  > *"Prioritize task: Quarterly review"* (or *"Make task quarterly review urgent"*) ➜ Promotes any existing task to **`🚨 Must Happen Today`** in `<15µs`.
+  > *"Complete task: electric bill"* ➜ Marks the matching task completed on Today's Board and awards gamification points (`+20 pts` for Lane 1 Must-Do tasks).
   > *"Break down 'Prepare quarterly taxes' into steps"* ➜ Decomposes the goal into 3 bite-sized (5–15 min) subtasks on Today's Board.
   > *"Roll over unfinished tasks"* ➜ Moves incomplete tasks from prior days onto Today's Board without duplicating recurring habits.
 
@@ -133,7 +141,7 @@ The frontend is an installable Progressive Web App (PWA) built with React 19, Vi
 | 📋 Today's Board | 🎯 Focus Mode |
 |:---:|:---:|
 | ![Today's Board](docs/screenshots/today-board.png) | ![Focus Mode](docs/screenshots/focus-mode.png) |
-| *5-tier priority framework, 1-click task rollover & step decomposition, and streak counter.* | *Distraction-free single-task execution with ambient timer ring and hotkeys.* |
+| *Dual-Axis Priority Board (`Execution Priority Lanes 1–4` × `6 Life Pillar Badges`), 1-click `🚨 Must-Do` promotion, task rollover & step decomposition.* | *Distraction-free single-task execution with ambient timer ring and hotkeys.* |
 
 ---
 
@@ -143,7 +151,7 @@ The frontend is an installable Progressive Web App (PWA) built with React 19, Vi
 
 * **Option A — 100% Sovereign Local-First (Default)**: Uses local [Ollama](https://ollama.com/) (`qwen2.5-coder:7b`) on your machine or home server. Zero LLM network egress.
 * **Option B — Zero-GPU Cloud Connector (OpenRouter 3-Specialist Cascade)**: For laptops, cloud VPS, or devices without a discrete GPU. Uses [OpenRouter](https://openrouter.ai/) with enforced **Zero Data Retention** (`provider: { data_collection: "deny" }`) and dynamically routes across 3 specialized frontier models (`qwen-2.5-coder-32b-instruct`, `qwen-2.5-72b-instruct`, and `deepseek-chat-v3-0324`). Your database, notes vault, and working memory still remain 100% local in SQLite.
-* **Option C — Hermetic Zero-Dependency Evaluation Mode (`MOCK_LLM=1`)**: For CI pipelines or third-party evaluators who want to verify all 38 tests, deterministic L0 routing, `<holodata>` tool chains, and Sentinel Watchdog filters in **`<300ms`** without installing Ollama or providing an API key.
+* **Option C — Hermetic Zero-Dependency Evaluation Mode (`MOCK_LLM=1`)**: For CI pipelines or third-party evaluators who want to verify all 39 tests, deterministic L0 routing, `<holodata>` tool chains, and Sentinel Watchdog filters in **`<300ms`** without installing Ollama or providing an API key.
 
 ### 1. Prerequisites
 * **Node.js**: `v22.0.0+` (includes native `fetch` and test runner)
@@ -171,7 +179,7 @@ npm --prefix client install
 npm --prefix client run build
 ```
 
-### 3. Run the Automated Test Suite (`38/38` Tests)
+### 3. Run the Automated Test Suite (`39/39` Tests)
 
 ```bash
 # Instant Hermetic Verification (<300ms — zero GPU or API key required)
@@ -214,17 +222,18 @@ curl -s http://localhost:3004/api/health | jq .
 curl -s http://localhost:3004/api/companion/tools | jq '{engine, count: (.tools | length), tools: [.tools[].name]}'
 ```
 
-### 2. Verify Sub-15µs L0 CPU Routing (`$0.00` Token Cost)
+### 2. Verify Sub-15µs L0 CPU Routing & Dual-Axis Priority Board (`$0.00` Token Cost)
 ```bash
 # Deterministic AST arithmetic evaluated on CPU in <15µs (tierUsed: "L0_heuristic")
 curl -s -X POST http://localhost:3004/api/companion/chat \
   -H "Content-Type: application/json" \
   -d '{"prompt": "What is (144 / 12) ^ 2 + 15?"}' | jq '{reply, tierUsed, latencyMs, reason}'
 
-# Natural-language L0 task creation on Today's 5-Tier Priority Board ($0.00 cost)
+# Natural-language L0 task creation: auto-classified into Lane 1 (Must Happen Today — Deadlines & Provision)
+# with Life Pillar tag "Provision & Finance", sorting above recurring daily habits ($0.00 cost)
 curl -s -X POST http://localhost:3004/api/companion/chat \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "Add task: Review Q4 security architecture before 4pm"}' | jq '{reply, tierUsed, actionExecuted}'
+  -d '{"prompt": "Add task: Pay electric bill before 5pm"}' | jq '{reply, tierUsed, actionExecuted}'
 ```
 
 ### 3. Verify Concierge Reservations & Live Route Traffic (`Leave-By` Alerts)
@@ -365,21 +374,21 @@ krusch-companion/
 │   │   └── tools.js               # 14 sandboxed tools (Concierge, Traffic, G-Krusch, Weather, etc.)
 │   ├── services/
 │   │   ├── sentinel-daemon.js     # Multi-Channel Sentinel Watchdog (Gmail, Calendar, Traffic)
-│   │   ├── stream.js              # Thought Stream 5-tier triage & memory extraction
+│   │   ├── chaos-dump.js          # Thought Stream Dual-Axis triage & memory extraction
 │   │   └── coach.js               # Morning briefings, focus micro-nudges & evening reflections
 │   ├── router/
 │   │   └── cascade-client.js      # L0 (<15µs) CPU router, Ollama & OpenRouter 3-Specialist cascade
 │   ├── context/
-│   │   └── memory.js              # KruschContext 5-taxonomy store, superseding & boundary gate
+│   │   └── index.js               # KruschContext 5-taxonomy store, superseding & boundary gate
 │   ├── db/
-│   │   └── init.js                # SQLite WAL schema, recurring habit seeder & task rollover
+│   │   └── index.js               # SQLite WAL Dual-Axis schema, recurring habit seeder & task rollover
 │   └── toolkit/                   # Self-contained @krusch/toolkit modules (zero external path deps)
 ├── client/                        # React 19 + Vite dark glassmorphism Progressive Web App
-└── tests/                         # 38 automated unit & integration tests across 5 test files
+└── tests/                         # 39 automated unit & integration tests across 5 test files
 ```
 
 ### 1. Sub-15µs CPU Cascade Router & Dynamic Specialist Routing
-* **L0 Deterministic Heuristic (`<15µs` CPU, `$0.00` Cost)**: Captures commands like `"Add task: ..."`, `"Complete task: ..."`, `"Show my tasks"`, `"Roll over unfinished tasks"`, `"Instead of X, remember that Y"`, or evaluates math expressions on CPU in microseconds with zero token cost.
+* **L0 Deterministic Heuristic (`<15µs` CPU, `$0.00` Cost)**: Captures commands like `"Add task: ..."`, `"Prioritize task: ..."`, `"Complete task: ..."`, `"Show my tasks"`, `"Roll over unfinished tasks"`, `"Instead of X, remember that Y"`, or evaluates math expressions on CPU in microseconds with zero token cost.
 * **L1 Local Edge (`Ollama`)**: Dispatches daily conversational queries and `<holodata>` tool calls to local Ollama (`qwen2.5-coder:7b`) with sub-second response times.
 * **L2 Compute Swarm (`vLLM` / `Ollama 14B`)**: Transparently escalates heavy, multi-paragraph prompts to local network compute nodes with automatic fallback hedging.
 * **OpenRouter 3-Specialist Dynamic Cascade (Zero-GPU Mode)**: When `LLM_PROVIDER="openrouter"` (or hybrid escalation is enabled), [`selectOpenRouterSpecialistModel()`](src/router/cascade-client.js) inspects each turn and dynamically selects the optimal Zero-Data-Retention (`data_collection: "deny"`) specialist model:
@@ -506,12 +515,14 @@ The server configuration is located in [`config.json`](config.json) at the proje
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
 | `GET` | `/api/health` | Service status, connected local models, and privacy gate configuration. |
-| `GET` | `/api/priorities` | Retrieves the 5-tier priority framework definitions and colors. |
-| `GET` | `/api/tasks` | Retrieves tasks for date (`?date=YYYY-MM-DD`, defaults to today) and auto-seeds recurring habits. |
-| `POST` | `/api/tasks` | Creates a new task (`{ title, priority_id, notes, recurring, energy_level, date }`). |
+| `GET` | `/api/priorities` | Retrieves the priority framework definitions, Execution Lanes, and Life Pillars. |
+| `GET` | `/api/execution-lanes` | Retrieves the Dual-Axis Execution Priority Lanes (`1–4`) and 6 Life Pillar definitions. |
+| `GET` | `/api/tasks` | Retrieves tasks for date (`?date=YYYY-MM-DD`, defaults to today), enriched with Dual-Axis lane & pillar tags, sorted by execution priority. |
+| `POST` | `/api/tasks` | Creates a new task (`{ title, execution_priority, pillar, priority_id, notes, recurring, energy_level, date }`). |
+| `PATCH` | `/api/tasks/:id/priority` | Updates a task's Execution Priority Lane (`1–4`) and/or Life Pillar tag (`{ execution_priority, pillar, priority_id }`). |
 | `POST` | `/api/tasks/rollover` | Rolls over unfinished tasks from prior days onto Today's Priority Board without duplicating recurring habits. |
 | `POST` | `/api/tasks/:id/breakdown` | Decomposes a complex task into 3 concrete, low-friction subtasks on Today's Board. |
-| `PATCH` | `/api/tasks/:id/complete` | Toggles task completion and updates gamification points. |
+| `PATCH` | `/api/tasks/:id/complete` | Toggles task completion and updates gamification points (`+20 pts` for Lane 1 Must-Do tasks). |
 | `DELETE`| `/api/tasks/:id` | Deletes a task by ID. |
 | `GET` | `/api/streak` | Retrieves continuous task completion streak data. |
 | `GET` | `/api/gamify/today` | Retrieves today's gamification points and opt-in status. |
@@ -523,7 +534,7 @@ The server configuration is located in [`config.json`](config.json) at the proje
 | `GET` | `/api/sentinel/status` | Returns Multi-Channel Sentinel Watchdog daemon status, tick counters (`llmCallsTriggered` vs `zeroTokenPolls`), and active alerts. |
 | `POST` | `/api/sentinel/tick` | Manually triggers a Sentinel Watchdog scan across Gmail unread messages, Calendar conflicts, and Route traffic (`{ events, emails, calendarEvents }`). |
 | `POST` | `/api/sentinel/ack/:id` | Acknowledges and dismisses an active Sentinel Watchdog alert. |
-| `POST` | `/api/companion/stream` | Ingests unformatted Thought Stream text and triages into 5-tier tasks and memories (aliases `/api/companion/dump`). |
+| `POST` | `/api/companion/stream` | Ingests unformatted Thought Stream text and triages into Dual-Axis tasks (`execution_priority` + `pillar`) and memories (aliases `/api/companion/dump`). |
 | `POST` | `/api/companion/voice` | Accepts multipart `audio` (WebM/WAV) -> Whisper STT -> Thought Stream pipeline. |
 | `GET` | `/api/coach/focus` | Retrieves today's active morning focus briefing. |
 | `POST` | `/api/coach/focus` | Synthesizes a new morning focus briefing from tasks and working memory. |
@@ -570,7 +581,7 @@ docker compose ps
 
 ## 📌 Project Status & Known Limitations
 
-* **Current Stage**: Production daily driver (`38/38` unit & integration tests passing across 5 test files; standalone-installable with zero sibling directory requirements).
+* **Current Stage**: Production daily driver (`39/39` unit & integration tests passing across 5 test files; standalone-installable with zero sibling directory requirements).
 * **Single User**: No authentication or multi-tenant user segregation out of the box (intended for private home networks, localhost, or Tailscale mesh).
 * **Hardware Sensitivity**: Local speech-to-text and Ollama LLM inference response times depend directly on host GPU/CPU capabilities (or use OpenRouter Zero-GPU mode for `<500ms` cloud specialist execution, or `MOCK_LLM=1` for `<300ms` hermetic evaluation).
 

@@ -67,6 +67,17 @@ app.get('/api/priorities', (_req, res) => {
   }
 });
 
+app.get('/api/execution-lanes', (_req, res) => {
+  try {
+    res.json({
+      lanes: db.getExecutionLanes(),
+      pillars: db.getLifePillars()
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/tasks', (req, res) => {
   try {
     const date = req.query.date || db.today();
@@ -78,12 +89,33 @@ app.get('/api/tasks', (req, res) => {
 
 app.post('/api/tasks', (req, res) => {
   try {
-    const { title, priority_id, notes, recurring, energy_level, date } = req.body;
+    const { title, priority_id, execution_priority, pillar, notes, recurring, energy_level, date } = req.body;
     if (!title || typeof title !== 'string') {
       return res.status(400).json({ error: 'Task title is required' });
     }
-    const task = db.createTask({ title, priority_id, notes, recurring, energy_level, date });
+    const task = db.createTask({
+      title,
+      priority_id,
+      execution_priority,
+      pillar,
+      notes,
+      recurring,
+      energy_level,
+      date
+    });
     res.json(task);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.patch('/api/tasks/:id/priority', (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const { execution_priority, priority_id, pillar } = req.body || {};
+    const updated = db.updateTaskPriority(id, { execution_priority, priority_id, pillar });
+    if (!updated) return res.status(404).json({ error: 'Task not found' });
+    res.json(updated);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -120,7 +152,7 @@ app.patch('/api/tasks/:id/complete', (req, res) => {
     const dateStr = task.date || db.today();
     const status = db.getGamifyStatus(dateStr);
     if (status.opted_in) {
-      const pts = db.TIER_POINTS[task.tier] || 15;
+      const pts = db.EXECUTION_PRIORITY_POINTS[task.execution_priority] || db.TIER_POINTS[task.tier] || 20;
       gamify = db.addGamifyPoints(dateStr, task.completed ? pts : -pts);
     }
 
