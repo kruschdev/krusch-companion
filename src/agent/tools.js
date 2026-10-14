@@ -1065,7 +1065,30 @@ export const COMPANION_TOOLS = [
         emailStatusLine = `📝 **Saved Reservation Dossier & Email Draft** to \`data/notes/${filename}\``;
       }
 
-      // 4. Add Reservation Hold onto Today's Priority Board (Tier 2/3/4)
+      // 4. Add Reservation Hold onto Google Calendar (if G-Krusch OAuth is linked) & Today's Priority Board
+      let calendarHoldLine = '';
+      let calendarEvent = null;
+      try {
+        const calRes = await fetchImpl(`${baseUrl}/api/calendar/events`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            summary: `[Reservation] ${venue} (Party of ${partySize})`,
+            startTime: isoDateTime,
+            location: placeInfo.displayName,
+            description: `Party of ${partySize}${specialNotes ? ` | Notes: ${specialNotes}` : ''}\nPhone: ${placeInfo.phone || 'N/A'}\nOpenTable: ${openTableUrl}\nResy: ${resyUrl}`
+          }),
+          signal: AbortSignal.timeout(5000)
+        });
+        if (calRes.ok) {
+          const calData = await calRes.json();
+          calendarEvent = calData.event || null;
+          calendarHoldLine = `📅 **Google Calendar Hold Created**: **${calendarEvent?.summary || venue}** (${calendarEvent?.start || isoDateTime})`;
+        }
+      } catch {
+        // Non-fatal if Google Calendar OAuth is not currently linked
+      }
+
       const holdTask = createTask({
         title: `Reservation Hold: ${venue} (Party of ${partySize} @ ${rawDateTime})`,
         priority_id: 2,
@@ -1085,7 +1108,8 @@ export const COMPANION_TOOLS = [
         `  • [Book on Resy (Party of ${partySize})](${resyUrl})`,
         `  • [Open in Google Maps](${googleMapsUrl})`,
         `- ${emailStatusLine}`,
-        `- 📅 **Board Hold Added**: **[#${holdTask.id}] ${holdTask.title}**`
+        ...(calendarHoldLine ? [`- ${calendarHoldLine}`] : []),
+        `- 📋 **Board Hold Added**: **[#${holdTask.id}] ${holdTask.title}**`
       ];
 
       return {
@@ -1099,6 +1123,7 @@ export const COMPANION_TOOLS = [
           dateTime: rawDateTime,
           placeInfo,
           links: { openTableUrl, resyUrl, googleMapsUrl },
+          calendarEvent,
           holdTaskId: holdTask.id
         }
       };
