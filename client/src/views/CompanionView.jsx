@@ -21,6 +21,7 @@ const ACTION_LABELS = {
   google_drive: { icon: '☁️', label: 'G-Krusch: Google Drive & Docs', color: '#38bdf8' },
   google_calendar: { icon: '📅', label: 'G-Krusch: Google Calendar', color: '#60a5fa' },
   google_gmail: { icon: '✉️', label: 'G-Krusch: Gmail Extension', color: '#f87171' },
+  concierge_reservation: { icon: '🍽️', label: 'Agentic Proxy: Concierge Reservation', color: '#f0c040' },
   agentic_tool: { icon: '⚡', label: 'Agentic Proxy: Tool Executed', color: '#00f0ff' }
 };
 

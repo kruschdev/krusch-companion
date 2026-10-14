@@ -261,5 +261,66 @@ describe('Krusch Companion — Agentic Proxy (<holodata> Dual-Engine for 7B/14B 
     // Verify upstream Drive RAG result was automatically piped into the downstream Gmail draft body!
     assert.ok(turnResult.agenticTrace.toolCalls[2].arguments.body.includes('Q4-Architecture-Spec.md'));
   });
+
+  test('9. Concierge Reservation tool looks up venue details, builds OpenTable/Resy links, drafts email, and places board hold', async () => {
+    const mockReservationFetch = async (url) => {
+      if (url.includes('nominatim.openstreetmap.org')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ([
+            {
+              display_name: 'Canlis, 2576 Aurora Ave N, Seattle, WA 98109',
+              extratags: {
+                phone: '+1-206-283-3313',
+                website: 'https://canlis.com',
+                email: 'concierge@canlis.com',
+                opening_hours: 'Tu-Sa 17:00-22:00'
+              }
+            }
+          ])
+        };
+      }
+      if (url.includes('/api/gmail/drafts')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ mode: 'draft', id: 'dr_canlis' })
+        };
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    };
+
+    const mockLlm = async () => ({
+      tierUsed: 'L2_cloud',
+      reason: 'OpenRouter Specialist (qwen/qwen-2.5-coder-32b-instruct)',
+      content: `<holodata>
+{
+  "cognitive_scratchpad": "User wants to book a dinner reservation at Canlis in Seattle for 4 people on Friday at 7pm.",
+  "task_name": "Canlis Dinner Reservation",
+  "strict_problem_constraints": "Include party size 4 and anniversary note.",
+  "tool_plan": "concierge_reservation"
+}
+</holodata>
+[
+  {"name": "concierge_reservation", "arguments": {"venue": "Canlis Seattle", "partySize": 4, "dateTime": "2026-10-16T19:00:00", "notes": "Window table for anniversary"}}
+]`
+    });
+
+    const turnResult = await executeAgenticProxyTurn({
+      prompt: 'Make a reservation at Canlis Seattle for 4 people on Friday at 7pm',
+      callLlm: mockLlm,
+      fetchImpl: mockReservationFetch
+    });
+
+    assert.ok(turnResult);
+    assert.equal(turnResult.actionExecuted.type, 'concierge_reservation');
+    assert.ok(turnResult.content.includes('Canlis, 2576 Aurora Ave N, Seattle, WA 98109'));
+    assert.ok(turnResult.content.includes('+1-206-283-3313'));
+    assert.ok(turnResult.content.includes('opentable.com'));
+    assert.ok(turnResult.content.includes('resy.com'));
+    assert.ok(turnResult.content.includes('concierge@canlis.com'));
+  });
 });
+
 

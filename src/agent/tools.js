@@ -953,6 +953,156 @@ export const COMPANION_TOOLS = [
         };
       }
     }
+  },
+  {
+    name: 'concierge_reservation',
+    category: 'concierge',
+    description: 'Make a restaurant, appointment, or venue reservation: looks up live venue details (address, phone, website, hours via OpenStreetMap), generates pre-filled OpenTable/Resy/Google Reserve booking links, drafts/sends a concierge reservation email via G-Krusch Gmail, and places a hold on Google Calendar / Priority Board.',
+    parameters: {
+      venue: 'string (REQUIRED: Restaurant, venue, or business name and city, e.g. "Canlis Seattle" or "Sushi Kashiba in Seattle")',
+      dateTime: 'string (OPTIONAL: Requested ISO-8601 date/time or natural time, e.g. "2026-10-16T19:00:00" or "Friday at 7pm")',
+      partySize: 'number (OPTIONAL: Number of people, default 2)',
+      email: 'string (OPTIONAL: Venue or concierge email address if known)',
+      notes: 'string (OPTIONAL: Special requests, patio seating, anniversary, or dietary notes)'
+    },
+    required: ['venue'],
+    async execute(args, { fetchImpl = fetch } = {}) {
+      const venue = String(args?.venue || '').trim();
+      if (!venue) {
+        return { ok: false, tool: 'concierge_reservation', summary: 'Parameter "venue" is required for concierge_reservation.' };
+      }
+
+      const partySize = Math.min(Math.max(1, parseInt(args?.partySize || '2', 10) || 2), 20);
+      const rawDateTime = String(args?.dateTime || 'Tonight at 7:00 PM').trim();
+      const specialNotes = String(args?.notes || '').trim();
+      const parsedDate = new Date(rawDateTime);
+      const isValidIso = !isNaN(parsedDate.getTime());
+      const isoDateTime = isValidIso
+        ? parsedDate.toISOString()
+        : new Date(Date.now() + 24 * 3600 * 1000).toISOString().replace(/T.*/, 'T19:00:00');
+      const isoDateOnly = isoDateTime.slice(0, 10);
+
+      // 1. Live Venue Lookup via OpenStreetMap Nominatim (zero API key required)
+      let placeInfo = {
+        displayName: venue,
+        phone: null,
+        website: null,
+        email: args?.email || null,
+        openingHours: null
+      };
+
+      try {
+        const osmUrl = `https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&extratags=1&limit=1&q=${encodeURIComponent(venue)}`;
+        const osmRes = await fetchImpl(osmUrl, {
+          headers: { 'User-Agent': 'KruschCompanion/2.0 (https://krusch.dev)' },
+          signal: AbortSignal.timeout(6000)
+        });
+        if (osmRes.ok) {
+          const places = await osmRes.json();
+          if (Array.isArray(places) && places.length > 0) {
+            const p = places[0];
+            const extra = p.extratags || {};
+            placeInfo = {
+              displayName: p.display_name || venue,
+              phone: extra.phone || extra['contact:phone'] || null,
+              website: extra.website || extra['contact:website'] || null,
+              email: args?.email || extra.email || extra['contact:email'] || null,
+              openingHours: extra.opening_hours || null
+            };
+          }
+        }
+      } catch {
+        // Non-fatal if OSM lookup times out
+      }
+
+      // 2. Build Pre-Filled Deep Booking Links (OpenTable, Resy, Google Maps)
+      const openTableUrl = `https://www.opentable.com/s?covers=${partySize}&dateTime=${encodeURIComponent(isoDateTime.slice(0, 19))}&term=${encodeURIComponent(venue)}`;
+      const resyUrl = `https://resy.com/cities/search?query=${encodeURIComponent(venue)}&date=${isoDateOnly}&seats=${partySize}`;
+      const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(venue)}`;
+
+      // 3. Compose Concierge Reservation Email & Dispatch via G-Krusch Gmail (or save local draft)
+      const targetEmail = placeInfo.email || 'reservations@venue.example.com';
+      const emailSubject = `Reservation Request: ${venue} — Party of ${partySize} (${rawDateTime})`;
+      const emailBody = [
+        `Hello ${venue} Team,`,
+        '',
+        `I would like to request a reservation with the following details:`,
+        `- Venue: ${venue}`,
+        `- Party Size: ${partySize} guests`,
+        `- Requested Date & Time: ${rawDateTime}`,
+        ...(specialNotes ? [`- Special Requests / Notes: ${specialNotes}`] : []),
+        '',
+        `Please let me know if this time is available or if a nearby time slot works best.`,
+        '',
+        `Thank you!`
+      ].join('\n');
+
+      const baseUrl = (process.env.G_KRUSCH_URL || 'http://127.0.0.1:5446').replace(/\/+$/, '');
+      let emailStatusLine = '';
+      try {
+        const gmailRes = await fetchImpl(`${baseUrl}/api/gmail/drafts`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: targetEmail,
+            subject: emailSubject,
+            body: emailBody,
+            sendImmediately: Boolean(args?.email)
+          }),
+          signal: AbortSignal.timeout(6000)
+        });
+        if (gmailRes.ok) {
+          emailStatusLine = args?.email
+            ? `✉️ **Concierge Email Sent via Gmail** to \`${targetEmail}\``
+            : `✉️ **Gmail Reservation Draft Created** (To: \`${targetEmail}\`)`;
+        } else {
+          throw new Error(`HTTP ${gmailRes.status}`);
+        }
+      } catch {
+        const filename = toSafeNoteFilename(`reservation-${venue}`);
+        const md = `# Reservation Dossier: ${venue}\n- **Party Size**: ${partySize}\n- **Requested Time**: ${rawDateTime}\n- **Address**: ${placeInfo.displayName}\n- **Phone**: ${placeInfo.phone || 'N/A'}\n- **Website**: ${placeInfo.website || 'N/A'}\n- **OpenTable**: ${openTableUrl}\n- **Resy**: ${resyUrl}\n\n## Concierge Email Draft (To: ${targetEmail})\n**Subject**: ${emailSubject}\n\n${emailBody}\n`;
+        fs.writeFileSync(path.join(getNotesDirectory(), filename), md, 'utf-8');
+        emailStatusLine = `📝 **Saved Reservation Dossier & Email Draft** to \`data/notes/${filename}\``;
+      }
+
+      // 4. Add Reservation Hold onto Today's Priority Board (Tier 2/3/4)
+      const holdTask = createTask({
+        title: `Reservation Hold: ${venue} (Party of ${partySize} @ ${rawDateTime})`,
+        priority_id: 2,
+        notes: `OpenTable: ${openTableUrl} | Phone: ${placeInfo.phone || 'N/A'}`,
+        energy_level: 'low',
+        date: today()
+      });
+
+      const summaryLines = [
+        `🍽️ **Concierge Reservation Prepared for ${venue}** *(Party of ${partySize} • ${rawDateTime})*:`,
+        `- **Location**: ${placeInfo.displayName}`,
+        ...(placeInfo.phone ? [`- **Phone**: \`${placeInfo.phone}\``] : []),
+        ...(placeInfo.website ? [`- **Website**: ${placeInfo.website}`] : []),
+        ...(placeInfo.openingHours ? [`- **Hours**: \`${placeInfo.openingHours}\``] : []),
+        `- **Instant 1-Click Booking Links**:`,
+        `  • [Book on OpenTable (Party of ${partySize})](${openTableUrl})`,
+        `  • [Book on Resy (Party of ${partySize})](${resyUrl})`,
+        `  • [Open in Google Maps](${googleMapsUrl})`,
+        `- ${emailStatusLine}`,
+        `- 📅 **Board Hold Added**: **[#${holdTask.id}] ${holdTask.title}**`
+      ];
+
+      return {
+        ok: true,
+        tool: 'concierge_reservation',
+        actionType: 'concierge_reservation',
+        summary: summaryLines.join('\n'),
+        data: {
+          venue,
+          partySize,
+          dateTime: rawDateTime,
+          placeInfo,
+          links: { openTableUrl, resyUrl, googleMapsUrl },
+          holdTaskId: holdTask.id
+        }
+      };
+    }
   }
 ];
 

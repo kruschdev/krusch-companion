@@ -60,6 +60,11 @@ const INTENT_PATTERNS = [
     category: 'google_gmail',
     tools: ['gkrusch_gmail'],
     regex: /\b(?:gmail|my\s+(?:emails?|inbox)|unread\s+emails?|search\s+(?:my\s+)?emails?|check\s+(?:my\s+)?(?:emails?|inbox|gmail)|(?:draft|compose|send)\s+(?:an?\s+)?email)\b/i
+  },
+  {
+    category: 'concierge',
+    tools: ['concierge_reservation'],
+    regex: /\b(?:make\s+a\s+reservation|book\s+a\s+(?:table|reservation|dinner|lunch|spot)|reserve\s+a\s+table|dinner\s+reservation|restaurant\s+reservation|opentable|resy)\b/i
   }
 ];
 
@@ -359,6 +364,20 @@ export function inferFallbackToolCalls(prompt, matchedCategories = []) {
         arguments: { action: 'search_emails', query: query || 'is:inbox' }
       });
     }
+  }
+
+  if (matchedCategories.includes('concierge')) {
+    const venueMatch = text.match(/(?:reservation|table|dinner|lunch|spot)\s+(?:at|for)\s+([A-Za-z0-9\s,'&-]+?)(?:\s+(?:for\s+\d+|on\s+|at\s+\d|tonight|tomorrow)\b|[?.!]|$)/i);
+    const partyMatch = text.match(/\b(?:for|party\s+of)\s+(\d+)\b/i);
+    const emailMatch = text.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
+    calls.push({
+      name: 'concierge_reservation',
+      arguments: {
+        venue: venueMatch ? venueMatch[1].trim() : text,
+        partySize: partyMatch ? parseInt(partyMatch[1], 10) : 2,
+        ...(emailMatch ? { email: emailMatch[1] } : {})
+      }
+    });
   }
 
   if (matchedCategories.includes('board')) {
