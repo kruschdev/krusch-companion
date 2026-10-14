@@ -41,6 +41,7 @@ export function CompanionView({ streak, onActionExecuted }) {
   const [dailyFocus, setDailyFocus] = useState(null);
   const [isFocusLoading, setIsFocusLoading] = useState(false);
   const [departureAlerts, setDepartureAlerts] = useState([]);
+  const [sentinelAlerts, setSentinelAlerts] = useState([]);
   const [expandedTraceIds, setExpandedTraceIds] = useState({});
   const chatEndRef = useRef(null);
 
@@ -63,7 +64,17 @@ export function CompanionView({ streak, onActionExecuted }) {
       if (res.ok) {
         const data = await res.json();
         setDepartureAlerts(data.alerts || []);
+        setSentinelAlerts(data.sentinelAlerts || []);
       }
+    } catch {
+      // Non-fatal
+    }
+  };
+
+  const handleAckSentinel = async (id) => {
+    try {
+      await fetch(`/api/sentinel/ack/${id}`, { method: 'POST' });
+      setSentinelAlerts(prev => prev.filter(a => a.id !== id));
     } catch {
       // Non-fatal
     }
@@ -195,6 +206,61 @@ export function CompanionView({ streak, onActionExecuted }) {
           {dailyFocus || 'Generate your morning focus briefing to synthesize your top tasks and align your mindset.'}
         </p>
       </div>
+
+      {/* Sentinel Watchdog Proactive LLM Alerts */}
+      {sentinelAlerts.length > 0 && (
+        <div
+          className="glass-panel"
+          style={{
+            padding: '12px 18px',
+            borderLeft: '4px solid #f87171',
+            background: 'rgba(248, 113, 113, 0.09)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8
+          }}
+        >
+          {sentinelAlerts.slice(0, 2).map((alert) => (
+            <div
+              key={alert.id}
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 12,
+                flexWrap: 'wrap',
+                fontSize: '0.86rem'
+              }}
+            >
+              <div style={{ flex: 1 }}>
+                <strong style={{ color: '#f87171' }}>🚨 Sentinel Watchdog ({alert.trigger_reason.replace(/_/g, ' ')}):</strong>{' '}
+                <span>{alert.llm_advisory}</span>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {alert.directions_url && (
+                  <a
+                    href={alert.directions_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="btn-secondary"
+                    style={{ fontSize: '0.75rem', padding: '4px 10px', textDecoration: 'none' }}
+                  >
+                    🗺️ Route
+                  </a>
+                )}
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => handleAckSentinel(alert.id)}
+                  style={{ fontSize: '0.75rem', padding: '4px 10px' }}
+                >
+                  ✓ Dismiss
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Live Time-to-Leave & Traffic Departure Alerts Banner */}
       {departureAlerts.length > 0 && (

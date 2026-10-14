@@ -14,14 +14,14 @@
   <a href="https://github.com/kruschdev/krusch-agentic-mcp"><img src="https://img.shields.io/badge/Agentic%20Proxy-%3Cholodata%3E%20Dual--Engine-orange.svg?style=flat-square" alt="Krusch Agentic Proxy"></a>
   <a href="https://github.com/kruschdev/G-krusch"><img src="https://img.shields.io/badge/Workspace-G--Krusch%20Extensions-4285F4.svg?style=flat-square" alt="G-Krusch Google Workspace Extensions"></a>
   <a href="https://github.com/kruschdev/krusch-companion/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/CI-passing-brightgreen.svg?style=flat-square" alt="CI"></a>
-  <img src="https://img.shields.io/badge/tests-36%20passed-brightgreen.svg?style=flat-square" alt="Tests Passed">
+  <img src="https://img.shields.io/badge/tests-37%20passed-brightgreen.svg?style=flat-square" alt="Tests Passed">
 </p>
 
 ---
 
 ## 💡 What It Does For You
 
-**Krusch Companion** is a sovereign, local-first personal AI assistant and daily companion—a 100% private, user-owned alternative to **OpenClaw / Grokbot**, **Meta Muse**, or **OpenAI Dot**. Instead of surrendering your personal thoughts, daily schedule, and life notes to centralized cloud data centers, Companion runs on your own hardware—turning raw voice streams into clear daily priorities, executing **14 live external APIs, concierge reservations, live traffic & Time-to-Leave alerts, Google Workspace extensions, and multi-step personal assistant actions** via the **Krusch Agentic Proxy (`<holodata>` Dual-Engine)**, maintaining durable working memory across conversations, and providing supportive morning briefings and evening reflections.
+**Krusch Companion** is a sovereign, local-first personal AI assistant and daily companion—a 100% private, user-owned alternative to **OpenClaw / Grokbot**, **Meta Muse**, or **OpenAI Dot**. Instead of surrendering your personal thoughts, daily schedule, and life notes to centralized cloud data centers, Companion runs on your own hardware—turning raw voice streams into clear daily priorities, executing **14 live external APIs, concierge reservations, live traffic & Time-to-Leave alerts, Google Workspace extensions, and multi-step personal assistant actions** via the **Krusch Agentic Proxy (`<holodata>` Dual-Engine)**, running a **Zero-Token Proactive Sentinel Watchdog Daemon** that wakes the LLM only when real-world traffic spikes or departure windows hit, maintaining durable working memory across conversations, and providing supportive morning briefings and evening reflections.
 
 ### 🔄 The Daily Loop
 
@@ -69,6 +69,13 @@ Standard 7B/14B local models often struggle with deeply nested OpenAI JSON tool 
 | **🖥️ Host Telemetry** | `system_status` | Reports live host CPU load, RAM usage, uptime, SQLite WAL `PRAGMA integrity_check`, active memory count, and board completion streak. | *"Check system status and telemetry"* |
 | **⚖️ Sovereign Law/Biz** | `sovereign_gateway_query` | Queries local **KruschLaw (`:8085`)** for statutory RAG / tenant defense or **KruschBiz (`:8086`)** for corporate contract graphs. | *"Search KruschLaw statutes for California security deposit return deadlines"* |
 | **📋 Board & Memory** | `board_action` | Creates or completes tasks on Today's 5-Tier Priority Board or saves durable facts to Working Memory as part of a multi-step tool chain. | *"Check the weather in Seattle and add a task to go for a 3-mile run"* |
+
+### 🚨 Proactive Sentinel Watchdog Daemon (`$0.00` Polling ➔ Event-Driven LLM Wakeup)
+
+Instead of burning LLM tokens polling for changes in a loop, [`src/services/sentinel-daemon.js`](src/services/sentinel-daemon.js) runs a lightweight background watchdog every 5 minutes:
+1. **Zero-Token L0 Route Polling**: Checks upcoming Google Calendar events and Reservation Holds that have physical locations using Google Maps Traffic / OSRM (`0` LLM tokens used when traffic is normal).
+2. **State-Delta & Anomaly Gate ([`evaluateSentinelTrigger`](src/services/sentinel-daemon.js))**: Compares `currentTrafficDelayMinutes` against the previous tick.
+3. **Targeted LLM Wakeup**: **Only** when a traffic spike (`+5m` sudden surge / accident), heavy congestion (`+8m` delay), or imminent departure window (`<= 18m` before Leave-By time) trips the gate does the daemon wake up the LLM to synthesize a proactive advisory, persist it to `sentinel_alerts`, push it via `ntfy.sh`, and surface it at the top of the Companion UI (`GET /api/sentinel/status`, `POST /api/sentinel/tick`, `POST /api/sentinel/ack/:id`).
 
 ### 🎯 Example Multi-Step Workflows
 

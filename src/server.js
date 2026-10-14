@@ -14,13 +14,21 @@ import { COMPANION_TOOLS, executeCompanionTool, calculateCommuteAndDeparture } f
 import { processThoughtStream, processChaosDump } from './services/chaos-dump.js';
 import { generateDailyFocus, generateDailyReflection, generateNudge } from './services/coach.js';
 import { transcribeAudio } from './services/stt.js';
+import {
+  startSentinelDaemon,
+  runSentinelTick,
+  getSentinelStatus,
+  getActiveSentinelAlerts,
+  acknowledgeSentinelAlert
+} from './services/sentinel-daemon.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..');
 
-// Initialize database
+// Initialize database & start background Proactive Sentinel Watchdog Daemon
 db.initCompanionDb();
+startSentinelDaemon();
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
@@ -303,7 +311,36 @@ app.get('/api/companion/departure-alerts', async (_req, res) => {
       }
     }
 
-    res.json({ count: alerts.length, alerts });
+    const sentinelAlerts = getActiveSentinelAlerts(5);
+    res.json({ count: alerts.length, alerts, sentinelAlerts });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Proactive Sentinel Watchdog Daemon API ──────────────────────────────────
+app.get('/api/sentinel/status', (_req, res) => {
+  try {
+    res.json(getSentinelStatus());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/sentinel/tick', async (req, res) => {
+  try {
+    const customEvents = Array.isArray(req.body?.events) ? req.body.events : null;
+    const result = await runSentinelTick({ customEvents });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/sentinel/ack/:id', (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    res.json(acknowledgeSentinelAlert(id));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

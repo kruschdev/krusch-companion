@@ -16,6 +16,11 @@ import {
   parseHolodataResponse,
   executeAgenticProxyTurn
 } from '../src/agent/agentic-proxy.js';
+import {
+  runSentinelTick,
+  resetSentinelState,
+  getActiveSentinelAlerts
+} from '../src/services/sentinel-daemon.js';
 
 describe('Krusch Companion — Agentic Proxy (<holodata> Dual-Engine for 7B/14B Models)', () => {
   before(() => {
@@ -371,6 +376,83 @@ describe('Krusch Companion — Agentic Proxy (<holodata> Dual-Engine for 7B/14B 
     assert.ok(turnResult.content.includes('Heavy Traffic'));
     assert.ok(turnResult.content.includes('Recommended Leave-By Time'));
     assert.ok(turnResult.content.includes('google.com/maps/dir/'));
+  });
+
+  test('11. Proactive Sentinel Watchdog Daemon makes 0 LLM calls on normal traffic and wakes LLM only on traffic spike/accident', async () => {
+    resetSentinelState();
+    let llmWakeCount = 0;
+
+    const mockWakeLlm = async ({ prompt }) => {
+      llmWakeCount++;
+      assert.ok(prompt.includes('TRAFFIC_SPIKE'));
+      return {
+        content: 'Heads up! An accident/traffic surge just added +14 minutes to your route to Canlis. Leave by 6:16 PM instead of 6:30 PM to arrive on time.'
+      };
+    };
+
+    // Tick 1: Normal clear traffic (+2m delay, 90m until departure) -> MUST NOT call LLM (0 tokens)
+    const tick1 = await runSentinelTick({
+      callLlm: mockWakeLlm,
+      customEvents: [
+        {
+          id: 'cal-canlis-1',
+          title: 'Dinner at Canlis',
+          destination: 'Canlis, Seattle, WA',
+          mockCommute: {
+            origin: 'Downtown Seattle, WA',
+            destination: 'Canlis, Seattle, WA',
+            distanceText: '4.8 mi',
+            baseMinutes: 15,
+            trafficMinutes: 17,
+            trafficDelayMinutes: 2,
+            trafficLevel: 'Light',
+            leaveByFormatted: '6:33 PM',
+            arrivalFormatted: '7:00 PM',
+            minutesUntilLeave: 90,
+            googleMapsDirectionsUrl: 'https://www.google.com/maps/dir/?api=1&destination=Canlis'
+          }
+        }
+      ]
+    });
+
+    assert.equal(tick1.llmCallsTriggered, 0);
+    assert.equal(llmWakeCount, 0);
+    assert.equal(tick1.triggeredAlerts.length, 0);
+
+    // Tick 2: Traffic suddenly spikes (+16m delay, +14m jump!) -> MUST wake the LLM and persist alert
+    const tick2 = await runSentinelTick({
+      callLlm: mockWakeLlm,
+      customEvents: [
+        {
+          id: 'cal-canlis-1',
+          title: 'Dinner at Canlis',
+          destination: 'Canlis, Seattle, WA',
+          mockCommute: {
+            origin: 'Downtown Seattle, WA',
+            destination: 'Canlis, Seattle, WA',
+            distanceText: '4.8 mi',
+            baseMinutes: 15,
+            trafficMinutes: 31,
+            trafficDelayMinutes: 16,
+            trafficLevel: 'Heavy',
+            leaveByFormatted: '6:19 PM',
+            arrivalFormatted: '7:00 PM',
+            minutesUntilLeave: 76,
+            googleMapsDirectionsUrl: 'https://www.google.com/maps/dir/?api=1&destination=Canlis'
+          }
+        }
+      ]
+    });
+
+    assert.equal(tick2.llmCallsTriggered, 1);
+    assert.equal(llmWakeCount, 1);
+    assert.equal(tick2.triggeredAlerts.length, 1);
+    assert.equal(tick2.triggeredAlerts[0].triggerReason, 'traffic_spike');
+    assert.ok(tick2.triggeredAlerts[0].llmAdvisory.includes('Leave by 6:16 PM'));
+
+    const storedAlerts = getActiveSentinelAlerts();
+    assert.equal(storedAlerts.length, 1);
+    assert.equal(storedAlerts[0].trigger_reason, 'traffic_spike');
   });
 });
 
