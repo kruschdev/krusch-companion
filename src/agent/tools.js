@@ -96,6 +96,197 @@ export function toSafeNoteFilename(titleOrSlug) {
 }
 
 /**
+ * Resolve the user's default starting location from env or Working Memory.
+ */
+export function resolveDefaultOrigin(explicitOrigin) {
+  if (explicitOrigin && String(explicitOrigin).trim()) {
+    return String(explicitOrigin).trim();
+  }
+  if (process.env.HOME_LOCATION && process.env.HOME_LOCATION.trim()) {
+    return process.env.HOME_LOCATION.trim();
+  }
+  try {
+    const memories = getActiveMemories();
+    const locMem = memories.find(m => /\b(?:home address|home location|live in|lives in|based in)\b/i.test(m.content));
+    if (locMem) {
+      const m = locMem.content.match(/(?:home address|home location|live in|lives in|based in)\s*(?:is|:)?\s*([^.;\n]+)/i);
+      if (m?.[1]) return m[1].trim();
+    }
+  } catch {
+    // Non-fatal
+  }
+  return 'Downtown Seattle, WA';
+}
+
+/**
+ * Parse an ISO timestamp or natural time string (e.g. "7:30 PM", "19:00") into a Date.
+ */
+export function parseArrivalDateTime(rawTime) {
+  if (!rawTime) {
+    return new Date(Date.now() + 90 * 60 * 1000);
+  }
+  const str = String(rawTime).trim();
+  const direct = new Date(str);
+  if (!isNaN(direct.getTime())) {
+    return direct;
+  }
+  const timeMatch = str.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
+  if (timeMatch) {
+    let hours = parseInt(timeMatch[1], 10);
+    const minutes = parseInt(timeMatch[2] || '0', 10);
+    const meridiem = (timeMatch[3] || '').toLowerCase();
+    if (meridiem === 'pm' && hours < 12) hours += 12;
+    if (meridiem === 'am' && hours === 12) hours = 0;
+    const target = new Date();
+    target.setHours(hours, minutes, 0, 0);
+    if (target.getTime() < Date.now() - 15 * 60 * 1000) {
+      target.setDate(target.getDate() + 1);
+    }
+    return target;
+  }
+  return new Date(Date.now() + 90 * 60 * 1000);
+}
+
+/**
+ * Calculate driving distance, live/estimated traffic delay, and "Time-to-Leave" departure alert.
+ * Uses Google Maps Directions API (duration_in_traffic) when GOOGLE_MAPS_API_KEY is set,
+ * and falls back to OpenStreetMap Nominatim + OSRM Driving Route + commute traffic curves.
+ */
+export async function calculateCommuteAndDeparture({
+  origin = null,
+  destination,
+  arrivalTime = null,
+  bufferMinutes = 10,
+  fetchImpl = fetch
+} = {}) {
+  const resolvedOrigin = resolveDefaultOrigin(origin);
+  const cleanDest = String(destination || '').trim();
+  const arrivalDate = parseArrivalDateTime(arrivalTime);
+  const safeBuffer = Math.min(Math.max(0, parseInt(bufferMinutes, 10) || 10), 60);
+
+  let distanceMiles = 8.5;
+  let distanceText = '8.5 mi';
+  let baseMinutes = 18;
+  let trafficMinutes = 24;
+  let source = 'osrm_traffic_model';
+
+  const googleApiKey = process.env.GOOGLE_MAPS_API_KEY || '';
+
+  // Tier 1: Google Maps Directions API with live traffic (if GOOGLE_MAPS_API_KEY is configured)
+  if (googleApiKey) {
+    try {
+      const gUrl = `https://maps.googleapis.com/maps/api/directions/json?origin=${encodeURIComponent(resolvedOrigin)}&destination=${encodeURIComponent(cleanDest)}&departure_time=now&traffic_model=best_guess&key=${encodeURIComponent(googleApiKey)}`;
+      const gRes = await fetchImpl(gUrl, { signal: AbortSignal.timeout(6000) });
+      if (gRes.ok) {
+        const gData = await gRes.json();
+        const leg = gData?.routes?.[0]?.legs?.[0];
+        if (leg) {
+          distanceText = leg.distance?.text || distanceText;
+          distanceMiles = Number(((leg.distance?.value || 13600) / 1609.34).toFixed(1));
+          baseMinutes = Math.max(1, Math.round((leg.duration?.value || 1080) / 60));
+          const trafficSec = leg.duration_in_traffic?.value || leg.duration?.value || 1080;
+          trafficMinutes = Math.max(baseMinutes, Math.round(trafficSec / 60));
+          source = 'google_maps_live_traffic';
+        }
+      }
+    } catch {
+      // Fall through to OSRM / OpenStreetMap routing
+    }
+  }
+
+  // Tier 2: Zero-key OpenStreetMap Nominatim + OSRM Driving Route + Rush-Hour Traffic Curve
+  if (source !== 'google_maps_live_traffic') {
+    try {
+      const geocodeOne = async (q) => {
+        const u = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(q)}`;
+        const r = await fetchImpl(u, {
+          headers: { 'User-Agent': 'KruschCompanion/2.0 (https://krusch.dev)' },
+          signal: AbortSignal.timeout(5000)
+        });
+        if (!r.ok) return null;
+        const arr = await r.json();
+        if (Array.isArray(arr) && arr[0]?.lat && arr[0]?.lon) {
+          return { lat: parseFloat(arr[0].lat), lon: parseFloat(arr[0].lon) };
+        }
+        return null;
+      };
+
+      const [origCoords, destCoords] = await Promise.all([
+        geocodeOne(resolvedOrigin),
+        geocodeOne(cleanDest)
+      ]);
+
+      if (origCoords && destCoords) {
+        const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${origCoords.lon},${origCoords.lat};${destCoords.lon},${destCoords.lat}?overview=false`;
+        const osrmRes = await fetchImpl(osrmUrl, { signal: AbortSignal.timeout(5000) });
+        if (osrmRes.ok) {
+          const osrmData = await osrmRes.json();
+          const route = osrmData?.routes?.[0];
+          if (route) {
+            distanceMiles = Number(((route.distance || 13600) / 1609.34).toFixed(1));
+            distanceText = `${distanceMiles} mi`;
+            baseMinutes = Math.max(2, Math.round((route.duration || 1080) / 60));
+          }
+        }
+      }
+    } catch {
+      // Keep baseline estimate if offline
+    }
+
+    // Apply time-of-day rush-hour traffic multiplier around departure window
+    const approxDepartHour = new Date(arrivalDate.getTime() - baseMinutes * 60000).getHours();
+    const isPeakCommute = (approxDepartHour >= 7 && approxDepartHour <= 9) || (approxDepartHour >= 16 && approxDepartHour <= 19);
+    const isShoulder = (approxDepartHour >= 11 && approxDepartHour <= 13) || (approxDepartHour === 15) || (approxDepartHour === 20);
+    const multiplier = isPeakCommute ? 1.35 : isShoulder ? 1.18 : 1.05;
+    trafficMinutes = Math.max(baseMinutes + (isPeakCommute ? 5 : 1), Math.round(baseMinutes * multiplier));
+  }
+
+  const trafficDelayMinutes = Math.max(0, trafficMinutes - baseMinutes);
+  const trafficLevel = trafficDelayMinutes >= 10 || trafficMinutes / Math.max(1, baseMinutes) >= 1.3
+    ? 'Heavy'
+    : trafficDelayMinutes >= 4
+      ? 'Moderate'
+      : 'Light';
+
+  const totalLeadMinutes = trafficMinutes + safeBuffer;
+  const leaveByDate = new Date(arrivalDate.getTime() - totalLeadMinutes * 60 * 1000);
+  const minutesUntilLeave = Math.round((leaveByDate.getTime() - Date.now()) / 60000);
+
+  const fmtTime = (d) => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  const leaveByFormatted = fmtTime(leaveByDate);
+  const arrivalFormatted = fmtTime(arrivalDate);
+  const shouldLeaveEarly = trafficDelayMinutes >= 4;
+
+  const earlyWarningText = shouldLeaveEarly
+    ? `⚠️ **Traffic Alert (${trafficLevel} Traffic — +${trafficDelayMinutes} min delay)**: Drive is **${trafficMinutes} min** in traffic (normally ${baseMinutes} min over ${distanceText}). **Leave ${trafficDelayMinutes} min earlier by \`${leaveByFormatted}\`** (includes ${safeBuffer}m parking/arrival buffer) to arrive on time for \`${arrivalFormatted}\`.`
+    : `🚗 **Time-to-Leave (\`${leaveByFormatted}\`)**: Route is clear (**${trafficMinutes} min** drive over ${distanceText}, ${trafficLevel.toLowerCase()} traffic). Leave by **\`${leaveByFormatted}\`** (includes ${safeBuffer}m arrival buffer) for your \`${arrivalFormatted}\` arrival.`;
+
+  const googleMapsDirectionsUrl = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(resolvedOrigin)}&destination=${encodeURIComponent(cleanDest)}&travelmode=driving`;
+
+  return {
+    origin: resolvedOrigin,
+    destination: cleanDest,
+    distanceMiles,
+    distanceText,
+    baseMinutes,
+    trafficMinutes,
+    trafficDelayMinutes,
+    trafficLevel,
+    bufferMinutes: safeBuffer,
+    totalLeadMinutes,
+    arrivalIso: arrivalDate.toISOString(),
+    leaveByIso: leaveByDate.toISOString(),
+    leaveByFormatted,
+    arrivalFormatted,
+    minutesUntilLeave,
+    shouldLeaveEarly,
+    earlyWarningText,
+    googleMapsDirectionsUrl,
+    source
+  };
+}
+
+/**
  * Declarative Tool Registry for Krusch Companion's Agentic Proxy.
  * Uses flat parameter schemas specifically optimized for 7B/14B models
  * operating under the <holodata> Dual-Engine Cognitive Blueprint protocol.
@@ -770,18 +961,33 @@ export const COMPANION_TOOLS = [
   {
     name: 'gkrusch_calendar',
     category: 'google_calendar',
-    description: 'Interact with G-Krusch Google Calendar Extension: list upcoming calendar events or schedule/create a new calendar appointment.',
+    description: 'Interact with G-Krusch Google Calendar Extension: list upcoming calendar events or schedule/create a new calendar appointment (automatically calculates travel time, live traffic delay, and Leave-By departure alert when a location is present).',
     parameters: {
       action: 'string (REQUIRED: "list_events" | "create_event")',
       summary: 'string (Event title when action="create_event", or search filter when action="list_events")',
       startTime: 'string (ISO-8601 start timestamp when action="create_event", e.g. "2026-10-14T14:00:00")',
       endTime: 'string (OPTIONAL: ISO-8601 end timestamp when action="create_event")',
-      description: 'string (OPTIONAL: Event notes or location)'
+      location: 'string (OPTIONAL: Event address or venue location — triggers automatic traffic & Leave-By time calculation)',
+      description: 'string (OPTIONAL: Event notes or agenda)'
     },
     required: ['action'],
     async execute(args, { fetchImpl = fetch } = {}) {
       const action = String(args?.action || 'list_events').toLowerCase().trim();
       const baseUrl = (process.env.G_KRUSCH_URL || 'http://127.0.0.1:5446').replace(/\/+$/, '');
+      const eventLocation = String(args?.location || '').trim();
+
+      let commuteInfo = null;
+      if (eventLocation && (action.includes('create') || action.includes('schedule'))) {
+        try {
+          commuteInfo = await calculateCommuteAndDeparture({
+            destination: eventLocation,
+            arrivalTime: args?.startTime || null,
+            fetchImpl
+          });
+        } catch {
+          // Non-fatal
+        }
+      }
 
       try {
         if (action === 'create_event' || action === 'create' || action === 'schedule') {
@@ -794,19 +1000,26 @@ export const COMPANION_TOOLS = [
               summary,
               startTime,
               endTime: args?.endTime || null,
-              description: args?.description || ''
+              location: eventLocation,
+              description: [
+                args?.description || '',
+                commuteInfo ? `Leave by ${commuteInfo.leaveByFormatted} (${commuteInfo.trafficMinutes}m drive in ${commuteInfo.trafficLevel} traffic)` : ''
+              ].filter(Boolean).join('\n')
             }),
             signal: AbortSignal.timeout(8000)
           });
           const data = await res.json();
           if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
           const ev = data.event || {};
+          const commuteLines = commuteInfo
+            ? `\n- ${commuteInfo.earlyWarningText}\n- 🗺️ [Google Maps Turn-by-Turn Directions](${commuteInfo.googleMapsDirectionsUrl})`
+            : '';
           return {
             ok: true,
             tool: 'gkrusch_calendar',
             actionType: 'google_calendar',
-            summary: `📅 **Scheduled on Google Calendar**: **${ev.summary || summary}** (${ev.start || startTime})${ev.htmlLink ? `\n🔗 [Open in Google Calendar](${ev.htmlLink})` : ''}`,
-            data: ev
+            summary: `📅 **Scheduled on Google Calendar**: **${ev.summary || summary}** (${ev.start || startTime})${eventLocation ? ` @ *${eventLocation}*` : ''}${ev.htmlLink ? `\n🔗 [Open in Google Calendar](${ev.htmlLink})` : ''}${commuteLines}`,
+            data: { ...ev, commute: commuteInfo }
           };
         }
 
@@ -826,7 +1039,26 @@ export const COMPANION_TOOLS = [
             data: { events: [] }
           };
         }
-        const lines = events.map(e => `- **${e.summary}** — \`${e.start}\`${e.location ? ` (${e.location})` : ''}`);
+
+        const lines = [];
+        for (const e of events) {
+          let line = `- **${e.summary}** — \`${e.start}\`${e.location ? ` (${e.location})` : ''}`;
+          if (e.location) {
+            try {
+              const c = await calculateCommuteAndDeparture({
+                destination: e.location,
+                arrivalTime: e.start,
+                fetchImpl
+              });
+              line += `\n  🚗 **Leave by \`${c.leaveByFormatted}\`** — ${c.trafficMinutes} min drive (${c.trafficLevel} traffic${c.trafficDelayMinutes > 0 ? `, +${c.trafficDelayMinutes}m traffic delay — leave early!` : ''})`;
+              e.commute = c;
+            } catch {
+              // Non-fatal
+            }
+          }
+          lines.push(line);
+        }
+
         return {
           ok: true,
           tool: 'gkrusch_calendar',
@@ -840,18 +1072,23 @@ export const COMPANION_TOOLS = [
           const summary = String(args?.summary || args?.title || 'Scheduled Event').trim();
           const inferred = inferPriorityTierFromText(summary);
           const created = createTask({
-            title: `${inferred.cleanTitle}${args?.startTime ? ` (@ ${args.startTime})` : ''}`,
+            title: `${inferred.cleanTitle}${args?.startTime ? ` (@ ${args.startTime})` : ''}${eventLocation ? ` [${eventLocation}]` : ''}`,
             priority_id: inferred.priorityId,
-            notes: 'Scheduled via G-Krusch Calendar fallback',
+            notes: commuteInfo
+              ? `Leave by ${commuteInfo.leaveByFormatted} (${commuteInfo.trafficMinutes}m in ${commuteInfo.trafficLevel} traffic) | Scheduled via G-Krusch Calendar fallback`
+              : 'Scheduled via G-Krusch Calendar fallback',
             energy_level: 'medium',
             date: today()
           });
+          const commuteLines = commuteInfo
+            ? `\n- ${commuteInfo.earlyWarningText}\n- 🗺️ [Google Maps Turn-by-Turn Directions](${commuteInfo.googleMapsDirectionsUrl})`
+            : '';
           return {
             ok: true,
             tool: 'gkrusch_calendar',
             actionType: 'google_calendar',
-            summary: `📅 Added **[#${created.id}] ${created.title}** to **Today's Priority Board** (Google Calendar OAuth not yet connected at \`${baseUrl}/auth/google\`).`,
-            data: { fallbackTask: created, calendarError: err.message }
+            summary: `📅 Added **[#${created.id}] ${created.title}** to **Today's Priority Board** (Google Calendar OAuth not yet connected at \`${baseUrl}/auth/google\`).${commuteLines}`,
+            data: { fallbackTask: created, commute: commuteInfo, calendarError: err.message }
           };
         }
         return {
@@ -957,7 +1194,7 @@ export const COMPANION_TOOLS = [
   {
     name: 'concierge_reservation',
     category: 'concierge',
-    description: 'Make a restaurant, appointment, or venue reservation: looks up live venue details (address, phone, website, hours via OpenStreetMap), generates pre-filled OpenTable/Resy/Google Reserve booking links, drafts/sends a concierge reservation email via G-Krusch Gmail, and places a hold on Google Calendar / Priority Board.',
+    description: 'Make a restaurant, appointment, or venue reservation: looks up live venue details (address, phone, website, hours via OpenStreetMap), generates pre-filled OpenTable/Resy/Google Reserve booking links, drafts/sends a concierge reservation email via G-Krusch Gmail, calculates live traffic & Time-to-Leave alert, and places a hold on Google Calendar / Priority Board.',
     parameters: {
       venue: 'string (REQUIRED: Restaurant, venue, or business name and city, e.g. "Canlis Seattle" or "Sushi Kashiba in Seattle")',
       dateTime: 'string (OPTIONAL: Requested ISO-8601 date/time or natural time, e.g. "2026-10-16T19:00:00" or "Friday at 7pm")',
@@ -975,11 +1212,8 @@ export const COMPANION_TOOLS = [
       const partySize = Math.min(Math.max(1, parseInt(args?.partySize || '2', 10) || 2), 20);
       const rawDateTime = String(args?.dateTime || 'Tonight at 7:00 PM').trim();
       const specialNotes = String(args?.notes || '').trim();
-      const parsedDate = new Date(rawDateTime);
-      const isValidIso = !isNaN(parsedDate.getTime());
-      const isoDateTime = isValidIso
-        ? parsedDate.toISOString()
-        : new Date(Date.now() + 24 * 3600 * 1000).toISOString().replace(/T.*/, 'T19:00:00');
+      const parsedDate = parseArrivalDateTime(rawDateTime);
+      const isoDateTime = parsedDate.toISOString();
       const isoDateOnly = isoDateTime.slice(0, 10);
 
       // 1. Live Venue Lookup via OpenStreetMap Nominatim (zero API key required)
@@ -1020,7 +1254,15 @@ export const COMPANION_TOOLS = [
       const resyUrl = `https://resy.com/cities/search?query=${encodeURIComponent(venue)}&date=${isoDateOnly}&seats=${partySize}`;
       const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(venue)}`;
 
-      // 3. Compose Concierge Reservation Email & Dispatch via G-Krusch Gmail (or save local draft)
+      // 3. Calculate Driving Time, Traffic Delay & Recommended Leave-By Alert
+      const commute = await calculateCommuteAndDeparture({
+        destination: placeInfo.displayName || venue,
+        arrivalTime: isoDateTime,
+        bufferMinutes: 10,
+        fetchImpl
+      });
+
+      // 4. Compose Concierge Reservation Email & Dispatch via G-Krusch Gmail (or save local draft)
       const targetEmail = placeInfo.email || 'reservations@venue.example.com';
       const emailSubject = `Reservation Request: ${venue} — Party of ${partySize} (${rawDateTime})`;
       const emailBody = [
@@ -1060,12 +1302,12 @@ export const COMPANION_TOOLS = [
         }
       } catch {
         const filename = toSafeNoteFilename(`reservation-${venue}`);
-        const md = `# Reservation Dossier: ${venue}\n- **Party Size**: ${partySize}\n- **Requested Time**: ${rawDateTime}\n- **Address**: ${placeInfo.displayName}\n- **Phone**: ${placeInfo.phone || 'N/A'}\n- **Website**: ${placeInfo.website || 'N/A'}\n- **OpenTable**: ${openTableUrl}\n- **Resy**: ${resyUrl}\n\n## Concierge Email Draft (To: ${targetEmail})\n**Subject**: ${emailSubject}\n\n${emailBody}\n`;
+        const md = `# Reservation Dossier: ${venue}\n- **Party Size**: ${partySize}\n- **Requested Time**: ${rawDateTime}\n- **Leave By**: ${commute.leaveByFormatted} (${commute.trafficMinutes}m drive in ${commute.trafficLevel} traffic)\n- **Address**: ${placeInfo.displayName}\n- **Phone**: ${placeInfo.phone || 'N/A'}\n- **Website**: ${placeInfo.website || 'N/A'}\n- **OpenTable**: ${openTableUrl}\n- **Resy**: ${resyUrl}\n\n## Concierge Email Draft (To: ${targetEmail})\n**Subject**: ${emailSubject}\n\n${emailBody}\n`;
         fs.writeFileSync(path.join(getNotesDirectory(), filename), md, 'utf-8');
         emailStatusLine = `📝 **Saved Reservation Dossier & Email Draft** to \`data/notes/${filename}\``;
       }
 
-      // 4. Add Reservation Hold onto Google Calendar (if G-Krusch OAuth is linked) & Today's Priority Board
+      // 5. Add Reservation Hold onto Google Calendar (if G-Krusch OAuth is linked) & Today's Priority Board
       let calendarHoldLine = '';
       let calendarEvent = null;
       try {
@@ -1076,7 +1318,7 @@ export const COMPANION_TOOLS = [
             summary: `[Reservation] ${venue} (Party of ${partySize})`,
             startTime: isoDateTime,
             location: placeInfo.displayName,
-            description: `Party of ${partySize}${specialNotes ? ` | Notes: ${specialNotes}` : ''}\nPhone: ${placeInfo.phone || 'N/A'}\nOpenTable: ${openTableUrl}\nResy: ${resyUrl}`
+            description: `Leave by ${commute.leaveByFormatted} (${commute.trafficMinutes}m drive in ${commute.trafficLevel} traffic)\nParty of ${partySize}${specialNotes ? ` | Notes: ${specialNotes}` : ''}\nPhone: ${placeInfo.phone || 'N/A'}\nOpenTable: ${openTableUrl}\nResy: ${resyUrl}`
           }),
           signal: AbortSignal.timeout(5000)
         });
@@ -1090,9 +1332,9 @@ export const COMPANION_TOOLS = [
       }
 
       const holdTask = createTask({
-        title: `Reservation Hold: ${venue} (Party of ${partySize} @ ${rawDateTime})`,
+        title: `Reservation Hold: ${venue} (Party of ${partySize} @ ${rawDateTime} — Leave by ${commute.leaveByFormatted})`,
         priority_id: 2,
-        notes: `OpenTable: ${openTableUrl} | Phone: ${placeInfo.phone || 'N/A'}`,
+        notes: `Leave by ${commute.leaveByFormatted} (${commute.trafficMinutes}m in ${commute.trafficLevel} traffic) | OpenTable: ${openTableUrl} | Phone: ${placeInfo.phone || 'N/A'}`,
         energy_level: 'low',
         date: today()
       });
@@ -1103,10 +1345,11 @@ export const COMPANION_TOOLS = [
         ...(placeInfo.phone ? [`- **Phone**: \`${placeInfo.phone}\``] : []),
         ...(placeInfo.website ? [`- **Website**: ${placeInfo.website}`] : []),
         ...(placeInfo.openingHours ? [`- **Hours**: \`${placeInfo.openingHours}\``] : []),
-        `- **Instant 1-Click Booking Links**:`,
+        `- ${commute.earlyWarningText}`,
+        `- **Instant 1-Click Booking & Navigation Links**:`,
         `  • [Book on OpenTable (Party of ${partySize})](${openTableUrl})`,
         `  • [Book on Resy (Party of ${partySize})](${resyUrl})`,
-        `  • [Open in Google Maps](${googleMapsUrl})`,
+        `  • [Turn-by-Turn Google Maps Directions (${commute.distanceText})](${commute.googleMapsDirectionsUrl})`,
         `- ${emailStatusLine}`,
         ...(calendarHoldLine ? [`- ${calendarHoldLine}`] : []),
         `- 📋 **Board Hold Added**: **[#${holdTask.id}] ${holdTask.title}**`
@@ -1122,10 +1365,77 @@ export const COMPANION_TOOLS = [
           partySize,
           dateTime: rawDateTime,
           placeInfo,
-          links: { openTableUrl, resyUrl, googleMapsUrl },
+          commute,
+          links: { openTableUrl, resyUrl, googleMapsUrl, directionsUrl: commute.googleMapsDirectionsUrl },
           calendarEvent,
           holdTaskId: holdTask.id
         }
+      };
+    }
+  },
+  {
+    name: 'commute_departure_check',
+    category: 'commute',
+    description: 'Calculate driving distance, live/estimated traffic conditions, and exact "Time-to-Leave" departure notification for any calendar event, appointment, or destination.',
+    parameters: {
+      destination: 'string (REQUIRED: Event location, venue name, or street address, e.g. "Sea-Tac Airport" or "Canlis, Seattle")',
+      origin: 'string (OPTIONAL: Starting location; defaults to HOME_LOCATION or saved home address)',
+      arrivalTime: 'string (OPTIONAL: Target arrival time in ISO-8601 or natural format like "7:00 PM")',
+      bufferMinutes: 'number (OPTIONAL: Extra parking/walking buffer in minutes, default 10)'
+    },
+    required: ['destination'],
+    async execute(args, { fetchImpl = fetch } = {}) {
+      const destination = String(args?.destination || args?.location || '').trim();
+      if (!destination) {
+        return { ok: false, tool: 'commute_departure_check', summary: 'Parameter "destination" is required for commute_departure_check.' };
+      }
+
+      const commute = await calculateCommuteAndDeparture({
+        origin: args?.origin || null,
+        destination,
+        arrivalTime: args?.arrivalTime || args?.startTime || null,
+        bufferMinutes: args?.bufferMinutes ?? 10,
+        fetchImpl
+      });
+
+      // If traffic is Moderate/Heavy, also dispatch a departure push notification if NTFY_TOPIC / WEBHOOK_URL is set
+      const ntfyTopic = process.env.NTFY_TOPIC || '';
+      let notifiedPush = false;
+      if (commute.shouldLeaveEarly && ntfyTopic) {
+        try {
+          await fetchImpl(`https://ntfy.sh/${encodeURIComponent(ntfyTopic)}`, {
+            method: 'POST',
+            headers: {
+              Title: `Leave Early (${commute.leaveByFormatted}): ${destination}`,
+              Priority: commute.trafficLevel === 'Heavy' ? '4' : '3'
+            },
+            body: `${commute.trafficLevel} traffic (+${commute.trafficDelayMinutes}m delay). Drive is ${commute.trafficMinutes}m. Leave by ${commute.leaveByFormatted} to arrive by ${commute.arrivalFormatted}.`,
+            signal: AbortSignal.timeout(4000)
+          });
+          notifiedPush = true;
+        } catch {
+          // Non-fatal
+        }
+      }
+
+      const lines = [
+        `🚗 **Time-to-Leave & Traffic Departure Advisory**:`,
+        `- **Route**: \`${commute.origin}\` → **${commute.destination}** (${commute.distanceText})`,
+        `- **Target Arrival**: \`${commute.arrivalFormatted}\` *(includes ${commute.bufferMinutes}m parking/arrival buffer)*`,
+        `- **Normal Drive Time**: ${commute.baseMinutes} min`,
+        `- **Traffic-Adjusted Drive Time**: **${commute.trafficMinutes} min** *(${commute.trafficLevel} Traffic${commute.trafficDelayMinutes > 0 ? `, +${commute.trafficDelayMinutes} min delay` : ''})*`,
+        `- **⏰ Recommended Leave-By Time**: **\`${commute.leaveByFormatted}\`**`,
+        `- ${commute.earlyWarningText}`,
+        ...(notifiedPush ? [`- 🔔 **Push Notification Sent** via ntfy (\`${ntfyTopic}\`)`] : []),
+        `- 🗺️ [Open Turn-by-Turn Google Maps Directions](${commute.googleMapsDirectionsUrl})`
+      ];
+
+      return {
+        ok: true,
+        tool: 'commute_departure_check',
+        actionType: 'commute_departure',
+        summary: lines.join('\n'),
+        data: commute
       };
     }
   }

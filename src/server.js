@@ -10,7 +10,7 @@ import * as db from './db/index.js';
 import { rememberMemory, getActiveMemories, supersedeMemory, compileStateBriefing, createDatabaseBackup, getDecayCandidates } from './context/memory-store.js';
 import { evaluateCompanionContext } from './context/boundary-gate.js';
 import { dispatchCompanionChat, classifyCompanionPrompt, breakdownTaskIntoSubtasks } from './router/cascade-client.js';
-import { COMPANION_TOOLS, executeCompanionTool } from './agent/tools.js';
+import { COMPANION_TOOLS, executeCompanionTool, calculateCommuteAndDeparture } from './agent/tools.js';
 import { processThoughtStream, processChaosDump } from './services/chaos-dump.js';
 import { generateDailyFocus, generateDailyReflection, generateNudge } from './services/coach.js';
 import { transcribeAudio } from './services/stt.js';
@@ -233,6 +233,77 @@ app.post('/api/companion/action', async (req, res) => {
     }
     const result = await executeCompanionTool(tool, toolArgs);
     res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/companion/departure-alerts', async (_req, res) => {
+  try {
+    const alerts = [];
+    const baseUrl = (process.env.G_KRUSCH_URL || 'http://127.0.0.1:5446').replace(/\/+$/, '');
+
+    // 1. Check upcoming Google Calendar events that have a location
+    try {
+      const calRes = await fetch(`${baseUrl}/api/calendar/events?limit=5`, {
+        signal: AbortSignal.timeout(4000)
+      });
+      if (calRes.ok) {
+        const calData = await calRes.json();
+        for (const ev of (calData.events || [])) {
+          if (ev.location) {
+            const commute = await calculateCommuteAndDeparture({
+              destination: ev.location,
+              arrivalTime: ev.start
+            });
+            alerts.push({
+              id: `cal-${ev.id}`,
+              title: ev.summary || 'Calendar Event',
+              source: 'Google Calendar',
+              commute
+            });
+          }
+        }
+      }
+    } catch {
+      // Non-fatal if Calendar OAuth not linked
+    }
+
+    // 2. Check Today's Priority Board for Reservation Holds or location-tagged tasks
+    const tasks = db.getTasksForDate(db.today()).filter(t => !t.completed);
+    for (const t of tasks) {
+      const resMatch = t.title.match(/^Reservation Hold:\s*(.+?)\s*\(Party of \d+\s*@\s*([^—)]+)/i);
+      const bracketLoc = t.title.match(/\[([^\]]+)\]\s*$/);
+      if (resMatch) {
+        const venue = resMatch[1].trim();
+        const rawTime = resMatch[2].trim();
+        const commute = await calculateCommuteAndDeparture({
+          destination: venue,
+          arrivalTime: rawTime
+        });
+        alerts.push({
+          id: `task-${t.id}`,
+          title: t.title,
+          source: 'Reservation Hold',
+          commute
+        });
+      } else if (bracketLoc && !/^#?\d+$/.test(bracketLoc[1])) {
+        const loc = bracketLoc[1].trim();
+        const timeMatch = t.title.match(/@\s*([^)\]]+)/);
+        const commute = await calculateCommuteAndDeparture({
+          destination: loc,
+          arrivalTime: timeMatch ? timeMatch[1].trim() : null
+        });
+        alerts.push({
+          id: `task-${t.id}`,
+          title: t.title,
+          source: 'Priority Board',
+          commute
+        });
+      }
+    }
+
+    res.json({ count: alerts.length, alerts });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

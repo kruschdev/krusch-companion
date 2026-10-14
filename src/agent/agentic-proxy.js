@@ -65,6 +65,11 @@ const INTENT_PATTERNS = [
     category: 'concierge',
     tools: ['concierge_reservation'],
     regex: /\b(?:make\s+a\s+reservation|book\s+a\s+(?:table|reservation|dinner|lunch|spot)|reserve\s+a\s+table|dinner\s+reservation|restaurant\s+reservation|opentable|resy)\b/i
+  },
+  {
+    category: 'commute',
+    tools: ['commute_departure_check'],
+    regex: /\b(?:when\s+(?:do\s+i\s+need\s+to|should\s+i)\s+leave|time\s+to\s+leave|check\s+traffic|how(?:'s|\s+is)\s+traffic|drive\s+time\s+to|travel\s+time\s+to|directions\s+to|commute\s+to|leave\s+early)\b/i
   }
 ];
 
@@ -330,9 +335,15 @@ export function inferFallbackToolCalls(prompt, matchedCategories = []) {
   if (matchedCategories.includes('google_calendar')) {
     const createMatch = text.match(/\b(?:schedule|create|book|add)\s+(?:a\s+|an\s+)?(?:calendar\s+)?(?:meeting|event|appointment|call)\s*(?:titled|called|for|to|:)?\s*(.+?)$/i);
     if (createMatch) {
+      const rawSummary = createMatch[1].trim();
+      const locMatch = rawSummary.match(/\b(?:at|in)\s+([A-Za-z0-9\s,'&-]+?)(?:\s+(?:at\s+\d|on\s+)\b|$)/i);
       calls.push({
         name: 'gkrusch_calendar',
-        arguments: { action: 'create_event', summary: createMatch[1].trim() }
+        arguments: {
+          action: 'create_event',
+          summary: rawSummary,
+          ...(locMatch ? { location: locMatch[1].trim() } : {})
+        }
       });
     } else {
       calls.push({
@@ -376,6 +387,18 @@ export function inferFallbackToolCalls(prompt, matchedCategories = []) {
         venue: venueMatch ? venueMatch[1].trim() : text,
         partySize: partyMatch ? parseInt(partyMatch[1], 10) : 2,
         ...(emailMatch ? { email: emailMatch[1] } : {})
+      }
+    });
+  }
+
+  if (matchedCategories.includes('commute')) {
+    const destMatch = text.match(/\b(?:to|for|at)\s+([A-Za-z0-9\s,'&-]+?)(?:\s+(?:by|at)\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)|[?.!]|$)/i);
+    const timeMatch = text.match(/\b(?:by|at|for)\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i);
+    calls.push({
+      name: 'commute_departure_check',
+      arguments: {
+        destination: destMatch ? destMatch[1].trim() : text,
+        ...(timeMatch ? { arrivalTime: timeMatch[1].trim() } : {})
       }
     });
   }

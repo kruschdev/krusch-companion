@@ -321,6 +321,57 @@ describe('Krusch Companion — Agentic Proxy (<holodata> Dual-Engine for 7B/14B 
     assert.ok(turnResult.content.includes('resy.com'));
     assert.ok(turnResult.content.includes('concierge@canlis.com'));
   });
+
+  test('10. Commute & Time-to-Leave tool calculates route distance, rush-hour traffic delay, and Leave-By warning', async () => {
+    const mockCommuteFetch = async (url) => {
+      if (url.includes('nominatim.openstreetmap.org')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ([{ lat: '47.6062', lon: '-122.3321', display_name: 'Seattle, WA' }])
+        };
+      }
+      if (url.includes('router.project-osrm.org')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            routes: [{ distance: 22530, duration: 1500 }] // ~14.0 miles, 25 min baseline drive
+          })
+        };
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    };
+
+    const mockLlm = async () => ({
+      tierUsed: 'L1_edge',
+      reason: 'Local Ollama Edge',
+      content: `<holodata>
+{
+  "cognitive_scratchpad": "User is asking when they need to leave for their 6:00 PM dinner in Bellevue and whether there is traffic.",
+  "task_name": "Commute & Traffic Leave-By Check",
+  "strict_problem_constraints": "Calculate traffic delay during evening rush hour and report Leave-By time.",
+  "tool_plan": "commute_departure_check"
+}
+</holodata>
+[
+  {"name": "commute_departure_check", "arguments": {"destination": "Bellevue, WA", "origin": "Downtown Seattle, WA", "arrivalTime": "2026-10-16T18:00:00"}}
+]`
+    });
+
+    const turnResult = await executeAgenticProxyTurn({
+      prompt: 'When do I need to leave for my 6:00 PM dinner in Bellevue and how is traffic?',
+      callLlm: mockLlm,
+      fetchImpl: mockCommuteFetch
+    });
+
+    assert.ok(turnResult);
+    assert.equal(turnResult.actionExecuted.type, 'commute_departure');
+    assert.ok(turnResult.content.includes('14 mi'));
+    assert.ok(turnResult.content.includes('Heavy Traffic'));
+    assert.ok(turnResult.content.includes('Recommended Leave-By Time'));
+    assert.ok(turnResult.content.includes('google.com/maps/dir/'));
+  });
 });
 
 

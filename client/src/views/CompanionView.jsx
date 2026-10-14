@@ -22,6 +22,7 @@ const ACTION_LABELS = {
   google_calendar: { icon: '📅', label: 'G-Krusch: Google Calendar', color: '#60a5fa' },
   google_gmail: { icon: '✉️', label: 'G-Krusch: Gmail Extension', color: '#f87171' },
   concierge_reservation: { icon: '🍽️', label: 'Agentic Proxy: Concierge Reservation', color: '#f0c040' },
+  commute_departure: { icon: '🚗', label: 'Agentic Proxy: Traffic & Time-to-Leave', color: '#38bdf8' },
   agentic_tool: { icon: '⚡', label: 'Agentic Proxy: Tool Executed', color: '#00f0ff' }
 };
 
@@ -30,7 +31,7 @@ export function CompanionView({ streak, onActionExecuted }) {
     {
       id: 'welcome',
       role: 'assistant',
-      content: "Hello! I'm your sovereign personal assistant. Through the Krusch Agentic Proxy (<holodata> Dual-Engine) and G-Krusch Google Workspace Extensions, I can execute live actions for you—check the weather, research the web, search or write Google Drive docs, manage Google Calendar events, draft or search Gmail, save local Markdown notes, send push notifications, inspect system telemetry, or manage Today's Priority Board. What can I get done for you?",
+      content: "Hello! I'm your sovereign personal assistant. Through the Krusch Agentic Proxy (<holodata> Dual-Engine) and G-Krusch Google Workspace Extensions, I can execute live actions for you—check the weather, research the web, make reservations, calculate live traffic & Time-to-Leave alerts, search or write Google Drive docs, manage Google Calendar events, draft or search Gmail, save local Markdown notes, or manage Today's Priority Board. What can I get done for you?",
       tierUsed: 'L1_edge',
       latencyMs: 12
     }
@@ -39,11 +40,13 @@ export function CompanionView({ streak, onActionExecuted }) {
   const [isLoading, setIsLoading] = useState(false);
   const [dailyFocus, setDailyFocus] = useState(null);
   const [isFocusLoading, setIsFocusLoading] = useState(false);
+  const [departureAlerts, setDepartureAlerts] = useState([]);
   const [expandedTraceIds, setExpandedTraceIds] = useState({});
   const chatEndRef = useRef(null);
 
   useEffect(() => {
     fetchFocus();
+    fetchDepartureAlerts();
   }, []);
 
   useEffect(() => {
@@ -52,6 +55,32 @@ export function CompanionView({ streak, onActionExecuted }) {
 
   const toggleTrace = (id) => {
     setExpandedTraceIds(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const fetchDepartureAlerts = async () => {
+    try {
+      const res = await fetch('/api/companion/departure-alerts');
+      if (res.ok) {
+        const data = await res.json();
+        setDepartureAlerts(data.alerts || []);
+      }
+    } catch {
+      // Non-fatal
+    }
+  };
+
+  const triggerBrowserDepartureAlert = async (alertItem) => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
+    let perm = Notification.permission;
+    if (perm === 'default') {
+      perm = await Notification.requestPermission();
+    }
+    if (perm === 'granted') {
+      const c = alertItem.commute;
+      new Notification(`🚗 Leave by ${c.leaveByFormatted} — ${alertItem.title}`, {
+        body: `${c.trafficLevel} traffic (${c.trafficMinutes}m drive${c.trafficDelayMinutes > 0 ? `, +${c.trafficDelayMinutes}m delay` : ''}). Leave by ${c.leaveByFormatted} to arrive on time.`
+      });
+    }
   };
 
   const fetchFocus = async () => {
@@ -113,6 +142,7 @@ export function CompanionView({ streak, onActionExecuted }) {
       if (data.actionExecuted && onActionExecuted) {
         onActionExecuted(data.actionExecuted);
       }
+      fetchDepartureAlerts();
 
       setMessages(prev => [
         ...prev,
@@ -165,6 +195,77 @@ export function CompanionView({ streak, onActionExecuted }) {
           {dailyFocus || 'Generate your morning focus briefing to synthesize your top tasks and align your mindset.'}
         </p>
       </div>
+
+      {/* Live Time-to-Leave & Traffic Departure Alerts Banner */}
+      {departureAlerts.length > 0 && (
+        <div
+          className="glass-panel"
+          style={{
+            padding: '12px 18px',
+            borderLeft: '4px solid #f0c040',
+            background: 'rgba(240, 192, 64, 0.07)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8
+          }}
+        >
+          {departureAlerts.slice(0, 2).map((item) => {
+            const c = item.commute;
+            return (
+              <div
+                key={item.id}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: 10,
+                  fontSize: '0.86rem'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span>{c.shouldLeaveEarly ? '⚠️' : '🚗'}</span>
+                  <strong>Leave by {c.leaveByFormatted}</strong>
+                  <span style={{ color: 'var(--text-dim)' }}>for</span>
+                  <span>{item.title}</span>
+                  <span
+                    style={{
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: '0.74rem',
+                      padding: '2px 8px',
+                      borderRadius: 'var(--radius-full)',
+                      background: c.shouldLeaveEarly ? 'rgba(248, 113, 113, 0.16)' : 'rgba(45, 212, 191, 0.14)',
+                      color: c.shouldLeaveEarly ? '#f87171' : '#2dd4bf',
+                      border: `1px solid ${c.shouldLeaveEarly ? '#f87171' : '#2dd4bf'}`
+                    }}
+                  >
+                    {c.trafficMinutes}m drive ({c.trafficLevel} traffic{c.trafficDelayMinutes > 0 ? `, +${c.trafficDelayMinutes}m delay` : ''})
+                  </span>
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <a
+                    href={c.googleMapsDirectionsUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="btn-secondary"
+                    style={{ fontSize: '0.75rem', padding: '4px 10px', textDecoration: 'none' }}
+                  >
+                    🗺️ Directions
+                  </a>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => triggerBrowserDepartureAlert(item)}
+                    style={{ fontSize: '0.75rem', padding: '4px 10px' }}
+                  >
+                    🔔 Notify Me
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Chat Messages */}
       <div className="glass-panel" style={{ flex: 1, padding: 20, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
