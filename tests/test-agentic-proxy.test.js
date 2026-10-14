@@ -454,6 +454,81 @@ describe('Krusch Companion — Agentic Proxy (<holodata> Dual-Engine for 7B/14B 
     assert.equal(storedAlerts.length, 1);
     assert.equal(storedAlerts[0].trigger_reason, 'traffic_spike');
   });
+
+  test('12. Sentinel Watchdog polls Gmail & Calendar: ignores promo spam at 0 tokens, wakes LLM on urgent/booking email and calendar double-booking conflict', async () => {
+    resetSentinelState();
+    let llmWakeCount = 0;
+
+    const mockWakeLlm = async ({ triggerReason }) => {
+      llmWakeCount++;
+      return {
+        content: `Proactive Sentinel Advisory handled ${triggerReason}`
+      };
+    };
+
+    // Tick 1: Promo newsletter email + non-conflicting future calendar event -> 0 LLM calls
+    const quietTick = await runSentinelTick({
+      callLlm: mockWakeLlm,
+      customEmails: [
+        {
+          id: 'msg-promo-1',
+          from: 'marketing@store.example.com',
+          subject: '50% Off Flash Sale Ends Tonight!',
+          snippet: 'Click here to unsubscribe from our daily digest.'
+        }
+      ],
+      customCalendarEvents: [
+        {
+          id: 'ev-100',
+          summary: 'Weekly Design Sync',
+          start: '2026-10-20T10:00:00Z',
+          end: '2026-10-20T11:00:00Z'
+        }
+      ],
+      customEvents: []
+    });
+
+    assert.equal(quietTick.llmCallsTriggered, 0);
+    assert.equal(llmWakeCount, 0);
+
+    // Tick 2: Actionable urgent invoice email + overlapping Calendar double-booking -> wakes LLM twice!
+    const activeTick = await runSentinelTick({
+      callLlm: mockWakeLlm,
+      customEmails: [
+        {
+          id: 'msg-urgent-2',
+          from: 'billing@vendor.io',
+          subject: 'Action Required: Invoice #4092 Payment Due Before 5pm',
+          snippet: 'Urgent: please approve or reply before 5pm today.'
+        }
+      ],
+      customCalendarEvents: [
+        {
+          id: 'ev-201',
+          summary: 'Architecture Review',
+          start: '2026-10-20T14:00:00Z',
+          end: '2026-10-20T15:00:00Z'
+        },
+        {
+          id: 'ev-202',
+          summary: 'Client Onboarding Call',
+          start: '2026-10-20T14:30:00Z',
+          end: '2026-10-20T15:30:00Z'
+        }
+      ],
+      customEvents: []
+    });
+
+    assert.equal(activeTick.llmCallsTriggered, 2);
+    assert.equal(llmWakeCount, 2);
+    assert.equal(activeTick.triggeredAlerts.length, 2);
+    assert.equal(activeTick.triggeredAlerts[0].triggerReason, 'email_urgent_action');
+    assert.equal(activeTick.triggeredAlerts[1].triggerReason, 'calendar_conflict');
+
+    // Verify the urgent email also auto-created a task on Today's Priority Board
+    const tasks = getTasksForDate(today());
+    assert.ok(tasks.some(t => t.title.includes('[Email Action] Action Required: Invoice #4092')));
+  });
 });
 
 

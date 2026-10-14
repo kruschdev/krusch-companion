@@ -330,7 +330,9 @@ app.get('/api/sentinel/status', (_req, res) => {
 app.post('/api/sentinel/tick', async (req, res) => {
   try {
     const customEvents = Array.isArray(req.body?.events) ? req.body.events : null;
-    const result = await runSentinelTick({ customEvents });
+    const customEmails = Array.isArray(req.body?.emails) ? req.body.emails : null;
+    const customCalendarEvents = Array.isArray(req.body?.calendarEvents) ? req.body.calendarEvents : null;
+    const result = await runSentinelTick({ customEvents, customEmails, customCalendarEvents });
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });

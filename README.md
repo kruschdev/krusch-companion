@@ -14,14 +14,14 @@
   <a href="https://github.com/kruschdev/krusch-agentic-mcp"><img src="https://img.shields.io/badge/Agentic%20Proxy-%3Cholodata%3E%20Dual--Engine-orange.svg?style=flat-square" alt="Krusch Agentic Proxy"></a>
   <a href="https://github.com/kruschdev/G-krusch"><img src="https://img.shields.io/badge/Workspace-G--Krusch%20Extensions-4285F4.svg?style=flat-square" alt="G-Krusch Google Workspace Extensions"></a>
   <a href="https://github.com/kruschdev/krusch-companion/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/CI-passing-brightgreen.svg?style=flat-square" alt="CI"></a>
-  <img src="https://img.shields.io/badge/tests-37%20passed-brightgreen.svg?style=flat-square" alt="Tests Passed">
+  <img src="https://img.shields.io/badge/tests-38%20passed-brightgreen.svg?style=flat-square" alt="Tests Passed">
 </p>
 
 ---
 
 ## 💡 What It Does For You
 
-**Krusch Companion** is a sovereign, local-first personal AI assistant and daily companion—a 100% private, user-owned alternative to **OpenClaw / Grokbot**, **Meta Muse**, or **OpenAI Dot**. Instead of surrendering your personal thoughts, daily schedule, and life notes to centralized cloud data centers, Companion runs on your own hardware—turning raw voice streams into clear daily priorities, executing **14 live external APIs, concierge reservations, live traffic & Time-to-Leave alerts, Google Workspace extensions, and multi-step personal assistant actions** via the **Krusch Agentic Proxy (`<holodata>` Dual-Engine)**, running a **Zero-Token Proactive Sentinel Watchdog Daemon** that wakes the LLM only when real-world traffic spikes or departure windows hit, maintaining durable working memory across conversations, and providing supportive morning briefings and evening reflections.
+**Krusch Companion** is a sovereign, local-first personal AI assistant and daily companion—a 100% private, user-owned alternative to **OpenClaw / Grokbot**, **Meta Muse**, or **OpenAI Dot**. Instead of surrendering your personal thoughts, daily schedule, and life notes to centralized cloud data centers, Companion runs on your own hardware—turning raw voice streams into clear daily priorities, executing **14 live external APIs, concierge reservations, live traffic & Time-to-Leave alerts, Google Workspace extensions, and multi-step personal assistant actions** via the **Krusch Agentic Proxy (`<holodata>` Dual-Engine)**, running a **Multi-Channel Zero-Token Proactive Sentinel Watchdog Daemon** that polls **Gmail, Google Calendar, and Live Route Traffic** on CPU and wakes the LLM only when an actionable event occurs, maintaining durable working memory across conversations, and providing supportive morning briefings and evening reflections.
 
 ### 🔄 The Daily Loop
 
@@ -70,12 +70,13 @@ Standard 7B/14B local models often struggle with deeply nested OpenAI JSON tool 
 | **⚖️ Sovereign Law/Biz** | `sovereign_gateway_query` | Queries local **KruschLaw (`:8085`)** for statutory RAG / tenant defense or **KruschBiz (`:8086`)** for corporate contract graphs. | *"Search KruschLaw statutes for California security deposit return deadlines"* |
 | **📋 Board & Memory** | `board_action` | Creates or completes tasks on Today's 5-Tier Priority Board or saves durable facts to Working Memory as part of a multi-step tool chain. | *"Check the weather in Seattle and add a task to go for a 3-mile run"* |
 
-### 🚨 Proactive Sentinel Watchdog Daemon (`$0.00` Polling ➔ Event-Driven LLM Wakeup)
+### 🚨 Multi-Channel Proactive Sentinel Watchdog Daemon (`$0.00` Polling ➔ Event-Driven LLM Wakeup)
 
-Instead of burning LLM tokens polling for changes in a loop, [`src/services/sentinel-daemon.js`](src/services/sentinel-daemon.js) runs a lightweight background watchdog every 5 minutes:
-1. **Zero-Token L0 Route Polling**: Checks upcoming Google Calendar events and Reservation Holds that have physical locations using Google Maps Traffic / OSRM (`0` LLM tokens used when traffic is normal).
-2. **State-Delta & Anomaly Gate ([`evaluateSentinelTrigger`](src/services/sentinel-daemon.js))**: Compares `currentTrafficDelayMinutes` against the previous tick.
-3. **Targeted LLM Wakeup**: **Only** when a traffic spike (`+5m` sudden surge / accident), heavy congestion (`+8m` delay), or imminent departure window (`<= 18m` before Leave-By time) trips the gate does the daemon wake up the LLM to synthesize a proactive advisory, persist it to `sentinel_alerts`, push it via `ntfy.sh`, and surface it at the top of the Companion UI (`GET /api/sentinel/status`, `POST /api/sentinel/tick`, `POST /api/sentinel/ack/:id`).
+Instead of burning LLM tokens polling for changes in a loop, [`src/services/sentinel-daemon.js`](src/services/sentinel-daemon.js) runs a lightweight background watchdog every 5 minutes across **3 monitored channels** at **`$0.00` / `0` LLM tokens**, waking the LLM **only** when an actionable anomaly occurs:
+1. **✉️ Gmail Unread Actionable Triage ([`evaluateEmailTrigger`](src/services/sentinel-daemon.js))**: Polls `GET /api/gmail/messages?q=is:unread` via G-Krusch, discards marketing/newsletter noise (`unsubscribe`, `% off`, `daily digest`, `no-reply@`) on CPU at `0` tokens, and wakes the LLM **only** on reservation/booking updates (`email_reservation_or_schedule`) or urgent action items (`email_urgent_action`: invoices, contracts, deadlines, direct urgent requests)—while automatically staging an `[Email Action]` task on Today's Priority Board.
+2. **📅 Google Calendar Conflict & Imminent Meeting Watchdog ([`evaluateCalendarAnomalies`](src/services/sentinel-daemon.js))**: Polls upcoming Google Calendar events and wakes the LLM on overlapping double-bookings (`calendar_conflict`) or meetings starting within $\le 15$ minutes (`calendar_starting_soon`).
+3. **🚗 Live Route, Traffic & Departure Watchdog ([`evaluateSentinelTrigger`](src/services/sentinel-daemon.js))**: Polls location-tagged events using Google Maps Traffic / OSRM and wakes the LLM **only** on sudden traffic spikes (`+5m` surge), accidents/road closures (`accident_or_incident`), heavy congestion (`+8m` delay), or imminent departure windows ($\le 18\text{m}$ before Leave-By time).
+4. **Proactive Advisory Delivery**: When any channel trips its gate, the daemon wakes the LLM to synthesize a 1–2 sentence advisory, persists it to `sentinel_alerts`, pushes it via `ntfy.sh`, and surfaces it in the Companion UI (`GET /api/sentinel/status`, `POST /api/sentinel/tick`, `POST /api/sentinel/ack/:id`).
 
 ### 🎯 Example Multi-Step Workflows
 
@@ -282,7 +283,8 @@ Injecting long-term personal context into mathematically or syntactically self-c
 | **Privacy Policy** | Chats mined for training & profiling | **Zero telemetry; enforced `data_collection: "deny"` in cloud mode** |
 | **Inference Cost** | $20+/month subscription or ad-tracking | **$0.00 / Zero-token cost** on local Ollama (or pennies/mo via OpenRouter) |
 | **Offline Operation** | ❌ Fails without active internet connection | ✅ **Fully operational offline on local network** |
-| **Live Action & Tool Execution** | Cloud-locked proprietary plugins | **12-Tool `<holodata>` Agentic Proxy** (Weather, Web, Notes, Alerts, Telemetry, Legal/Biz RAG) |
+| **Live Action & Tool Execution** | Cloud-locked proprietary plugins | **14-Tool `<holodata>` Agentic Proxy** (Concierge Reservations, Live Traffic & Time-to-Leave, Weather, Web, Notes, Alerts, Telemetry, Legal/Biz RAG) |
+| **Proactive Background Monitoring** | Always-on cloud polling or none | **Multi-Channel Sentinel Watchdog Daemon** (`$0.00` CPU polling for Gmail, Calendar conflicts, and Traffic spikes; wakes LLM only on actionable anomalies) |
 | **Google Workspace Integration** | Full cloud read access to your account | **Sovereign `G-Krusch` Bridge** (Drive Hybrid RAG, Docs, Calendar, Gmail + local offline fallbacks) |
 | **Task Routing** | Monolithic cloud roundtrips for all queries | **Cascade Router**: L0 Heuristic (<15µs) + L1 Edge + L2/Specialist Cascade |
 | **Context Hygiene** | Unbounded vector RAG (prone to hallucinations) | **KruschContext**: 5 closed taxonomies + temporal superseding |
@@ -373,8 +375,12 @@ The server configuration is located in `config.json` at the project root (and ov
 | `GET` | `/api/gamify/today` | Retrieves today's gamification points and opt-in status. |
 | `POST` | `/api/gamify/opt-in` | Updates gamification opt-in status (`{ optedIn: boolean }`). |
 | `POST` | `/api/companion/chat` | Main conversational & `<holodata>` Agentic Proxy endpoint routed via Cascade Router (`{ prompt, history, sessionId }`). |
-| `GET` | `/api/companion/tools` | Lists all 12 registered Agentic Proxy (`<holodata>` Dual-Engine) tools and parameter schemas (aliases `/api/agent/tools`). |
+| `GET` | `/api/companion/tools` | Lists all 14 registered Agentic Proxy (`<holodata>` Dual-Engine) tools and parameter schemas (aliases `/api/agent/tools`). |
 | `POST` | `/api/companion/action` | Directly executes a sandboxed Agentic Proxy tool (`{ tool, arguments }`, aliases `/api/agent/execute`). |
+| `GET` | `/api/companion/departure-alerts` | Scans upcoming location-tagged Calendar events and Reservation Holds to return live traffic & Leave-By warnings. |
+| `GET` | `/api/sentinel/status` | Returns Multi-Channel Sentinel Watchdog daemon status, tick counters (`llmCallsTriggered` vs `zeroTokenPolls`), and active alerts. |
+| `POST` | `/api/sentinel/tick` | Manually triggers a Sentinel Watchdog scan across Gmail unread messages, Calendar conflicts, and Route traffic (`{ events, emails, calendarEvents }`). |
+| `POST` | `/api/sentinel/ack/:id` | Acknowledges and dismisses an active Sentinel Watchdog alert. |
 | `POST` | `/api/companion/stream` | Ingests unformatted Thought Stream text and triages into 5-tier tasks and memories (aliases `/api/companion/dump`). |
 | `POST` | `/api/companion/voice` | Accepts multipart `audio` (WebM/WAV) -> Whisper STT -> Thought Stream pipeline. |
 | `GET` | `/api/coach/focus` | Retrieves today's active morning focus briefing. |
@@ -422,7 +428,7 @@ docker compose ps
 
 ## 📌 Project Status & Known Limitations
 
-* **Current Stage**: Active daily driver in the Krusch homelab fleet (`34/34` unit & integration tests passing). Single-user architecture; code integrates with the `@krusch/toolkit`, `krusch-cascade-router`, and `g-krusch` monorepo ecosystem.
+* **Current Stage**: Active daily driver in the Krusch homelab fleet (`38/38` unit & integration tests passing). Single-user architecture; code integrates with the `@krusch/toolkit`, `krusch-cascade-router`, and `g-krusch` monorepo ecosystem.
 * **Single User**: No authentication or multi-tenant user segregation out of the box (intended for private home networks or Tailscale mesh).
 * **Hardware Sensitivity**: Local speech-to-text and Ollama LLM inference response times depend directly on host GPU/CPU capabilities (or use OpenRouter Zero-GPU mode for `<500ms` cloud specialist execution).
 

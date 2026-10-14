@@ -1,24 +1,32 @@
 import * as db from '../db/index.js';
-import { calculateCommuteAndDeparture } from '../agent/tools.js';
-import { dispatchCompanionChat } from '../router/cascade-client.js';
+import { calculateCommuteAndDeparture, parseArrivalDateTime } from '../agent/tools.js';
+import { dispatchCompanionChat, inferPriorityTierFromText } from '../router/cascade-client.js';
 
 /**
- * Proactive Sentinel Watchdog Daemon
+ * Multi-Channel Proactive Sentinel Watchdog Daemon
  *
  * Architectural Pattern:
  *   1. L0 Watchdog Polling ($0.00 / 0 LLM tokens):
- *      Periodically checks upcoming Calendar events & Priority Board reservations
- *      that have physical locations using Google Maps Traffic / OSRM routing.
+ *      Periodically polls 4 real-world channels on CPU:
+ *        - ✉️ Gmail Unread Inbox (via G-Krusch `/api/gmail/messages?q=is:unread`)
+ *        - 📅 Google Calendar Events & Schedule Conflicts (via G-Krusch `/api/calendar/events`)
+ *        - 🚗 Live Traffic, Accidents & Time-to-Leave Routes (via Google Maps / OSRM)
+ *        - 📋 Priority Board Time-Sensitive Deadlines (via local SQLite)
  *   2. State-Delta & Anomaly Gate:
- *      Compares current traffic against previous tick state. If traffic is stable
- *      and departure is not imminent, 0 LLM calls are made.
+ *      Filters out noise (newsletters, promos, unchanged traffic, already-seen items)
+ *      deterministically on CPU. When nothing actionable changed, 0 LLM calls are made.
  *   3. Event-Driven LLM Wakeup:
- *      ONLY when a traffic spike/accident (+6m jump or heavy congestion) or an
- *      imminent departure window (<= 18 min to Leave-By) is detected, the daemon
- *      wakes the LLM to synthesize a proactive alert and dispatches a push notification.
+ *      ONLY when an urgent/booking email arrives, a calendar double-booking conflict or
+ *      imminent meeting is detected, traffic spikes (+5m surge/accident), or a task deadline
+ *      is approaching does the daemon wake the LLM to synthesize a proactive alert and action plan.
  */
 
 const routeStateMap = new Map();
+const seenEmailIds = new Set();
+const seenConflictKeys = new Set();
+const seenStartingSoonIds = new Set();
+const seenDeadlineTaskIds = new Set();
+
 let sentinelIntervalHandle = null;
 let lastTickAt = null;
 let totalTicks = 0;
@@ -65,49 +73,223 @@ export function acknowledgeSentinelAlert(id) {
 }
 
 /**
- * Clear in-memory route state (used by unit tests).
+ * Clear in-memory watchdog state and alert table (used by unit tests).
  */
 export function resetSentinelState() {
   routeStateMap.clear();
+  seenEmailIds.clear();
+  seenConflictKeys.clear();
+  seenStartingSoonIds.clear();
+  seenDeadlineTaskIds.clear();
   ensureSentinelTable();
   db.getDb().prepare('DELETE FROM sentinel_alerts').run();
 }
 
 /**
+ * L0 Gate 1: Evaluate whether an unread email requires waking the LLM.
+ * Rejects newsletters/promos at $0 token cost; triggers on urgent/action-required or reservation/schedule emails.
+ */
+export function evaluateEmailTrigger(msg) {
+  const id = String(msg?.id || '');
+  if (!id || seenEmailIds.has(id)) {
+    return { shouldWakeLlm: false };
+  }
+
+  const from = String(msg?.from || '');
+  const subject = String(msg?.subject || '');
+  const snippet = String(msg?.snippet || '');
+  const combined = `${subject} ${snippet}`;
+
+  // Ignore automated marketing / promo / newsletter noise at L0
+  if (
+    /\b(?:unsubscribe|sale\s+ends|%\s+off|promo\s+code|daily\s+digest|newsletter|marketing@|no-reply@.*(?:news|promo|offers))\b/i.test(
+      `${from} ${combined}`
+    )
+  ) {
+    seenEmailIds.add(id);
+    return { shouldWakeLlm: false };
+  }
+
+  // Trigger A: Reservation, flight, appointment, or schedule change email
+  if (
+    /\b(?:reservation\s+(?:confirmed|request|update|cancelled|canceled)|booking\s+confirmation|appointment\s+(?:rescheduled|reminder|confirmed)|table\s+for\s+\d+|flight\s+(?:delayed|gate|boarding)|opentable|resy)\b/i.test(
+      combined
+    )
+  ) {
+    return {
+      shouldWakeLlm: true,
+      triggerReason: 'email_reservation_or_schedule',
+      headline: `Reservation/Schedule Email from ${from}: "${subject}"`
+    };
+  }
+
+  // Trigger B: Urgent / Action-Required / Invoice / Contract / Direct Request
+  if (
+    /\b(?:urgent|action\s+required|asap|time[- ]sensitive|invoice|payment\s+due|overdue|contract|sign\s+and\s+return|please\s+reply|need\s+your\s+approval|by\s+end\s+of\s+day|before\s+\d+\s*(?:am|pm))\b/i.test(
+      combined
+    )
+  ) {
+    return {
+      shouldWakeLlm: true,
+      triggerReason: 'email_urgent_action',
+      headline: `Actionable Email from ${from}: "${subject}"`
+    };
+  }
+
+  // Normal non-urgent email: mark seen without waking the LLM
+  seenEmailIds.add(id);
+  return { shouldWakeLlm: false };
+}
+
+/**
+ * L0 Gate 2: Detect Google Calendar double-booking conflicts and imminent meetings (<= 15 min).
+ */
+export function evaluateCalendarAnomalies(calendarEvents = []) {
+  const triggers = [];
+  const parsed = calendarEvents
+    .map(ev => {
+      const start = ev.start ? new Date(ev.start) : null;
+      const end = ev.end
+        ? new Date(ev.end)
+        : start && !isNaN(start.getTime())
+          ? new Date(start.getTime() + 60 * 60 * 1000)
+          : null;
+      return {
+        ...ev,
+        startMs: start && !isNaN(start.getTime()) ? start.getTime() : null,
+        endMs: end && !isNaN(end.getTime()) ? end.getTime() : null
+      };
+    })
+    .filter(e => e.startMs !== null);
+
+  // 1. Check for overlapping events (double-booking conflict)
+  for (let i = 0; i < parsed.length; i++) {
+    for (let j = i + 1; j < parsed.length; j++) {
+      const a = parsed[i];
+      const b = parsed[j];
+      if (a.startMs < b.endMs && b.startMs < a.endMs) {
+        const pairKey = [a.id, b.id].sort().join('::');
+        if (!seenConflictKeys.has(pairKey)) {
+          seenConflictKeys.add(pairKey);
+          triggers.push({
+            eventId: `conflict-${pairKey}`,
+            triggerReason: 'calendar_conflict',
+            eventTitle: `${a.summary} vs. ${b.summary}`,
+            destination: a.location || b.location || 'Google Calendar',
+            leaveByFormatted: new Date(Math.min(a.startMs, b.startMs)).toLocaleTimeString('en-US', {
+              hour: 'numeric',
+              minute: '2-digit'
+            }),
+            headline: `Calendar Conflict Detected: "${a.summary}" (${a.start}) overlaps with "${b.summary}" (${b.start})`,
+            details: `Event 1: ${a.summary} (${a.start} - ${a.end || 'N/A'})\nEvent 2: ${b.summary} (${b.start} - ${b.end || 'N/A'})`
+          });
+        }
+      }
+    }
+  }
+
+  // 2. Check for virtual/in-person meetings starting within <= 15 minutes
+  const nowMs = Date.now();
+  for (const ev of parsed) {
+    const minsUntilStart = Math.round((ev.startMs - nowMs) / 60000);
+    if (minsUntilStart >= 0 && minsUntilStart <= 15 && !seenStartingSoonIds.has(ev.id)) {
+      seenStartingSoonIds.add(ev.id);
+      triggers.push({
+        eventId: `soon-${ev.id}`,
+        triggerReason: 'calendar_starting_soon',
+        eventTitle: ev.summary || 'Calendar Event',
+        destination: ev.location || 'Virtual / Calendar',
+        leaveByFormatted: new Date(ev.startMs).toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit'
+        }),
+        headline: `Upcoming Event in ${minsUntilStart} min: "${ev.summary}" starts at ${ev.start}`,
+        details: `Summary: ${ev.summary}\nStart: ${ev.start}\nLocation: ${ev.location || 'Virtual'}`
+      });
+    }
+  }
+
+  return triggers;
+}
+
+/**
+ * L0 Gate 3: Evaluate whether a route check represents a significant traffic/departure delta.
+ */
+export function evaluateSentinelTrigger(event, commute, prevState) {
+  const delayJump = prevState
+    ? commute.trafficDelayMinutes - prevState.lastTrafficDelayMinutes
+    : 0;
+
+  if (event.incidentReported && !prevState?.notifiedIncident) {
+    return {
+      shouldWakeLlm: true,
+      triggerReason: 'accident_or_incident',
+      headline: `Traffic incident reported on route to ${commute.destination} (+${commute.trafficDelayMinutes}m delay)`
+    };
+  }
+
+  if (prevState && delayJump >= 5 && !prevState.notifiedSpike) {
+    return {
+      shouldWakeLlm: true,
+      triggerReason: 'traffic_spike',
+      headline: `Traffic spike (+${delayJump}m surge, now +${commute.trafficDelayMinutes}m total delay) to ${commute.destination}`
+    };
+  }
+
+  if (!prevState && commute.trafficLevel === 'Heavy' && commute.trafficDelayMinutes >= 8) {
+    return {
+      shouldWakeLlm: true,
+      triggerReason: 'heavy_traffic_detected',
+      headline: `Heavy traffic (+${commute.trafficDelayMinutes}m delay) detected on route to ${commute.destination}`
+    };
+  }
+
+  if (
+    commute.minutesUntilLeave >= -5 &&
+    commute.minutesUntilLeave <= 18 &&
+    !prevState?.notifiedImminent
+  ) {
+    return {
+      shouldWakeLlm: true,
+      triggerReason: 'departure_imminent',
+      headline: `Time to leave in ${Math.max(0, commute.minutesUntilLeave)} min (Leave by ${commute.leaveByFormatted}) for ${event.title}`
+    };
+  }
+
+  return {
+    shouldWakeLlm: false,
+    triggerReason: null,
+    headline: null
+  };
+}
+
+/**
  * Collect upcoming location-aware events from G-Krusch Google Calendar + Today's Priority Board.
  */
-export async function collectMonitoredEvents({ fetchImpl = fetch, customEvents = null } = {}) {
+export async function collectMonitoredEvents({
+  fetchImpl = fetch,
+  customEvents = null,
+  rawCalendarEvents = null
+} = {}) {
   if (Array.isArray(customEvents)) {
     return customEvents;
   }
 
   const monitored = [];
-  const baseUrl = (process.env.G_KRUSCH_URL || 'http://127.0.0.1:5446').replace(/\/+$/, '');
+  const calList = Array.isArray(rawCalendarEvents) ? rawCalendarEvents : [];
 
-  // 1. Google Calendar upcoming events
-  try {
-    const calRes = await fetchImpl(`${baseUrl}/api/calendar/events?limit=5`, {
-      signal: AbortSignal.timeout(4000)
-    });
-    if (calRes.ok) {
-      const calData = await calRes.json();
-      for (const ev of (calData.events || [])) {
-        if (ev.location) {
-          monitored.push({
-            id: `cal-${ev.id}`,
-            title: ev.summary || 'Calendar Event',
-            destination: ev.location,
-            arrivalTime: ev.start,
-            source: 'Google Calendar'
-          });
-        }
-      }
+  for (const ev of calList) {
+    if (ev.location) {
+      monitored.push({
+        id: `cal-${ev.id}`,
+        title: ev.summary || 'Calendar Event',
+        destination: ev.location,
+        arrivalTime: ev.start,
+        source: 'Google Calendar'
+      });
     }
-  } catch {
-    // Non-fatal if G-Krusch Calendar OAuth is not linked
   }
 
-  // 2. Today's Priority Board Reservation Holds & Location-Tagged Tasks
   const tasks = db.getTasksForDate(db.today()).filter(t => !t.completed);
   for (const t of tasks) {
     const resMatch = t.title.match(/^Reservation Hold:\s*(.+?)\s*\(Party of \d+\s*@\s*([^—)]+)/i);
@@ -136,76 +318,219 @@ export async function collectMonitoredEvents({ fetchImpl = fetch, customEvents =
 }
 
 /**
- * Evaluate whether a route check represents a significant state delta that warrants waking the LLM.
+ * Helper to wake the LLM, persist a Sentinel alert to SQLite, and optionally push to ntfy.sh.
  */
-export function evaluateSentinelTrigger(event, commute, prevState) {
-  const delayJump = prevState
-    ? commute.trafficDelayMinutes - prevState.lastTrafficDelayMinutes
-    : 0;
-
-  // 1. Explicit accident/incident or sudden traffic spike (+5 min or more since last poll)
-  if (event.incidentReported && !prevState?.notifiedIncident) {
-    return {
-      shouldWakeLlm: true,
-      triggerReason: 'accident_or_incident',
-      headline: `Traffic incident reported on route to ${commute.destination} (+${commute.trafficDelayMinutes}m delay)`
-    };
+async function dispatchSentinelWakeup({
+  eventId,
+  triggerReason,
+  headline,
+  eventTitle,
+  destination = 'Workspace',
+  leaveByFormatted = 'Now',
+  trafficMinutes = 0,
+  trafficDelayMinutes = 0,
+  trafficLevel = 'N/A',
+  directionsUrl = null,
+  wakePrompt,
+  fallbackAdvisory,
+  callLlm,
+  fetchImpl
+}) {
+  let llmAdvisory = '';
+  try {
+    if (typeof callLlm === 'function') {
+      const out = await callLlm({ prompt: wakePrompt, triggerReason });
+      llmAdvisory = String(out?.content || out?.reply || '').trim();
+    } else {
+      const res = await dispatchCompanionChat({ prompt: wakePrompt, history: [], contextBriefing: '' });
+      llmAdvisory = String(res?.content || '').trim();
+    }
+  } catch {
+    // Use fallback advisory below
   }
 
-  if (prevState && delayJump >= 5 && !prevState.notifiedSpike) {
-    return {
-      shouldWakeLlm: true,
-      triggerReason: 'traffic_spike',
-      headline: `Traffic spike (+${delayJump}m surge, now +${commute.trafficDelayMinutes}m total delay) to ${commute.destination}`
-    };
+  if (!llmAdvisory) {
+    llmAdvisory = fallbackAdvisory;
   }
 
-  // 2. First-time detection of Heavy Traffic (>= 8 min delay)
-  if (!prevState && commute.trafficLevel === 'Heavy' && commute.trafficDelayMinutes >= 8) {
-    return {
-      shouldWakeLlm: true,
-      triggerReason: 'heavy_traffic_detected',
-      headline: `Heavy traffic (+${commute.trafficDelayMinutes}m delay) detected on route to ${commute.destination}`
-    };
-  }
+  const info = db.getDb().prepare(`
+    INSERT INTO sentinel_alerts (
+      event_id, trigger_reason, event_title, destination,
+      leave_by_formatted, traffic_minutes, traffic_delay_minutes,
+      traffic_level, directions_url, llm_advisory
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    eventId,
+    triggerReason,
+    eventTitle,
+    destination,
+    leaveByFormatted,
+    trafficMinutes,
+    trafficDelayMinutes,
+    trafficLevel,
+    directionsUrl,
+    llmAdvisory
+  );
 
-  // 3. Imminent Departure Window (within 18 minutes of Leave-By time)
-  if (
-    commute.minutesUntilLeave >= -5 &&
-    commute.minutesUntilLeave <= 18 &&
-    !prevState?.notifiedImminent
-  ) {
-    return {
-      shouldWakeLlm: true,
-      triggerReason: 'departure_imminent',
-      headline: `Time to leave in ${Math.max(0, commute.minutesUntilLeave)} min (Leave by ${commute.leaveByFormatted}) for ${event.title}`
-    };
+  const ntfyTopic = process.env.NTFY_TOPIC || '';
+  if (ntfyTopic) {
+    try {
+      await fetchImpl(`https://ntfy.sh/${encodeURIComponent(ntfyTopic)}`, {
+        method: 'POST',
+        headers: {
+          Title: `Sentinel (${triggerReason.replace(/_/g, ' ')}): ${eventTitle}`,
+          Priority: '4'
+        },
+        body: llmAdvisory.replace(/[*_`]/g, ''),
+        signal: AbortSignal.timeout(4000)
+      });
+    } catch {
+      // Non-fatal
+    }
   }
 
   return {
-    shouldWakeLlm: false,
-    triggerReason: null,
-    headline: null
+    id: Number(info.lastInsertRowid),
+    eventId,
+    triggerReason,
+    headline,
+    eventTitle,
+    destination,
+    leaveByFormatted,
+    trafficMinutes,
+    trafficDelayMinutes,
+    trafficLevel,
+    directionsUrl,
+    llmAdvisory
   };
 }
 
 /**
- * Execute a single Sentinel Watchdog tick:
- * - Polls routes without calling the LLM.
- * - Wakes the LLM ONLY if `evaluateSentinelTrigger` detects a traffic spike, accident, or imminent departure.
+ * Execute a single multi-channel Sentinel Watchdog tick:
+ *   1. Polls Gmail unread messages (wakes LLM only on urgent/action-required or reservation/schedule emails)
+ *   2. Polls Google Calendar events (wakes LLM on double-booking conflicts or events starting <= 15m)
+ *   3. Polls Route & Traffic conditions (wakes LLM on traffic spikes, accidents, or imminent departure)
+ *   4. Polls Priority Board time-sensitive deadlines
  */
 export async function runSentinelTick({
   fetchImpl = fetch,
   callLlm = null,
-  customEvents = null
+  customEvents = null,
+  customEmails = null,
+  customCalendarEvents = null
 } = {}) {
   ensureSentinelTable();
   totalTicks++;
   lastTickAt = new Date().toISOString();
 
-  const events = await collectMonitoredEvents({ fetchImpl, customEvents });
+  const baseUrl = (process.env.G_KRUSCH_URL || 'http://127.0.0.1:5446').replace(/\/+$/, '');
   const triggeredAlerts = [];
   let llmCallsThisTick = 0;
+
+  // ── Channel 1: Gmail Unread Inbox Watchdog ──────────────────────────────
+  let unreadEmails = Array.isArray(customEmails) ? customEmails : [];
+  if (!Array.isArray(customEmails) && !Array.isArray(customEvents)) {
+    try {
+      const mailRes = await fetchImpl(`${baseUrl}/api/gmail/messages?q=${encodeURIComponent('is:unread')}&limit=8`, {
+        signal: AbortSignal.timeout(4000)
+      });
+      if (mailRes.ok) {
+        const mailData = await mailRes.json();
+        unreadEmails = mailData.messages || [];
+      }
+    } catch {
+      // Non-fatal if Gmail OAuth not linked
+    }
+  }
+
+  for (const msg of unreadEmails) {
+    const emailGate = evaluateEmailTrigger(msg);
+    if (!emailGate.shouldWakeLlm) continue;
+
+    seenEmailIds.add(String(msg.id));
+    llmCallsThisTick++;
+    totalLlmWakeups++;
+
+    // Auto-stage an actionable task onto Today's Priority Board so the user can act immediately
+    const inferred = inferPriorityTierFromText(`${msg.subject || 'Urgent Email'} ${msg.snippet || ''}`);
+    const autoTask = db.createTask({
+      title: `[Email Action] ${msg.subject || 'Unread Email'} (from ${msg.from || 'Sender'})`,
+      priority_id: emailGate.triggerReason === 'email_urgent_action' ? 1 : inferred.priorityId,
+      notes: msg.snippet || '',
+      energy_level: 'medium',
+      date: db.today()
+    });
+
+    const wakePrompt = [
+      `[SENTINEL PROACTIVE WAKEUP — ${emailGate.triggerReason.toUpperCase()}]`,
+      `Trigger: ${emailGate.headline}`,
+      `From: ${msg.from}`,
+      `Subject: ${msg.subject}`,
+      `Snippet: ${msg.snippet}`,
+      `Auto-Created Board Task: [#${autoTask.id}] ${autoTask.title}`,
+      `Write a concise 2-sentence alert summarizing what this email needs from the user and letting them know it was added to Today's Priority Board.`
+    ].join('\n');
+
+    const alertObj = await dispatchSentinelWakeup({
+      eventId: `gmail-${msg.id}`,
+      triggerReason: emailGate.triggerReason,
+      headline: emailGate.headline,
+      eventTitle: msg.subject || 'Actionable Email',
+      destination: msg.from || 'Gmail Inbox',
+      leaveByFormatted: 'Action Needed',
+      wakePrompt,
+      fallbackAdvisory: `✉️ **${emailGate.headline}**: "${msg.snippet || msg.subject}". Added **[#${autoTask.id}] ${autoTask.title}** to Today's Priority Board.`,
+      callLlm,
+      fetchImpl
+    });
+    triggeredAlerts.push(alertObj);
+  }
+
+  // ── Channel 2: Google Calendar Conflicts & Starting-Soon Watchdog ───────
+  let rawCalendarEvents = Array.isArray(customCalendarEvents) ? customCalendarEvents : [];
+  if (!Array.isArray(customCalendarEvents) && !Array.isArray(customEvents)) {
+    try {
+      const calRes = await fetchImpl(`${baseUrl}/api/calendar/events?limit=8`, {
+        signal: AbortSignal.timeout(4000)
+      });
+      if (calRes.ok) {
+        const calData = await calRes.json();
+        rawCalendarEvents = calData.events || [];
+      }
+    } catch {
+      // Non-fatal
+    }
+  }
+
+  const calAnomalies = evaluateCalendarAnomalies(rawCalendarEvents);
+  for (const anom of calAnomalies) {
+    llmCallsThisTick++;
+    totalLlmWakeups++;
+
+    const wakePrompt = [
+      `[SENTINEL PROACTIVE WAKEUP — ${anom.triggerReason.toUpperCase()}]`,
+      `Trigger: ${anom.headline}`,
+      anom.details,
+      `Write a concise 2-sentence proactive alert warning the user about this calendar ${anom.triggerReason === 'calendar_conflict' ? 'double-booking conflict and suggesting how to resolve it' : 'upcoming meeting starting soon'}.`
+    ].join('\n');
+
+    const alertObj = await dispatchSentinelWakeup({
+      eventId: anom.eventId,
+      triggerReason: anom.triggerReason,
+      headline: anom.headline,
+      eventTitle: anom.eventTitle,
+      destination: anom.destination,
+      leaveByFormatted: anom.leaveByFormatted,
+      wakePrompt,
+      fallbackAdvisory: `📅 **${anom.headline}**. Would you like me to reschedule one of these events or send a heads-up email?`,
+      callLlm,
+      fetchImpl
+    });
+    triggeredAlerts.push(alertObj);
+  }
+
+  // ── Channel 3: Route, Traffic Spike & Time-to-Leave Watchdog ────────────
+  const events = await collectMonitoredEvents({ fetchImpl, customEvents, rawCalendarEvents });
 
   for (const ev of events) {
     const commute = ev.mockCommute || await calculateCommuteAndDeparture({
@@ -218,7 +543,6 @@ export async function runSentinelTick({
     const prevState = routeStateMap.get(ev.id) || null;
     const gate = evaluateSentinelTrigger(ev, commute, prevState);
 
-    // Update tracked route state
     routeStateMap.set(ev.id, {
       lastTrafficMinutes: commute.trafficMinutes,
       lastTrafficDelayMinutes: commute.trafficDelayMinutes,
@@ -233,7 +557,6 @@ export async function runSentinelTick({
       continue;
     }
 
-    // Wake the LLM ONLY because a real-world trigger fired!
     llmCallsThisTick++;
     totalLlmWakeups++;
 
@@ -247,62 +570,7 @@ export async function runSentinelTick({
       `Write a concise, helpful 2-sentence proactive notification alerting the user to leave by ${commute.leaveByFormatted} because of ${commute.trafficLevel.toLowerCase()} traffic, and offer to open directions or send a quick heads-up message.`
     ].join('\n');
 
-    let llmAdvisory = '';
-    try {
-      if (typeof callLlm === 'function') {
-        const out = await callLlm({ prompt: wakePrompt });
-        llmAdvisory = String(out?.content || out?.reply || '').trim();
-      } else {
-        const res = await dispatchCompanionChat({ prompt: wakePrompt, history: [], contextBriefing: '' });
-        llmAdvisory = String(res?.content || '').trim();
-      }
-    } catch {
-      // Fall through to deterministic advisory if local LLM is busy/offline
-    }
-
-    if (!llmAdvisory) {
-      llmAdvisory = `🚨 **Proactive Traffic Alert (${gate.triggerReason.replace(/_/g, ' ')})**: ${gate.headline}. Your drive to **${commute.destination}** is currently **${commute.trafficMinutes} min** (normally ${commute.baseMinutes} min), so you should head out earlier by **\`${commute.leaveByFormatted}\`** to arrive on time for **${ev.title}**.`;
-    }
-
-    const info = db.getDb().prepare(`
-      INSERT INTO sentinel_alerts (
-        event_id, trigger_reason, event_title, destination,
-        leave_by_formatted, traffic_minutes, traffic_delay_minutes,
-        traffic_level, directions_url, llm_advisory
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      ev.id,
-      gate.triggerReason,
-      ev.title,
-      commute.destination,
-      commute.leaveByFormatted,
-      commute.trafficMinutes,
-      commute.trafficDelayMinutes,
-      commute.trafficLevel,
-      commute.googleMapsDirectionsUrl,
-      llmAdvisory
-    );
-
-    // Optional push notification via ntfy.sh if configured
-    const ntfyTopic = process.env.NTFY_TOPIC || '';
-    if (ntfyTopic) {
-      try {
-        await fetchImpl(`https://ntfy.sh/${encodeURIComponent(ntfyTopic)}`, {
-          method: 'POST',
-          headers: {
-            Title: `Leave by ${commute.leaveByFormatted}: ${ev.title}`,
-            Priority: '4'
-          },
-          body: llmAdvisory.replace(/[*_`]/g, ''),
-          signal: AbortSignal.timeout(4000)
-        });
-      } catch {
-        // Non-fatal
-      }
-    }
-
-    triggeredAlerts.push({
-      id: Number(info.lastInsertRowid),
+    const alertObj = await dispatchSentinelWakeup({
       eventId: ev.id,
       triggerReason: gate.triggerReason,
       headline: gate.headline,
@@ -313,13 +581,17 @@ export async function runSentinelTick({
       trafficDelayMinutes: commute.trafficDelayMinutes,
       trafficLevel: commute.trafficLevel,
       directionsUrl: commute.googleMapsDirectionsUrl,
-      llmAdvisory
+      wakePrompt,
+      fallbackAdvisory: `🚨 **Proactive Traffic Alert (${gate.triggerReason.replace(/_/g, ' ')})**: ${gate.headline}. Your drive to **${commute.destination}** is currently **${commute.trafficMinutes} min** (normally ${commute.baseMinutes} min), so you should head out earlier by **\`${commute.leaveByFormatted}\`** to arrive on time for **${ev.title}**.`,
+      callLlm,
+      fetchImpl
     });
+    triggeredAlerts.push(alertObj);
   }
 
   return {
     tickAt: lastTickAt,
-    monitoredCount: events.length,
+    monitoredCount: events.length + unreadEmails.length + rawCalendarEvents.length,
     llmCallsTriggered: llmCallsThisTick,
     triggeredAlerts
   };
@@ -354,6 +626,8 @@ export function getSentinelStatus() {
     totalTicks,
     totalLlmWakeups,
     monitoredRoutes: routeStateMap.size,
+    seenEmailsCount: seenEmailIds.size,
+    seenCalendarConflictsCount: seenConflictKeys.size,
     activeAlertsCount: activeAlerts.length,
     activeAlerts
   };
