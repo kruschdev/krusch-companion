@@ -13,15 +13,16 @@
   <img src="https://img.shields.io/badge/Memory-Temporal%20Superseding-purple.svg?style=flat-square" alt="Working Memory">
   <img src="https://img.shields.io/badge/Agentic%20Proxy-%3Cholodata%3E%20%2B%20Confirm%20Gate-orange.svg?style=flat-square" alt="Agentic Proxy">
   <img src="https://img.shields.io/badge/Voice--to--Text-Web%20Speech%20%2B%20Whisper%20STT-2dd4bf.svg?style=flat-square" alt="Voice-to-Text">
+  <img src="https://img.shields.io/badge/Google%20AP2%20%26%20Wallet-Mandates%20%2B%20Passes-f0c040.svg?style=flat-square" alt="Google AP2 & Wallet">
   <a href="https://github.com/kruschdev/krusch-companion/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/CI-passing-brightgreen.svg?style=flat-square" alt="CI"></a>
-  <img src="https://img.shields.io/badge/tests-45%20passed-brightgreen.svg?style=flat-square" alt="Tests Passed">
+  <img src="https://img.shields.io/badge/tests-46%20passed-brightgreen.svg?style=flat-square" alt="Tests Passed">
 </p>
 
 ---
 
 ## 💡 What It Does For You
 
-**Krusch Companion** is a **100% standalone**, local-first personal AI assistant and daily companion—a user-owned alternative to **OpenClaw / Grokbot**, **Meta Muse**, or **OpenAI Dot**. Instead of surrendering your personal thoughts, daily schedule, and life notes to centralized cloud data centers, Companion runs on your own hardware (or in Zero-GPU OpenRouter Zero-Data-Retention mode)—providing **hands-free Voice-to-Text (`🎙️ Speak` with `Auto-Send on Stop`) directly in both Companion Chat and Thought Stream**, turning rambling voice streams into clear daily priorities via a **Dual-Axis Priority Board (`Execution Priority Lanes 1–4` × `6 Life Pillar Tags`)**, executing **14 live external APIs, concierge reservations, live traffic & Time-to-Leave alerts, Google Workspace extensions, and multi-step personal assistant actions** via the **Krusch Agentic Proxy (`<holodata>` Dual-Engine with Confidence Scoring & Side-Effect Confirmation Gates)**, running a **Multi-Channel Zero-Token Proactive Sentinel Watchdog Daemon** that polls **Gmail, Google Calendar, and Live Route Traffic** on CPU and wakes the LLM only when an actionable event occurs, and maintaining durable working memory with temporal fact superseding across conversations.
+**Krusch Companion** is a **100% standalone**, local-first personal AI assistant and daily companion—a user-owned alternative to **OpenClaw / Grokbot**, **Meta Muse**, or **OpenAI Dot**. Instead of surrendering your personal thoughts, daily schedule, and life notes to centralized cloud data centers, Companion runs on your own hardware (or in Zero-GPU OpenRouter Zero-Data-Retention mode)—providing **hands-free Voice-to-Text (`🎙️ Speak` with `Auto-Send on Stop`) directly in both Companion Chat and Thought Stream**, turning rambling voice streams into clear daily priorities via a **Dual-Axis Priority Board (`Execution Priority Lanes 1–4` × `6 Life Pillar Tags`)**, executing **16 live external APIs, Google AP2 cryptographic payment mandates (`ap2_payment_mandate`), Google Wallet Generic Passes (`google_wallet_pass`), concierge reservations, live traffic & Time-to-Leave alerts, Google Workspace extensions, and multi-step personal assistant actions** via the **Krusch Agentic Proxy (`<holodata>` Dual-Engine with Confidence Scoring & Side-Effect Confirmation Gates)**, running a **Multi-Channel Zero-Token Proactive Sentinel Watchdog Daemon** that polls **Gmail, Google Calendar, and Live Route Traffic** on CPU and wakes the LLM only when an actionable event occurs, and maintaining durable working memory with temporal fact superseding across conversations.
 
 ### 🔄 The Daily Loop
 
@@ -29,7 +30,7 @@
   ┌─────────────────┐       ┌─────────────────┐       ┌─────────────────┐       ┌─────────────────┐
   │ 1. Voice-First  │  ──►  │ 2. Dual-Axis    │  ──►  │ 3. Agentic      │  ──►  │ 4. Focus,       │
   │    Capture      │       │    Board        │       │    Proxy (<holo>│       │    Memory &     │
-  │ Chat & Stream   │       │ 4 lanes × 6 tags│       │ 14 APIs + Gate  │       │    Weekly Review│
+  │ Chat & Stream   │       │ 4 lanes × 6 tags│       │ 16 APIs + Gate  │       │    Weekly Review│
   └─────────────────┘       └─────────────────┘       └─────────────────┘       └─────────────────┘
 ```
 
@@ -47,26 +48,28 @@
    - Tactile daily board grouped by **Execution Priority** (with a 1-click toggle to group by **Life Pillar**), *"Why this lane?"* (`lane_reason`) explanations on every card, a live **Life-Pillar Balance Strip**, keyboard shortcuts (`N` = New Task, `G` = Group Mode, `R` = Rollover, `W` = Weekly Review), 1-click **`🚨 Must-Do`** promotion, **Bulk Actions** (**`🌱 Habits Done`**, **`🧹 Clear Done`**), 1-click **"🧩 Steps"** task decomposition, and an expandable **📅 7-Day Weekly Review & Life-Pillar Analytics** panel (`GET /api/tasks/weekly-review`).
 4. **Agentic Action Proxy, Confidence Scoring & Confirmation Gates (Act)**:
    - **Instant `<15µs` L0 CPU Commands (`$0.00` Token Cost)**: `Add task`, `Prioritize task / Make task urgent`, `Complete task`, `Delete task`, `Show my tasks`, `Roll over unfinished tasks`, `Break down task into steps`, `Instead of X, remember that Y`, plus safe AST arithmetic.
-   - **14-Tool `<holodata>` Dual-Engine Agentic Proxy**: Enables local 7B/14B models (or OpenRouter 32B/72B specialists) to execute real APIs and multi-step chains with explicit **extraction confidence scoring (`🎯 % Conf`)**, **60-second TTL caching** on idempotent read tools, and an optional **Confirm-Before-Act (`dryRunMode`)** gate with an inline **`✅ Confirm & Execute`** button for external side-effect tools (Gmail, Calendar, Reservations, Push Alerts).
+   - **16-Tool `<holodata>` Dual-Engine Agentic Proxy**: Enables local 7B/14B models (or OpenRouter 32B/72B specialists) to execute real APIs and multi-step chains with explicit **extraction confidence scoring (`🎯 % Conf`)**, **60-second TTL caching** on idempotent read tools, and an optional **Confirm-Before-Act (`dryRunMode`)** gate with an inline **`✅ Confirm & Execute`** button for external side-effect tools (AP2 Payment Mandates, Gmail, Calendar, Reservations, Push Alerts).
 5. **Working Memory Hygiene, Routing Inspector & Focus Mode**:
    - Dedicated **`🧠 Memory & Inspector`** view to browse active 5-taxonomy facts, supersede outdated habits with 1 click, inspect **Temporal Superseding Lineage History**, review **30-Day Decay Candidates**, export all tasks & memories to **Markdown or JSON**, and inspect live **Cascade Routing, Tool Pruning, and Sentinel Watchdog** telemetry.
 
 ---
 
-## ⚡ The 14-Tool Agentic Proxy (`<holodata>` Dual-Engine) & G-Krusch Workspace
+## ⚡ The 16-Tool Agentic Proxy (`<holodata>` Dual-Engine), Google AP2 & Wallet
 
 Standard 7B/14B local models often struggle with deeply nested OpenAI JSON tool schemas when 10+ tools are injected into the prompt at once. Krusch Companion solves this by embedding the **`<holodata>` Dual-Engine Cognitive Blueprint**:
-1. **Intent-Scoped Tool Pruning (`<250` tokens, `~81%` Schema Reduction)**: [`detectAgenticIntent()`](src/agent/agentic-proxy.js) prunes the tool catalog down to only the 1–3 tools relevant to the user's request before calling the LLM, and records a live **Tool Pruning Report** (`getLastToolPruningReport()`).
+1. **Intent-Scoped Tool Pruning (`<250` tokens, `~85%` Schema Reduction)**: [`detectAgenticIntent()`](src/agent/agentic-proxy.js) prunes the tool catalog down to only the 1–3 tools relevant to the user's request before calling the LLM, and records a live **Tool Pruning Report** (`getLastToolPruningReport()`).
 2. **Unified `<holodata>` Thinker + Flat Tool Array**: The model first reasons through parameter constraints inside `<holodata>...</holodata>` XML tags and then emits a flat JSON tool array (`[{"name": "...", "arguments": {...}}]`).
-3. **Explicit Confidence Scoring & Confirm-Before-Act Safety Gate**: Every `<holodata>` extraction is scored (`scoreHolodataConfidence()`), and side-effect tools (`gkrusch_gmail`, `gkrusch_calendar`, `concierge_reservation`, `send_notification`) support **Confirm-Before-Act (`dryRunMode`)** preview cards with an inline **`✅ Confirm & Execute`** button in Chat.
+3. **Explicit Confidence Scoring & Confirm-Before-Act Safety Gate**: Every `<holodata>` extraction is scored (`scoreHolodataConfidence()`), and side-effect tools (`ap2_payment_mandate`, `gkrusch_gmail`, `gkrusch_calendar`, `concierge_reservation`, `send_notification`) support **Confirm-Before-Act (`dryRunMode`)** preview cards with an inline **`✅ Confirm & Execute`** button in Chat.
 4. **Upstream-to-Downstream Live Data Piping & 60s TTL Cache**: When chaining multiple tools in one turn (e.g., `get_weather` ➔ `save_note` or `gkrusch_drive` ➔ `gkrusch_gmail`), [`executeAgenticProxyTurn()`](src/agent/agentic-proxy.js) automatically pipes live upstream API outputs directly into downstream notes, push notifications, Google Drive docs, or Gmail drafts, while caching idempotent read tools (`get_weather`, `system_status`, `commute_departure_check`) for 60 seconds.
 5. **Deterministic Offline Fallback & Audit Log**: Even if a small 7B model emits malformed JSON or is temporarily offline, [`inferFallbackToolCalls()`](src/agent/agentic-proxy.js) recovers deterministically and logs low-confidence/fallback events locally (`getFailedToolCallLogs()`).
 
-### 🛠️ Complete 14-Tool Capability Matrix
+### 🛠️ Complete 16-Tool Capability Matrix
 
 | Category | Tool Name | What It Accomplishes | Example Natural-Language Prompt |
 | :--- | :--- | :--- | :--- |
-| **🍽️ Concierge & Reservations** | `concierge_reservation` | Looks up live venue details (address, phone, website, hours, email via OpenStreetMap), generates pre-filled 1-click **OpenTable**, **Resy**, and **Google Maps** booking links, calculates live traffic & Leave-By time, drafts/sends a concierge reservation request via **G-Krusch Gmail**, and places a hold on Google Calendar & Today's Board. | *"Make a reservation at Canlis Seattle for 4 people on Friday at 7pm"* |
+| **💳 Google AP2 Payments** | `ap2_payment_mandate` | Issues a cryptographically signed **Google Agent Payments Protocol (`AP2`)** Mandate (`IntentMandate` + `CartMandate` + `PaymentMandate` signed with `HMAC-SHA256`), generates a **Google Pay Agentic Checkout (`PaymentDataRequest` v2.0)** token payload, optionally mints a single-use spend-capped virtual card via **Privacy.com (`PRIVACY_API_KEY`)**, and gates execution behind **`🛡️ Confirm-Before-Act`**. | *"Authorize a $65 payment mandate for Seattle City Light"* |
+| **📲 Google Wallet Passes** | `google_wallet_pass` | Builds and signs a **Google Wallet Generic Pass** (`genericObjects` with QR barcode, `LEAVE BY` alert, location, and OpenTable/Maps links) via Google Cloud `RS256` JWT (`https://pay.google.com/gp/v/save/<jwt>`) or zero-config Sovereign Mobile Pass link. | *"Add a Google Wallet pass for Canlis Dinner at 7pm"* |
+| **🍽️ Concierge & Reservations** | `concierge_reservation` | Looks up live venue details (address, phone, website, hours, email via OpenStreetMap), generates pre-filled 1-click **OpenTable**, **Resy**, **Google Wallet Pass**, and **Google Maps** links, calculates live traffic & Leave-By time, drafts/sends a concierge reservation request via **G-Krusch Gmail**, and places a hold on Google Calendar & Today's Board. | *"Make a reservation at Canlis Seattle for 4 people on Friday at 7pm"* |
 | **🚗 Traffic & Time-to-Leave** | `commute_departure_check` | Calculates driving distance, live/estimated traffic delay (Google Maps Directions `duration_in_traffic` + OSRM/OpenStreetMap zero-key fallback), and exact **"Leave By `HH:MM`"** departure warnings so you leave earlier when there's traffic. | *"When do I need to leave for my 6pm dinner in Bellevue and how is traffic?"* |
 | **☁️ Google Drive & Docs** | `gkrusch_drive` | Hybrid semantic + FTS5 BM25 RAG search across Google Drive, Google Docs Markdown export, Drive file creation (`G-Krusch/output/`), and `agent.md` cloud steering (with automatic local `data/notes/` mirror). | *"Search my Google Drive for the Q4 Architecture Spec"* |
 | **📅 Google Calendar** | `gkrusch_calendar` | Lists upcoming Google Calendar events or schedules new calendar meetings/appointments—automatically computing travel time, traffic delay, and Leave-By alerts for any event with a `location`. | *"Schedule a meeting on Google Calendar titled Architecture Sync at 2026-10-14T15:00:00"* |
