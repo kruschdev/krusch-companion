@@ -180,8 +180,11 @@ export function today() {
   return new Date().toISOString().split('T')[0];
 }
 
+const seededDatesCache = new Set();
+
 export function initCompanionDb(customPath = null) {
   if (db) return db;
+  seededDatesCache.clear();
 
   const dbPath = customPath || config.db.path;
   const dbDir = path.dirname(dbPath);
@@ -248,11 +251,16 @@ export function getPriorities() {
 // ── Tasks ───────────────────────────────────────────────────────────────────
 export function ensureRecurringTasksForDate(date = null) {
   const targetDate = date || today();
+  if (seededDatesCache.has(targetDate)) return 0;
+
   const database = getDb();
   const seedKey = `recurring_seeded_${targetDate}`;
 
   const alreadySeeded = database.prepare('SELECT value FROM config WHERE key = ?').get(seedKey);
-  if (alreadySeeded) return 0;
+  if (alreadySeeded) {
+    seededDatesCache.add(targetDate);
+    return 0;
+  }
 
   const recurringTemplates = database.prepare(`
     SELECT priority_id, pillar, title, notes, energy_level
@@ -296,6 +304,7 @@ export function ensureRecurringTasksForDate(date = null) {
   });
 
   tx();
+  seededDatesCache.add(targetDate);
   return inserted;
 }
 
@@ -571,10 +580,10 @@ export function getStreak() {
   `).all();
 
   let streak = 0;
-  const current = new Date();
+  const current = new Date(today() + 'T00:00:00Z');
   for (const row of rows) {
-    const rowDate = new Date(row.date + 'T00:00:00');
-    const diffDays = Math.floor((current - rowDate) / (1000 * 60 * 60 * 24));
+    const rowDate = new Date(row.date + 'T00:00:00Z');
+    const diffDays = Math.round((current - rowDate) / (1000 * 60 * 60 * 24));
     if (diffDays === streak || diffDays === streak + 1) {
       streak++;
     } else {

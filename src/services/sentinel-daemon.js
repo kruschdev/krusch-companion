@@ -417,7 +417,8 @@ export async function runSentinelTick({
   callLlm = null,
   customEvents = null,
   customEmails = null,
-  customCalendarEvents = null
+  customCalendarEvents = null,
+  checkAutomations = null
 } = {}) {
   ensureSentinelTable();
   totalTicks++;
@@ -589,6 +590,104 @@ export async function runSentinelTick({
     triggeredAlerts.push(alertObj);
   }
 
+  // ── Channel 4: Scheduled Cron Automations & Priority Board Deadlines ────
+  const shouldCheckAutomations =
+    checkAutomations !== null
+      ? Boolean(checkAutomations)
+      : !Array.isArray(customEvents) && !Array.isArray(customEmails) && !Array.isArray(customCalendarEvents);
+
+  if (shouldCheckAutomations) {
+    const database = db.getDb();
+    try {
+      const hasAutoTable = database
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='companion_automations'")
+        .get();
+      if (hasAutoTable) {
+        const nowIso = new Date().toISOString();
+        const dueAutomations = database
+          .prepare('SELECT * FROM companion_automations WHERE enabled = 1 AND next_run_at IS NOT NULL AND next_run_at <= ?')
+          .all(nowIso);
+
+        for (const auto of dueAutomations) {
+          const nextRunIso =
+            auto.schedule_type === 'one_shot_reminder'
+              ? null
+              : new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+          const nextEnabled = auto.schedule_type === 'one_shot_reminder' ? 0 : 1;
+
+          database
+            .prepare(`
+              UPDATE companion_automations
+              SET last_run_at = datetime('now'), run_count = run_count + 1, next_run_at = ?, enabled = ?
+              WHERE id = ?
+            `)
+            .run(nextRunIso, nextEnabled, auto.id);
+
+          const createdTask = db.createTask({
+            title: `⏰ [Automated] ${auto.title}`,
+            priority_id: 1,
+            execution_priority: 1,
+            pillar: 'Work & Mastery',
+            notes: `Triggered by Scheduled Automation #${auto.id} (${auto.schedule_expr})`,
+            energy_level: 'low',
+            date: db.today()
+          });
+
+          llmCallsThisTick++;
+          totalLlmWakeups++;
+
+          const headline = `Scheduled Automation Due: "${auto.title}" (${auto.schedule_expr})`;
+          const alertObj = await dispatchSentinelWakeup({
+            eventId: `auto-${auto.id}-${auto.run_count + 1}`,
+            triggerReason: 'scheduled_automation_due',
+            headline,
+            eventTitle: auto.title,
+            destination: 'Priority Board',
+            leaveByFormatted: 'Due Now',
+            wakePrompt: `[SENTINEL PROACTIVE WAKEUP — SCHEDULED_AUTOMATION_DUE]\nTrigger: ${headline}\nAdded Board Task: [#${createdTask.id}] ${createdTask.title}\nWrite a concise 1-sentence reminder for the user.`,
+            fallbackAdvisory: `⏰ **${headline}** -> Added **[#${createdTask.id}] ${createdTask.title}** to Today's Priority Board.`,
+            callLlm,
+            fetchImpl
+          });
+          triggeredAlerts.push(alertObj);
+        }
+      }
+    } catch {
+      // Non-fatal if automations table not yet initialized
+    }
+
+    // Check incomplete Priority 1 tasks with explicit "before/by HH:MM" deadlines within <= 30 min
+    const incompleteUrgent = db.getTasksForDate(db.today()).filter(t => !t.completed && t.execution_priority === 1);
+    const nowMs = Date.now();
+    for (const task of incompleteUrgent) {
+      if (seenDeadlineTaskIds.has(task.id)) continue;
+      const deadlineMatch = `${task.title} ${task.notes || ''}`.match(/\b(?:before|by)\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i);
+      if (!deadlineMatch) continue;
+      const dueDate = parseArrivalDateTime(deadlineMatch[1]);
+      if (isNaN(dueDate.getTime())) continue;
+      const minsLeft = Math.round((dueDate.getTime() - nowMs) / 60000);
+      if (minsLeft >= 0 && minsLeft <= 30) {
+        seenDeadlineTaskIds.add(task.id);
+        llmCallsThisTick++;
+        totalLlmWakeups++;
+        const headline = `Board Deadline in ${minsLeft} min: "${task.title}"`;
+        const alertObj = await dispatchSentinelWakeup({
+          eventId: `deadline-task-${task.id}`,
+          triggerReason: 'board_deadline_imminent',
+          headline,
+          eventTitle: task.title,
+          destination: task.pillar || 'Priority Board',
+          leaveByFormatted: deadlineMatch[1],
+          wakePrompt: `[SENTINEL PROACTIVE WAKEUP — BOARD_DEADLINE_IMMINENT]\nTask: ${task.title}\nDue in: ${minsLeft} minutes (${deadlineMatch[1]})\nWrite a 1-sentence nudge.`,
+          fallbackAdvisory: `🚨 **${headline}** (Due by \`${deadlineMatch[1]}\`).`,
+          callLlm,
+          fetchImpl
+        });
+        triggeredAlerts.push(alertObj);
+      }
+    }
+  }
+
   return {
     tickAt: lastTickAt,
     monitoredCount: events.length + unreadEmails.length + rawCalendarEvents.length,
@@ -600,14 +699,19 @@ export async function runSentinelTick({
 /**
  * Start the background Sentinel Watchdog loop inside the Companion process.
  */
-export function startSentinelDaemon({ intervalMs = 5 * 60 * 1000 } = {}) {
+export function startSentinelDaemon({ intervalMs = null } = {}) {
+  if (String(process.env.DISABLE_SENTINEL_DAEMON || '').toLowerCase() === 'true') {
+    return null;
+  }
   if (sentinelIntervalHandle) {
     return sentinelIntervalHandle;
   }
+  const resolvedInterval =
+    intervalMs || parseInt(process.env.SENTINEL_INTERVAL_MS || '300000', 10) || 5 * 60 * 1000;
   ensureSentinelTable();
   sentinelIntervalHandle = setInterval(() => {
     runSentinelTick().catch(() => {});
-  }, intervalMs);
+  }, resolvedInterval);
   if (typeof sentinelIntervalHandle.unref === 'function') {
     sentinelIntervalHandle.unref();
   }
@@ -628,6 +732,7 @@ export function getSentinelStatus() {
     monitoredRoutes: routeStateMap.size,
     seenEmailsCount: seenEmailIds.size,
     seenCalendarConflictsCount: seenConflictKeys.size,
+    seenDeadlineTasksCount: seenDeadlineTaskIds.size,
     activeAlertsCount: activeAlerts.length,
     activeAlerts
   };

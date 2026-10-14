@@ -159,9 +159,10 @@ export function supersedeMemory({ targetId, newContent = null, content = null, r
 }
 
 /**
- * Safely snapshot the SQLite database using VACUUM INTO for sovereign zero-lock backups.
+ * Safely snapshot the SQLite database using VACUUM INTO for sovereign zero-lock backups,
+ * retaining at most maxBackups (default 10) snapshots to prevent unbounded disk usage.
  */
-export function createDatabaseBackup(backupDir = null) {
+export function createDatabaseBackup(backupDir = null, { maxBackups = 10 } = {}) {
   const db = getDb();
   const targetDir = backupDir || path.resolve(process.cwd(), 'data', 'backups');
   if (!fs.existsSync(targetDir)) {
@@ -170,10 +171,33 @@ export function createDatabaseBackup(backupDir = null) {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const backupFile = path.join(targetDir, `companion-backup-${timestamp}.db`);
   db.prepare(`VACUUM INTO ?`).run(backupFile);
+
+  let prunedBackupsCount = 0;
+  try {
+    const snapshots = fs
+      .readdirSync(targetDir)
+      .filter(f => f.startsWith('companion-backup-') && f.endsWith('.db'))
+      .sort()
+      .reverse();
+    if (maxBackups > 0 && snapshots.length > maxBackups) {
+      for (const stale of snapshots.slice(maxBackups)) {
+        try {
+          fs.unlinkSync(path.join(targetDir, stale));
+          prunedBackupsCount++;
+        } catch {
+          // Non-fatal
+        }
+      }
+    }
+  } catch {
+    // Non-fatal
+  }
+
   return {
     backupFile,
     timestamp,
-    sizeBytes: fs.statSync(backupFile).size
+    sizeBytes: fs.statSync(backupFile).size,
+    prunedBackupsCount
   };
 }
 

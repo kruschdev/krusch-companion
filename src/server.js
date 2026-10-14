@@ -34,7 +34,11 @@ import {
   setAgenticDryRunMode,
   getAgenticDryRunMode
 } from './agent/tools.js';
-import { getLastToolPruningReport } from './agent/agentic-proxy.js';
+import {
+  detectAgenticIntent,
+  getFullCatalogSchemaTokens,
+  getLastToolPruningReport
+} from './agent/agentic-proxy.js';
 import { processThoughtStream, processChaosDump } from './services/chaos-dump.js';
 import { generateDailyFocus, generateDailyReflection, generateNudge } from './services/coach.js';
 import { transcribeAudio } from './services/stt.js';
@@ -56,7 +60,10 @@ let lastRoutingDecision = null;
 
 // Initialize database & start background Proactive Sentinel Watchdog Daemon
 db.initCompanionDb();
-startSentinelDaemon();
+if (String(process.env.DISABLE_SENTINEL_DAEMON || '').toLowerCase() !== 'true') {
+  const intervalMs = parseInt(process.env.SENTINEL_INTERVAL_MS || '300000', 10) || 300000;
+  startSentinelDaemon({ intervalMs });
+}
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
@@ -319,10 +326,28 @@ app.post('/api/companion/chat', async (req, res) => {
 });
 
 // ── Agentic Proxy Tools & Direct Action Execution ───────────────────────────
-app.get('/api/companion/tools', (_req, res) => {
+app.get('/api/companion/tools', (req, res) => {
+  const prompt = String(req.query.prompt || '').trim();
+  if (prompt) {
+    const intent = detectAgenticIntent(prompt);
+    return res.json({
+      engine: 'krusch-agentic-proxy-dual-engine',
+      protocol: '<holodata> Cognitive Blueprint + 3-Stage Smart Tool Token Limiter (DPP + Micro-Schema Compaction)',
+      prompt,
+      shouldUseAgenticProxy: intent.shouldUseAgenticProxy,
+      matchedCategories: intent.matchedCategories,
+      pruningReport: intent.pruningReport,
+      tools: intent.tools,
+      compactedSchemas: intent.compactedSchemas
+    });
+  }
+
   res.json({
     engine: 'krusch-agentic-proxy-dual-engine',
-    protocol: '<holodata> Cognitive Blueprint + Flat Tool Array',
+    protocol: '<holodata> Cognitive Blueprint + 3-Stage Smart Tool Token Limiter (DPP + Micro-Schema Compaction)',
+    fullCatalogCount: COMPANION_TOOLS.length,
+    fullCatalogTokensEst: getFullCatalogSchemaTokens(),
+    lastPruningReport: getLastToolPruningReport(),
     tools: COMPANION_TOOLS.map(t => ({
       name: t.name,
       category: t.category,
@@ -773,6 +798,114 @@ app.get('/api/system/integrity', (_req, res) => {
   try {
     const check = db.getDb().prepare('PRAGMA integrity_check').all();
     res.json({ integrity: check });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── OpenClaw / Nous Hermes / Dot Extended Endpoints (Skills, Cron, Smart Home, CRM, Gateway) ──
+app.get('/api/skills', async (_req, res) => {
+  try {
+    const out = await executeCompanionTool('skill_manager', { action: 'list' });
+    res.json(out);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/skills', async (req, res) => {
+  try {
+    const out = await executeCompanionTool('skill_manager', req.body || { action: 'list' });
+    res.json(out);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/automations', async (_req, res) => {
+  try {
+    const out = await executeCompanionTool('schedule_automation', { action: 'list' });
+    res.json(out);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/automations', async (req, res) => {
+  try {
+    const out = await executeCompanionTool('schedule_automation', req.body || { action: 'list' });
+    res.json(out);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/smart-home', async (_req, res) => {
+  try {
+    const out = await executeCompanionTool('smart_home_bridge', { action: 'home_status' });
+    res.json(out);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/smart-home', async (req, res) => {
+  try {
+    const out = await executeCompanionTool('smart_home_bridge', req.body || { action: 'home_status' });
+    res.json(out);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/crm', async (_req, res) => {
+  try {
+    const out = await executeCompanionTool('personal_crm_profile', { action: 'list_contacts' });
+    res.json(out);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/crm', async (req, res) => {
+  try {
+    const out = await executeCompanionTool('personal_crm_profile', req.body || { action: 'list_contacts' });
+    res.json(out);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/gateway/webhook', async (req, res) => {
+  try {
+    const requiredSecret = String(process.env.GATEWAY_WEBHOOK_SECRET || '').trim();
+    if (requiredSecret) {
+      const headerSecret =
+        req.headers['x-webhook-secret'] ||
+        String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+      if (headerSecret !== requiredSecret) {
+        return res.status(401).json({ error: 'Unauthorized webhook request: invalid or missing GATEWAY_WEBHOOK_SECRET' });
+      }
+    }
+
+    const payload = req.body || {};
+    const channel = String(payload.channel || payload.platform || 'webhook').toLowerCase();
+    const prompt = String(payload.text || payload.message?.text || payload.content || '').trim();
+    if (!prompt) {
+      return res.status(400).json({ error: 'Inbound webhook message text is required' });
+    }
+    const result = await dispatchCompanionChat({
+      prompt,
+      history: [],
+      contextBriefing: compileStateBriefing()
+    });
+    res.json({
+      ok: true,
+      channel,
+      reply: result.content,
+      tierUsed: result.tierUsed,
+      actionExecuted: result.actionExecuted || null
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
