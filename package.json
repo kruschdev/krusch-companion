@@ -7,6 +7,9 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
+    "build": "npm --prefix client install && npm --prefix client run build",
+    "doctor": "node scripts/doctor.js",
+    "bench": "node scripts/benchmark.js",
     "test": "node --test tests/*.js"
   },
   "dependencies": {

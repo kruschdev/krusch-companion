@@ -165,6 +165,7 @@ export function CompanionView({ streak, onActionExecuted }) {
           tierUsed: data.tierUsed,
           latencyMs: data.latencyMs,
           reason: data.reason,
+          contextActivated: typeof data.contextActivated === 'boolean' ? data.contextActivated : null,
           actionExecuted: data.actionExecuted || null,
           agenticTrace: data.agenticTrace || null
         }
@@ -368,6 +369,29 @@ export function CompanionView({ streak, onActionExecuted }) {
               {m.role === 'assistant' && (m.tierUsed || actionMeta || hasTrace) && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   {m.tierUsed && <TierBadge tier={m.tierUsed} latencyMs={m.latencyMs} />}
+                  {typeof m.contextActivated === 'boolean' && (
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        fontSize: '0.69rem',
+                        fontFamily: 'var(--font-mono)',
+                        padding: '2px 8px',
+                        borderRadius: 'var(--radius-full)',
+                        background: m.contextActivated ? 'rgba(167, 139, 250, 0.12)' : 'rgba(148, 163, 184, 0.12)',
+                        border: `1px solid ${m.contextActivated ? 'rgba(167, 139, 250, 0.4)' : 'rgba(148, 163, 184, 0.35)'}`,
+                        color: m.contextActivated ? '#a78bfa' : '#94a3b8'
+                      }}
+                      title={
+                        m.contextActivated
+                          ? 'Knowledge Boundary Gate: Open-world query — Working Memory injected'
+                          : 'Knowledge Boundary Gate: Closed-world utility query — 0 memory tokens injected'
+                      }
+                    >
+                      {m.contextActivated ? '🧠 Context Injected' : '🛡️ Boundary Gated'}
+                    </span>
+                  )}
                   {actionMeta && (
                     <span
                       style={{

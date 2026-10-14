@@ -2,10 +2,11 @@ import { shouldActivateMemory, prunePreRetrieval } from '../toolkit/prune.js';
 import { compileStateBriefing } from './memory-store.js';
 
 const COMPANION_MEMORY_KEYWORDS = [
-  'schedule', 'today', 'routine', 'habit', 'priority', 'task', 'todo', 'plan',
+  'schedule', 'today', 'routine', 'habit', 'habits', 'priority', 'priorities', 'task', 'tasks', 'todo', 'plan',
   'wife', 'daughter', 'partner', 'family', 'work', 'project', 'health', 'fitness',
-  'remind', 'remember', 'prefer', 'coffee', 'sleep', 'morning', 'evening',
-  'focus', 'nudge', 'stress', 'blocker', 'coach', 'reflection', 'streak',
+  'remind', 'remember', 'prefer', 'decide', 'decided', 'dinner', 'dinners', 'coffee', 'sleep', 'morning', 'evening',
+  'focus', 'nudge', 'stress', 'blocker', 'blockers', 'deadline', 'deadlines', 'commitment', 'commitments',
+  'coach', 'reflection', 'streak',
   'next', 'tackle', 'board', 'list', 'done', 'complete', 'finish', 'check',
   'add', 'create', 'delete', 'remove', 'rollover', 'yesterday', 'pending',
   'left', 'remaining', 'progress', 'status', 'start', 'break down', 'split', 'subtask'

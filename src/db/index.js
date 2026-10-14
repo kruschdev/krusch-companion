@@ -152,6 +152,15 @@ export function enrichTaskWithDualAxis(row) {
     color: row.priority_color || '#60a5fa'
   };
 
+  let laneReason = 'Key daily focus';
+  if (execLevel === 1) {
+    laneReason = 'Urgent deadline or household provision — ranked above daily habits';
+  } else if (execLevel === 3 || row.recurring) {
+    laneReason = 'Recurring daily grounding habit — never buries urgent deadlines';
+  } else if (execLevel === 4) {
+    laneReason = 'Backlog — tackle when time permits';
+  }
+
   return {
     ...row,
     execution_priority: execLevel,
@@ -160,6 +169,7 @@ export function enrichTaskWithDualAxis(row) {
     execution_lane_short: lane.shortName,
     execution_lane_emoji: lane.emoji,
     execution_lane_color: lane.color,
+    lane_reason: laneReason,
     pillar: pillarMeta.name,
     pillar_emoji: pillarMeta.emoji,
     pillar_color: pillarMeta.color

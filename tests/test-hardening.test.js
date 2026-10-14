@@ -15,9 +15,11 @@ if (fs.existsSync(testBackupDir)) fs.rmSync(testBackupDir, { recursive: true, fo
 
 const { initCompanionDb, getTasksForDate, createTask, rolloverUnfinishedTasks, today } = await import('../src/db/index.js');
 const { safeEvaluateArithmetic, evaluateL0Heuristic, breakdownTaskIntoSubtasks, TIERS } = await import('../src/router/cascade-client.js');
-const { rememberMemory, getActiveMemories, getDecayCandidates, createDatabaseBackup, compileStateBriefing } = await import('../src/context/memory-store.js');
+const { rememberMemory, supersedeMemory, getActiveMemories, getSupersededMemories, deleteMemory, getDecayCandidates, createDatabaseBackup, compileStateBriefing } = await import('../src/context/memory-store.js');
 const { evaluateCompanionContext } = await import('../src/context/boundary-gate.js');
 const { processChaosDump } = await import('../src/services/chaos-dump.js');
+const { executeCompanionTool, getAgenticToolStats, setAgenticDryRunMode } = await import('../src/agent/tools.js');
+const { runDoctorChecks } = await import('../scripts/doctor.js');
 
 initCompanionDb(testDbPath);
 
@@ -192,6 +194,75 @@ test('Hardening: Database backup via VACUUM INTO produces verified snapshot', ()
 test('Hardening: Decay candidates query executes without error', () => {
   const candidates = getDecayCandidates(30);
   assert.ok(Array.isArray(candidates));
+});
+
+test('Hardening: External Side-Effect Tool Dry-Run Gate & Telemetry', async () => {
+  // Enable Dry-Run Confirmation Gate for external side-effect tools
+  setAgenticDryRunMode(true);
+
+  const gmailDryRun = await executeCompanionTool('gkrusch_gmail', {
+    action: 'send',
+    to: 'partner@example.com',
+    subject: 'Dinner tonight',
+    body: 'See you at 7pm!'
+  });
+  assert.strictEqual(gmailDryRun.ok, true);
+  assert.strictEqual(gmailDryRun.dryRun, true);
+  assert.strictEqual(gmailDryRun.confirmationRequired, true);
+  assert.ok(gmailDryRun.summary.includes('Confirmation Gate'));
+
+  const resvDryRun = await executeCompanionTool('concierge_reservation', {
+    action: 'book',
+    venueName: 'Canlis',
+    partySize: 2,
+    dateTime: '2026-10-14T19:00:00'
+  });
+  assert.strictEqual(resvDryRun.ok, true);
+  assert.strictEqual(resvDryRun.dryRun, true);
+  assert.strictEqual(resvDryRun.confirmationRequired, true);
+
+  // Restore default live mode
+  setAgenticDryRunMode(false);
+
+  const stats = getAgenticToolStats();
+  assert.ok(stats.totalCalls >= 2);
+  assert.ok(stats.totalDryRuns >= 2);
+  assert.ok(stats.perTool.gkrusch_gmail.dryRuns >= 1);
+});
+
+test('Hardening: Temporal Superseding Lineage History & Memory Deletion', () => {
+  const oldMem = rememberMemory({
+    category: 'lesson',
+    content: 'Evening workout is at 5:30 PM'
+  });
+  const res = supersedeMemory({
+    targetId: oldMem.id,
+    category: 'lesson',
+    content: 'Evening workout moved to 7:00 PM'
+  });
+  assert.ok(res.newMemory.id);
+
+  const history = getSupersededMemories(20);
+  assert.ok(history.some(h => h.id === oldMem.id && Number(h.superseded_by) === Number(res.newMemory.id)));
+
+  const del = deleteMemory(res.newMemory.id);
+  assert.strictEqual(del.deleted, true);
+});
+
+test('Hardening: Dual-Axis Task includes lane_reason ("Why this lane?") and Setup Doctor passes', async () => {
+  const urgentTask = createTask({
+    title: 'Pay electric bill before 5pm',
+    priority_id: 5,
+    execution_priority: 1,
+    pillar: 'Provision & Finance',
+    date: today()
+  });
+  assert.ok(urgentTask.lane_reason && urgentTask.lane_reason.includes('Urgent deadline or household provision'));
+
+  const doc = await runDoctorChecks();
+  assert.ok(doc && Array.isArray(doc.checks));
+  assert.ok(doc.checks.some(c => c.id === 'node_version' && c.status === 'ok'));
+  assert.ok(doc.checks.some(c => c.id === 'sqlite_wal' && c.status === 'ok'));
 });
 
 test('Hardening: Cleanup test artifacts', () => {

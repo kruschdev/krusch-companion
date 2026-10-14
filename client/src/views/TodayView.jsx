@@ -64,6 +64,24 @@ export function TodayView({ onFocusTaskSelected }) {
 
   useEffect(() => {
     loadData();
+    const handleKeyDown = (e) => {
+      const tag = (e.target?.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.metaKey || e.ctrlKey || e.altKey) {
+        return;
+      }
+      if (e.key === 'n' || e.key === 'N') {
+        e.preventDefault();
+        document.getElementById('input-new-task-title')?.focus();
+      } else if (e.key === 'g' || e.key === 'G') {
+        e.preventDefault();
+        setViewMode(prev => (prev === 'execution' ? 'pillar' : 'execution'));
+      } else if (e.key === 'r' || e.key === 'R') {
+        e.preventDefault();
+        handleRollover();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   const loadData = async () => {
@@ -309,6 +327,17 @@ export function TodayView({ onFocusTaskSelected }) {
               {task.notes}
             </span>
           )}
+          {task.lane_reason && !task.completed && (
+            <span
+              style={{
+                fontSize: '0.72rem',
+                color: 'var(--text-dim)',
+                fontFamily: 'var(--font-mono)'
+              }}
+            >
+              ↳ Why this lane: {task.lane_reason}
+            </span>
+          )}
         </div>
       </div>
 
@@ -386,7 +415,10 @@ export function TodayView({ onFocusTaskSelected }) {
             Today's Priority Board ({completedCount}/{tasks.length} Completed)
           </h2>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>
-            Ranked by <strong>Execution Priority</strong> (Deadlines & Life Provision first) with color-coded <strong>Life Pillar</strong> tags.
+            Ranked by <strong>Execution Priority</strong> (Deadlines & Life Provision first) with color-coded <strong>Life Pillar</strong> tags.{' '}
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', color: 'var(--text-dim)' }}>
+              [Shortcuts: N=New · G=Group · R=Rollover]
+            </span>
           </p>
         </div>
 
@@ -402,7 +434,7 @@ export function TodayView({ onFocusTaskSelected }) {
             className="btn-secondary"
             onClick={() => setViewMode(prev => (prev === 'execution' ? 'pillar' : 'execution'))}
             style={{ fontSize: '0.8rem', padding: '6px 12px' }}
-            title="Switch between Execution Priority lanes and Life Pillar sections"
+            title="Switch between Execution Priority lanes and Life Pillar sections (Shortcut: G)"
           >
             {viewMode === 'execution' ? '🧭 Group by Life Pillar' : '⚡ Group by Execution Priority'}
           </button>
@@ -411,10 +443,19 @@ export function TodayView({ onFocusTaskSelected }) {
             className="btn-secondary"
             onClick={handleRollover}
             style={{ fontSize: '0.8rem', padding: '6px 12px' }}
-            title="Move incomplete tasks from previous days onto today's board"
+            title="Move incomplete tasks from previous days onto today's board (Shortcut: R)"
           >
             ↻ Roll Over Unfinished
           </button>
+          <a
+            href="/api/export?format=markdown"
+            download
+            className="btn-secondary"
+            style={{ fontSize: '0.8rem', padding: '6px 12px', textDecoration: 'none' }}
+            title="Export all tasks & working memories as portable Markdown"
+          >
+            📥 Export MD
+          </a>
           <button
             id="btn-toggle-gamify"
             className="btn-secondary"
@@ -423,6 +464,45 @@ export function TodayView({ onFocusTaskSelected }) {
           >
             {gamify.opted_in ? '🎮 Gamify Active' : '🎮 Enable Gamify'}
           </button>
+        </div>
+      </div>
+
+      {/* Life-Pillar Balance Strip */}
+      <div
+        className="glass-card"
+        style={{
+          padding: '10px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 10
+        }}
+      >
+        <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}>
+          🧭 LIFE-PILLAR BALANCE:
+        </span>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {pillars.map(p => {
+            const pTasks = tasks.filter(t => (t.pillar || t.priority_name) === p.name);
+            const pDone = pTasks.filter(t => t.completed).length;
+            return (
+              <span
+                key={p.key}
+                style={{
+                  fontSize: '0.74rem',
+                  fontFamily: 'var(--font-mono)',
+                  padding: '2px 9px',
+                  borderRadius: 999,
+                  background: pTasks.length > 0 ? `${p.color}20` : 'rgba(255,255,255,0.03)',
+                  color: pTasks.length > 0 ? p.color : 'var(--text-dim)',
+                  border: `1px solid ${pTasks.length > 0 ? `${p.color}55` : 'var(--border-subtle)'}`
+                }}
+              >
+                {p.emoji} {p.name}: {pDone}/{pTasks.length}
+              </span>
+            );
+          })}
         </div>
       </div>
 

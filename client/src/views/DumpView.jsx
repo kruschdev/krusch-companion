@@ -2,12 +2,45 @@ import React, { useState } from 'react';
 import AudioRecorder from '../components/AudioRecorder';
 import TierBadge from '../components/TierBadge';
 
+const SAMPLE_THOUGHT_STREAM =
+  "I need to pay the electric bill before 5pm today, call the dentist before 3pm to reschedule my cleaning, pick up the prescription from CVS, and finish reviewing the Q4 architecture spec. Also remember that my daughter's teacher requested a parent meeting next Thursday at 4pm, and we decided to keep Friday evenings reserved for family pizza night.";
+
 export function DumpView({ onTasksCreated }) {
   const [text, setText] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [result, setResult] = useState(null);
 
-  const handleAudioReady = async (audioBlob) => {
+  const runTextDump = async (rawText) => {
+    const clean = (rawText || text).trim();
+    if (!clean || isProcessing) return;
+
+    setIsProcessing(true);
+    setResult(null);
+
+    try {
+      const res = await fetch('/api/companion/dump', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: clean,
+          autoSaveTasks: true,
+          autoSaveMemories: true
+        })
+      });
+
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+
+      const data = await res.json();
+      setResult(data);
+      if (onTasksCreated) onTasksCreated();
+    } catch (err) {
+      alert(`Dump processing failed: ${err.message}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleAudioReady = async (audioBlob, browserTranscript = '') => {
     setIsProcessing(true);
     setResult(null);
 
@@ -32,7 +65,13 @@ export function DumpView({ onTasksCreated }) {
       }
       if (onTasksCreated) onTasksCreated();
     } catch (err) {
-      alert(`Voice processing failed: ${err.message}. If local Whisper is offline, you can type your thoughts directly below.`);
+      if (browserTranscript && browserTranscript.trim().length > 0) {
+        setText(browserTranscript.trim());
+        setIsProcessing(false);
+        await runTextDump(browserTranscript.trim());
+        return;
+      }
+      alert(`Local Whisper STT unavailable (${err.message}). Tip: Use Chrome/Edge/Safari for zero-config Browser Web Speech API transcription, or click "Try Sample Thought Stream" below.`);
     } finally {
       setIsProcessing(false);
     }
@@ -40,32 +79,12 @@ export function DumpView({ onTasksCreated }) {
 
   const handleProcessText = async (e) => {
     e?.preventDefault();
-    if (!text.trim() || isProcessing) return;
+    await runTextDump(text);
+  };
 
-    setIsProcessing(true);
-    setResult(null);
-
-    try {
-      const res = await fetch('/api/companion/dump', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: text.trim(),
-          autoSaveTasks: true,
-          autoSaveMemories: true
-        })
-      });
-
-      if (!res.ok) throw new Error(`Server returned ${res.status}`);
-
-      const data = await res.json();
-      setResult(data);
-      if (onTasksCreated) onTasksCreated();
-    } catch (err) {
-      alert(`Dump processing failed: ${err.message}`);
-    } finally {
-      setIsProcessing(false);
-    }
+  const handleTrySample = async () => {
+    setText(SAMPLE_THOUGHT_STREAM);
+    await runTextDump(SAMPLE_THOUGHT_STREAM);
   };
 
   return (
@@ -76,17 +95,33 @@ export function DumpView({ onTasksCreated }) {
           🌊 Thought Stream
         </h2>
         <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', maxWidth: 600, margin: '0 auto 20px' }}>
-          Speak or write your unfiltered thoughts freely. Rambling thoughts, to-dos, and life commitments are automatically triaged into prioritized action items and durable working memory.
+          Speak or write your unfiltered thoughts freely. Rambling thoughts, deadlines, and life commitments are automatically triaged into Dual-Axis Execution Priority Lanes, Life Pillar badges, and durable working memory.
         </p>
 
-        <AudioRecorder onAudioReady={handleAudioReady} isProcessing={isProcessing} />
+        <AudioRecorder
+          onAudioReady={handleAudioReady}
+          onLiveTranscript={(live) => setText(live)}
+          isProcessing={isProcessing}
+        />
       </div>
 
       {/* Text Area Form */}
       <form onSubmit={handleProcessText} className="glass-panel" style={{ padding: 24 }}>
-        <label style={{ display: 'block', fontWeight: 600, marginBottom: 8, fontSize: '0.9rem' }}>
-          Or Type / Paste Your Thoughts:
-        </label>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+          <label style={{ fontWeight: 600, fontSize: '0.9rem' }}>
+            Or Type / Paste Your Thoughts:
+          </label>
+          <button
+            id="btn-try-sample-stream"
+            type="button"
+            className="btn-secondary"
+            onClick={handleTrySample}
+            disabled={isProcessing}
+            style={{ fontSize: '0.78rem', padding: '4px 12px', borderColor: 'var(--accent-cyan)', color: 'var(--accent-cyan)' }}
+          >
+            ✨ Try Sample Thought Stream (1-Click Demo)
+          </button>
+        </div>
         <textarea
           id="textarea-thought-stream"
           rows={5}

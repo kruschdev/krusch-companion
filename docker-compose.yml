@@ -1,19 +1,38 @@
 services:
   krusch-companion:
     build:
-      context: ../..
-      dockerfile: projects/krusch-companion/Dockerfile
+      context: .
+      dockerfile: Dockerfile
     container_name: krusch-companion
     restart: unless-stopped
     ports:
       - "3004:3004"
     volumes:
-      - ./data:/app/projects/krusch-companion/data
+      - ./data:/app/data
     environment:
       - NODE_ENV=production
       - PORT=3004
-      - OLLAMA_HOST=http://host.docker.internal:11434
-      - SWARM_VLLM_URL=http://host.docker.internal:8000/v1
-      - ALLOW_CLOUD_ESCALATION=false
+      - LLM_PROVIDER=${LLM_PROVIDER:-ollama}
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://host.docker.internal:11434}
+      - EDGE_MODEL=${EDGE_MODEL:-qwen2.5-coder:7b}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - OPENROUTER_ZDR=true
+      - ALLOW_CLOUD_ESCALATION=${ALLOW_CLOUD_ESCALATION:-false}
+      - MOCK_LLM=${MOCK_LLM:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
+
+  # Optional all-in-one local LLM runtime (`docker compose --profile full-stack up -d`)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: krusch-companion-ollama
+    profiles: ["full-stack"]
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    entrypoint: ["/bin/sh", "-c", "ollama serve & sleep 3 && ollama pull ${EDGE_MODEL:-qwen2.5-coder:7b} && wait"]
+
+volumes:
+  ollama_models:

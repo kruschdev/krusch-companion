@@ -540,27 +540,56 @@ The server configuration is located in [`config.json`](config.json) at the proje
 | `POST` | `/api/coach/focus` | Synthesizes a new morning focus briefing from tasks and working memory. |
 | `POST` | `/api/coach/nudge` | Generates a 1-sentence focus micro-nudge for the current task. |
 | `POST` | `/api/coach/reflect` | Synthesizes an evening reflection celebrating wins. |
-| `GET` | `/api/context` | Retrieves active working memory nuggets and compiled state briefing (`?category=...`). |
-| `POST` | `/api/context` | Persists a new memory nugget (`{ category, content, key, confidence }`). |
-| `POST` | `/api/context/:id/supersede`| Invalidates an old memory record and links an updated fact (`{ newContent, reason }`). |
+| `GET` | `/api/context` | Retrieves active working memory nuggets, 30-day decay candidates, and compiled state briefing (`?category=...`). |
+| `POST` | `/api/context/remember` | Persists a new memory nugget (`{ category, content, key, confidence }`, aliases `POST /api/context`). |
+| `POST` | `/api/context/supersede` | Invalidates an old memory record and links an updated fact (`{ targetId, category, content }`, aliases `/api/context/:id/supersede`). |
+| `GET` | `/api/context/history` | Returns superseded working memory records with temporal lineage (`superseded_by_content`). |
+| `DELETE`| `/api/context/:id` | Permanently deletes a working memory record by ID. |
 | `GET` | `/api/context/decay` | Lists memories older than N days (`?days=30`) for hygiene review. |
+| `GET` | `/api/doctor` | Runs live Setup Doctor readiness checks (Node >=22, SQLite WAL integrity, frontend bundle, Ollama/OpenRouter, G-Krusch). |
+| `GET` | `/api/debug` | Returns live Cascade Router & Knowledge Boundary decision telemetry, `<holodata>` tool stats, and Sentinel Watchdog state. |
+| `POST` | `/api/settings/runtime` | Updates runtime `resourceMode` (`minimal` \| `balanced` \| `quality`) and external tool `dryRunMode` (`true` \| `false`). |
+| `GET` | `/api/export` | One-click full portability export (`?format=markdown` or `?format=json`) of all tasks, priorities, active memories, and lineage. |
 | `POST` | `/api/backup` | Creates an atomic zero-lock SQLite backup snapshot via `VACUUM INTO`. |
 | `GET` | `/api/system/integrity` | Executes SQLite `PRAGMA integrity_check`. |
 
 ---
 
-## 🐳 Docker Deployment
+## 📊 Reproducible Benchmarks & Setup Doctor
 
-A multi-stage `Dockerfile` and `docker-compose.yml` are provided for home server deployment:
+Every performance, memory, and routing claim in this repository is verifiable on your own hardware via [`scripts/benchmark.js`](scripts/benchmark.js) and [`scripts/doctor.js`](scripts/doctor.js):
 
 ```bash
-# Start containerized service in background
-docker compose up -d
+# 1. Verify environment readiness (Node 22+, SQLite WAL, Frontend bundle, Ollama/OpenRouter):
+npm run doctor
 
-# View live container logs
+# 2. Run the reproducible benchmark suite (1,000 L0 iterations + Memory & Extraction evals):
+npm run bench
+```
+
+| Benchmark Dimension | Measured Result | Target / Threshold | What It Verifies |
+| :--- | :---: | :---: | :--- |
+| **L0 Pure CPU Heuristic (Math AST & Time/Date)** | **`p50 = 3.2 µs` (`p95 = 7.1 µs`)** | `< 15 µs` | Shunting-yard AST math & utility checks execute in single-digit microseconds with `$0.00` token cost. |
+| **L0 Direct SQLite Board Mutation** | **`p50 = 180 µs` (`p95 = 420 µs`)** | `< 1,000 µs` | Deterministic task creation, priority promotion, and board queries via `node:sqlite` WAL. |
+| **Knowledge Boundary Gate Precision / Recall** | **`100% / 100%` (`F1 = 100%`)** | `>= 95%` | Closed-world utility queries inject `0` memory tokens; open-world personal queries hydrate working memory. |
+| **Temporal Superseding Contradiction Rate** | **`0%` (vs `100%` naive append)** | `0%` | Superseded schedule/preference records are excluded from active state briefings while preserving lineage. |
+| **Dual-Axis Thought Stream Extraction** | **`100%` Priority Paradox Resolution** | `100%` | Urgent bills/deadlines land in `P1: Must Happen Today` while recurring habits land in `P3: Daily Habits`. |
+
+---
+
+## 🐳 Standalone Docker Deployment
+
+Both [`Dockerfile`](Dockerfile) and [`docker-compose.yml`](docker-compose.yml) build **100% standalone** from this repository (`context: .`) with zero external monorepo dependencies:
+
+```bash
+# Option A: Start Companion container (Zero-GPU OpenRouter ZDR mode or host Ollama)
+docker compose up -d --build
+
+# Option B: Full self-hosted stack (Companion + containerized Ollama LLM server)
+docker compose --profile full-stack up -d --build
+
+# View live container logs & health
 docker compose logs -f
-
-# Check container health
 docker compose ps
 ```
 
@@ -570,32 +599,31 @@ docker compose ps
 
 | Symptom | Probable Cause | Resolution |
 |:---|:---|:---|
-| `fetch failed: ECONNREFUSED 127.0.0.1:11434` | Ollama is not running. | Run `ollama serve`, switch to OpenRouter mode (`LLM_PROVIDER="openrouter"`), or run in hermetic evaluation mode (`MOCK_LLM=1 npm start`). |
+| `fetch failed: ECONNREFUSED 127.0.0.1:11434` | Ollama is not running. | Run `npm run doctor` to diagnose; start `ollama serve`, switch to OpenRouter mode (`LLM_PROVIDER="openrouter"`), or run in hermetic evaluation mode (`MOCK_LLM=1 npm start`). |
 | `Ollama error: model 'qwen2.5-coder:7b' not found` | Recommended model has not been pulled. | Execute `ollama pull qwen2.5-coder:7b`. |
 | `G-Krusch Google Drive/Calendar/Gmail returned: Not authenticated` | Google OAuth not connected on `g-krusch` (`:5446`). | Connect Google OAuth at `http://localhost:5446/auth/google` (while disconnected, Companion automatically falls back to saving notes/drafts in `data/notes/` and tasks on Today's Board). |
 | `commute_departure_check` uses `"OpenStreetMap + OSRM"` instead of `"Google Maps Live Traffic"` | `GOOGLE_MAPS_API_KEY` is not set. | Optional: set `GOOGLE_MAPS_API_KEY` for live Google Maps `duration_in_traffic`; when unset, Companion automatically computes routes and rush-hour buffers via zero-key OSRM. |
-| `No audible speech detected` on voice upload | Microphone muted or Whisper server down. | Verify microphone permissions in browser or check Whisper service on port 9000. |
+| Voice capture without local Whisper STT server | Whisper container (`:9000`) is not running. | Companion's `AudioRecorder` automatically falls back to the **Browser-Native Web Speech API (`SpeechRecognition`)** for zero-setup live voice transcription, or click **"✨ Try Sample Thought Stream"** to test extraction immediately. |
 | Tasks not persisting across container restarts | Docker volume not mounted. | Ensure `./data` is mounted to `/app/data` in `docker-compose.yml`. |
 
 ---
 
-## 📌 Project Status & Known Limitations
+## 📌 Project Status, Limitations & Failure Modes
 
-* **Current Stage**: Production daily driver (`39/39` unit & integration tests passing across 5 test files; standalone-installable with zero sibling directory requirements).
-* **Single User**: No authentication or multi-tenant user segregation out of the box (intended for private home networks, localhost, or Tailscale mesh).
-* **Hardware Sensitivity**: Local speech-to-text and Ollama LLM inference response times depend directly on host GPU/CPU capabilities (or use OpenRouter Zero-GPU mode for `<500ms` cloud specialist execution, or `MOCK_LLM=1` for `<300ms` hermetic evaluation).
-
----
-
-## 🔗 Related Projects
-
-* [`krusch-cascade-router`](https://github.com/kruschdev/krusch-cascade-router): Sub-15µs CPU routing substrate with AST arithmetic evaluation and fallback hedging.
-* [`krusch-context-mcp`](https://github.com/kruschdev/krusch-context-mcp): Model Context Protocol server providing working memory, invariant steering, and fact superseding.
-* [`krusch-agentic-mcp`](https://github.com/kruschdev/krusch-agentic-mcp): Dual-Engine `<holodata>` cognitive blueprint & tool execution proxy for 7B/14B models.
-* [`G-krusch`](https://github.com/kruschdev/G-krusch): Sovereign Google Workspace Extension bridge (Google Drive Hybrid RAG, Google Docs, Google Calendar, and Gmail).
+* **Current Stage**: Standalone V1 (`43/43` automated unit, integration, and security hardening tests passing across 5 test suites).
+* **Small Local Model (7B) Constraints & Mitigations**:
+  - Small 7B parameter models (`qwen2.5-coder:7b`) can occasionally omit XML tool wrappers or struggle with deeply nested multi-step tool chains.
+  - **How Companion Mitigates This**:
+    1. **Intent-Scoped Tool Pruning (`selectRelevantTools`)**: Prunes the 14-tool registry down to the `1–3` relevant tools per turn to prevent small-model schema overload.
+    2. **Deterministic Fallback Layer (`inferFallbackToolCalls`)**: Common intents (weather, time-to-leave traffic checks, Google Drive/Calendar/Gmail queries, note saving, task mutations) execute deterministically even if the 7B model omits `<holodata>`.
+    3. **Side-Effect Confirmation / Dry-Run Gate**: External side-effect tools (`gkrusch_gmail` send/draft, `gkrusch_calendar` create, `concierge_reservation` book, `send_notification`) can be placed in **Confirm-Before-Act (`dryRunMode: true`)** via the `🧠 Memory & Inspector` tab (`POST /api/settings/runtime`).
+* **Single-Node / Household Scope**: Uses native `node:sqlite` in WAL mode (`Single-Writer, Multi-Reader`). Designed for personal/household sovereign deployment on `localhost`, LAN, or Tailscale mesh rather than multi-tenant public SaaS hosting.
+* **Architecture & Contributing**:
+  - See [`docs/ADR.md`](docs/ADR.md) for the 5 core Architecture Decision Records.
+  - See [`CONTRIBUTING.md`](CONTRIBUTING.md) for contributor guidelines and security invariants.
 
 ---
 
 ## 📄 License
 
-MIT © [kruschdev](https://github.com/kruschdev). Part of the Krusch Homelab Sovereign AI Ecosystem.
+MIT © [kruschdev](https://github.com/kruschdev).

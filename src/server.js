@@ -7,10 +7,26 @@ import { fileURLToPath } from 'url';
 
 import config from './config.js';
 import * as db from './db/index.js';
-import { rememberMemory, getActiveMemories, supersedeMemory, compileStateBriefing, createDatabaseBackup, getDecayCandidates } from './context/memory-store.js';
+import {
+  rememberMemory,
+  getActiveMemories,
+  getSupersededMemories,
+  deleteMemory,
+  supersedeMemory,
+  compileStateBriefing,
+  createDatabaseBackup,
+  getDecayCandidates
+} from './context/memory-store.js';
 import { evaluateCompanionContext } from './context/boundary-gate.js';
 import { dispatchCompanionChat, classifyCompanionPrompt, breakdownTaskIntoSubtasks } from './router/cascade-client.js';
-import { COMPANION_TOOLS, executeCompanionTool, calculateCommuteAndDeparture } from './agent/tools.js';
+import {
+  COMPANION_TOOLS,
+  executeCompanionTool,
+  calculateCommuteAndDeparture,
+  getAgenticToolStats,
+  setAgenticDryRunMode,
+  getAgenticDryRunMode
+} from './agent/tools.js';
 import { processThoughtStream, processChaosDump } from './services/chaos-dump.js';
 import { generateDailyFocus, generateDailyReflection, generateNudge } from './services/coach.js';
 import { transcribeAudio } from './services/stt.js';
@@ -21,10 +37,14 @@ import {
   getActiveSentinelAlerts,
   acknowledgeSentinelAlert
 } from './services/sentinel-daemon.js';
+import { runDoctorChecks } from '../scripts/doctor.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..');
+
+let runtimeResourceMode = process.env.RESOURCE_MODE || 'balanced'; // 'minimal' | 'balanced' | 'quality'
+let lastRoutingDecision = null;
 
 // Initialize database & start background Proactive Sentinel Watchdog Daemon
 db.initCompanionDb();
@@ -244,12 +264,26 @@ app.post('/api/companion/chat', async (req, res) => {
       latencyMs: result.latencyMs
     });
 
+    lastRoutingDecision = {
+      timestamp: new Date().toISOString(),
+      promptPreview: prompt.slice(0, 140),
+      tierUsed: result.tierUsed,
+      latencyMs: result.latencyMs,
+      reason: result.reason,
+      contextActivated: Boolean(contextEval.shouldInjectContext),
+      contextReason: contextEval.reason || (contextEval.shouldInjectContext ? 'Open-world personal query' : 'Closed-world utility gate'),
+      resourceMode: runtimeResourceMode,
+      actionExecuted: result.actionExecuted?.type || null,
+      agenticToolsCalled: result.agenticTrace?.toolCalls?.map(tc => tc.name) || []
+    };
+
     res.json({
       reply: result.content,
       tierUsed: result.tierUsed,
       latencyMs: result.latencyMs,
       reason: result.reason,
       contextActivated: contextEval.shouldInjectContext,
+      contextReason: lastRoutingDecision.contextReason,
       actionExecuted: result.actionExecuted || null,
       agenticTrace: result.agenticTrace || null
     });
@@ -481,14 +515,15 @@ app.get('/api/context', (req, res) => {
   try {
     const category = req.query.category || null;
     const memories = getActiveMemories(category);
+    const decayCandidates = getDecayCandidates(30);
     const briefing = compileStateBriefing();
-    res.json({ memories, briefing });
+    res.json({ memories, activeMemories: memories, decayCandidates, briefing });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.post('/api/context', (req, res) => {
+app.post(['/api/context', '/api/context/remember'], (req, res) => {
   try {
     const { category, content, key, confidence } = req.body;
     const memory = rememberMemory({ category, content, key, confidence });
@@ -498,12 +533,40 @@ app.post('/api/context', (req, res) => {
   }
 });
 
-app.post('/api/context/:id/supersede', (req, res) => {
+app.post(['/api/context/:id/supersede', '/api/context/supersede'], (req, res) => {
   try {
-    const targetId = parseInt(req.params.id, 10);
-    const { newContent, reason } = req.body;
-    const result = supersedeMemory({ targetId, newContent, reason });
+    const targetId = parseInt(req.params.id || req.body.targetId, 10);
+    const { newContent, content, reason } = req.body;
+    const result = supersedeMemory({ targetId, newContent: newContent || content, reason });
     res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/context/history', (_req, res) => {
+  try {
+    const active = getActiveMemories();
+    const superseded = getSupersededMemories(50);
+    const decay = getDecayCandidates(30);
+    res.json({
+      activeCount: active.length,
+      supersededCount: superseded.length,
+      decayCandidateCount: decay.length,
+      active,
+      superseded,
+      supersededMemories: superseded,
+      decayCandidates: decay
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/context/:id', (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    res.json(deleteMemory(id));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -514,6 +577,130 @@ app.get('/api/context/decay', (req, res) => {
     const days = parseInt(req.query.days || 30, 10);
     const candidates = getDecayCandidates(days);
     res.json({ days, count: candidates.length, candidates });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Setup Doctor, Debug Inspector, Runtime Settings & Data Export ──────────
+app.get('/api/doctor', async (_req, res) => {
+  try {
+    const report = await runDoctorChecks();
+    res.json(report);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/debug', (_req, res) => {
+  try {
+    const tierRows = db
+      .getDb()
+      .prepare(`
+        SELECT tier_used, COUNT(*) as count, ROUND(AVG(latency_ms), 1) as avg_latency_ms
+        FROM companion_dialogue
+        WHERE role = 'assistant'
+        GROUP BY tier_used
+      `)
+      .all();
+
+    const totalTurns = tierRows.reduce((acc, r) => acc + Number(r.count || 0), 0);
+    const tierDistribution = tierRows.map((r) => ({
+      tier: r.tier_used,
+      count: Number(r.count),
+      percentage: totalTurns > 0 ? Number(((Number(r.count) / totalTurns) * 100).toFixed(1)) : 0,
+      avgLatencyMs: Number(r.avg_latency_ms || 0)
+    }));
+
+    res.json({
+      lastRoutingDecision,
+      totalAssistantTurns: totalTurns,
+      tierDistribution,
+      agenticToolStats: getAgenticToolStats(),
+      sentinelStatus: getSentinelStatus(),
+      runtimeSettings: {
+        resourceMode: runtimeResourceMode,
+        dryRunMode: getAgenticDryRunMode(),
+        provider: config.cascade.provider,
+        edgeModel: config.cascade.edgeModel,
+        openrouterZeroDataRetention: config.cascade.openrouterZeroDataRetention
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/settings/runtime', (req, res) => {
+  try {
+    const { resourceMode, dryRunMode } = req.body || {};
+    if (resourceMode && ['minimal', 'balanced', 'quality'].includes(resourceMode)) {
+      runtimeResourceMode = resourceMode;
+    }
+    if (typeof dryRunMode === 'boolean') {
+      setAgenticDryRunMode(dryRunMode);
+    }
+    res.json({
+      ok: true,
+      resourceMode: runtimeResourceMode,
+      dryRunMode: getAgenticDryRunMode()
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/export', (req, res) => {
+  try {
+    const format = String(req.query.format || 'json').toLowerCase();
+    const targetDate = req.query.date || db.today();
+    const tasks = db.getTasksForDate(targetDate);
+    const activeMemories = getActiveMemories();
+    const supersededMemories = getSupersededMemories(50);
+    const streak = db.getStreak();
+    const focus = db.getDailyFocus(targetDate);
+
+    if (format === 'markdown' || format === 'md') {
+      const mdLines = [
+        `# 🛡️ Krusch Companion — Sovereign Export (${targetDate})`,
+        `> Exported at \`${new Date().toISOString()}\` · Streak: **${streak.streak} day(s)**`,
+        ''
+      ];
+      if (focus?.focus_text) {
+        mdLines.push('## ☀️ Morning Focus Briefing', focus.focus_text, '');
+      }
+      mdLines.push(`## 📋 Dual-Axis Priority Board (${tasks.filter(t => t.completed).length}/${tasks.length} Completed)`);
+      for (const t of tasks) {
+        mdLines.push(
+          `- [${t.completed ? 'x' : ' '}] **[P${t.execution_priority}: ${t.execution_lane_short} ${t.execution_lane_emoji} | ${t.pillar_emoji} ${t.pillar}]** ${t.title}${t.notes ? ` — *${t.notes}*` : ''}`
+        );
+      }
+      mdLines.push('', `## 🧠 Active Working Memory (${activeMemories.length})`);
+      for (const m of activeMemories) {
+        mdLines.push(`- **[${m.category.toUpperCase()}]** (#${m.id}${m.key ? ` · \`${m.key}\`` : ''}): ${m.content}`);
+      }
+      if (supersededMemories.length > 0) {
+        mdLines.push('', `## 🔄 Superseded Memory Lineage (${supersededMemories.length})`);
+        for (const s of supersededMemories) {
+          mdLines.push(
+            `- ~~#${s.id}: ${s.content}~~ → Superseded by #${s.superseded_by || 'retired'} (*${s.invalidation_reason || 'updated'}*)`
+          );
+        }
+      }
+      res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="krusch-companion-export-${targetDate}.md"`);
+      return res.send(mdLines.join('\n') + '\n');
+    }
+
+    res.json({
+      exportedAt: new Date().toISOString(),
+      date: targetDate,
+      streak: streak.streak,
+      morningFocus: focus?.focus_text || null,
+      tasks,
+      activeMemories,
+      supersededMemories
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -1,9 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 
-export function AudioRecorder({ onAudioReady, isProcessing }) {
+export function AudioRecorder({ onAudioReady, onLiveTranscript, isProcessing }) {
   const [isRecording, setIsRecording] = useState(false);
   const [duration, setDuration] = useState(0);
+  const [liveTranscript, setLiveTranscript] = useState('');
   const mediaRecorderRef = useRef(null);
+  const recognitionRef = useRef(null);
+  const transcriptBufferRef = useRef('');
   const audioChunksRef = useRef([]);
   const canvasRef = useRef(null);
   const animationFrameRef = useRef(null);
@@ -25,10 +28,38 @@ export function AudioRecorder({ onAudioReady, isProcessing }) {
   const startRecording = async () => {
     try {
       audioChunksRef.current = [];
+      transcriptBufferRef.current = '';
+      setLiveTranscript('');
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '';
+      const mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
+
+      // Start Browser-Native Web Speech API in parallel as a zero-dependency STT fallback
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        try {
+          const recognition = new SpeechRecognition();
+          recognition.continuous = true;
+          recognition.interimResults = true;
+          recognition.lang = 'en-US';
+          recognition.onresult = (event) => {
+            let combined = '';
+            for (let i = 0; i < event.results.length; i++) {
+              combined += event.results[i][0].transcript + ' ';
+            }
+            const clean = combined.trim();
+            transcriptBufferRef.current = clean;
+            setLiveTranscript(clean);
+            if (onLiveTranscript) onLiveTranscript(clean);
+          };
+          recognition.start();
+          recognitionRef.current = recognition;
+        } catch {
+          // Non-fatal if browser blocks SpeechRecognition
+        }
+      }
 
       mediaRecorder.ondataavailable = (e) => {
         if (e.data.size > 0) {
@@ -37,15 +68,18 @@ export function AudioRecorder({ onAudioReady, isProcessing }) {
       };
 
       mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        // Stop stream tracks
-        stream.getTracks().forEach(track => track.stop());
+        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType || 'audio/webm' });
+        stream.getTracks().forEach((track) => track.stop());
+        if (recognitionRef.current) {
+          try {
+            recognitionRef.current.stop();
+          } catch {}
+        }
         if (onAudioReady) {
-          onAudioReady(audioBlob);
+          onAudioReady(audioBlob, transcriptBufferRef.current);
         }
       };
 
-      // Set up AudioContext for waveform
       const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       const analyser = audioCtx.createAnalyser();
       const source = audioCtx.createMediaStreamSource(stream);
@@ -60,16 +94,21 @@ export function AudioRecorder({ onAudioReady, isProcessing }) {
       setDuration(0);
 
       timerRef.current = setInterval(() => {
-        setDuration(prev => prev + 1);
+        setDuration((prev) => prev + 1);
       }, 1000);
 
       drawWaveform();
     } catch (err) {
-      alert(`Microphone access error: ${err.message}. Please allow microphone permissions.`);
+      alert(`Microphone access error: ${err.message}. Please allow microphone permissions or type directly below.`);
     }
   };
 
   const stopRecording = () => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {}
+    }
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
@@ -141,12 +180,18 @@ export function AudioRecorder({ onAudioReady, isProcessing }) {
         )}
       </div>
 
+      {liveTranscript && isRecording && (
+        <div style={{ fontSize: '0.82rem', color: 'var(--accent-cyan)', maxWidth: 520, fontStyle: 'italic' }}>
+          “{liveTranscript}”
+        </div>
+      )}
+
       <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>
         {isRecording
-          ? 'Listening... Talk freely. Speak whatever is on your mind.'
+          ? 'Listening (Whisper STT + Browser Web Speech API fallback active)...'
           : isProcessing
           ? 'Processing with Cascade Router...'
-          : 'Tap the mic to speak your Thought Stream'}
+          : 'Tap the mic to speak your Thought Stream (works with local Whisper or Browser Web Speech API)'}
       </p>
     </div>
   );

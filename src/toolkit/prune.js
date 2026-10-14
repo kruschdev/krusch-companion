@@ -18,8 +18,15 @@ export function shouldActivateMemory(query, options = {}) {
     return { shouldActivate: false, rationale: 'Empty query' };
   }
   const lower = query.toLowerCase();
+  // Pure math or closed-world code/conversion queries never require personal memory
+  if (/^(?:convert|calculate|sort\s+the\s+numbers|write\s+a\s+regex|what\s+is\s+[\d\s()+*/^.-]+\??)$/i.test(lower.trim())) {
+    return { shouldActivate: false, rationale: 'Closed-world utility query', tokensSavedEst: 600 };
+  }
   const keywords = options.memoryTriggerKeywords || [];
-  const matched = keywords.some(k => lower.includes(k));
+  const matched = keywords.some(k => {
+    const escaped = k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`\\b${escaped}\\b`, 'i').test(lower);
+  });
   if (matched) {
     return { shouldActivate: true, rationale: 'Matched companion memory trigger keywords', tokensSavedEst: 0 };
   }

@@ -1450,6 +1450,101 @@ export const COMPANION_TOOLS = [
   }
 ];
 
+let runtimeDryRunMode = process.env.AGENTIC_DRY_RUN === 'true';
+
+const AGENTIC_TOOL_STATS = {
+  totalCalls: 0,
+  succeeded: 0,
+  failed: 0,
+  dryRuns: 0,
+  byTool: {},
+  recentEvents: []
+};
+
+export function setAgenticDryRunMode(enabled) {
+  runtimeDryRunMode = Boolean(enabled);
+  return runtimeDryRunMode;
+}
+
+export function getAgenticDryRunMode() {
+  return runtimeDryRunMode;
+}
+
+export function getAgenticToolStats() {
+  return {
+    dryRunMode: runtimeDryRunMode,
+    ...AGENTIC_TOOL_STATS,
+    totalDryRuns: AGENTIC_TOOL_STATS.dryRuns,
+    totalSuccess: AGENTIC_TOOL_STATS.succeeded,
+    totalFailures: AGENTIC_TOOL_STATS.failed,
+    perTool: AGENTIC_TOOL_STATS.byTool,
+    successRate: AGENTIC_TOOL_STATS.totalCalls > 0
+      ? Number((((AGENTIC_TOOL_STATS.succeeded + AGENTIC_TOOL_STATS.dryRuns) / AGENTIC_TOOL_STATS.totalCalls) * 100).toFixed(1))
+      : 100
+  };
+}
+
+/**
+ * Determine whether a tool call performs an external side-effect mutation
+ * (sending email, creating a calendar event, pushing a notification, or writing to Drive).
+ */
+export function isExternalSideEffectCall(name, args = {}) {
+  const action = String(args?.action || '').toLowerCase();
+  if (name === 'send_notification') return true;
+  if (name === 'concierge_reservation') return true;
+  if (name === 'gkrusch_gmail' && (action === 'send' || action === 'draft' || action === 'create_draft')) return true;
+  if (name === 'gkrusch_calendar' && (action.includes('create') || action.includes('schedule'))) return true;
+  if (name === 'gkrusch_drive' && action === 'write') return true;
+  return false;
+}
+
+function recordToolStat(name, { ok, dryRun = false, latencyMs = 0, error = null }) {
+  AGENTIC_TOOL_STATS.totalCalls++;
+  if (dryRun) AGENTIC_TOOL_STATS.dryRuns++;
+  else if (ok) AGENTIC_TOOL_STATS.succeeded++;
+  else AGENTIC_TOOL_STATS.failed++;
+
+  if (!AGENTIC_TOOL_STATS.byTool[name]) {
+    AGENTIC_TOOL_STATS.byTool[name] = {
+      calls: 0,
+      succeeded: 0,
+      success: 0,
+      failed: 0,
+      failures: 0,
+      dryRuns: 0,
+      totalLatencyMs: 0,
+      avgLatencyMs: 0,
+      lastLatencyMs: 0
+    };
+  }
+  const entry = AGENTIC_TOOL_STATS.byTool[name];
+  entry.calls++;
+  if (dryRun) {
+    entry.dryRuns++;
+  } else if (ok) {
+    entry.succeeded++;
+    entry.success++;
+  } else {
+    entry.failed++;
+    entry.failures++;
+  }
+  entry.lastLatencyMs = latencyMs;
+  entry.totalLatencyMs += latencyMs;
+  entry.avgLatencyMs = Math.round(entry.totalLatencyMs / entry.calls);
+
+  AGENTIC_TOOL_STATS.recentEvents.unshift({
+    timestamp: new Date().toISOString(),
+    tool: name,
+    ok: Boolean(ok),
+    dryRun: Boolean(dryRun),
+    latencyMs,
+    ...(error ? { error } : {})
+  });
+  if (AGENTIC_TOOL_STATS.recentEvents.length > 20) {
+    AGENTIC_TOOL_STATS.recentEvents.pop();
+  }
+}
+
 /**
  * Look up a tool definition by name.
  */
@@ -1458,32 +1553,65 @@ export function getToolByName(name) {
 }
 
 /**
- * Execute a named tool safely and measure execution latency.
+ * Execute a named tool safely, enforcing dry-run confirmation gates on side-effect tools
+ * and recording execution telemetry.
  */
 export async function executeCompanionTool(name, args = {}, options = {}) {
   const start = Date.now();
   const tool = getToolByName(name);
   if (!tool) {
+    const latencyMs = Date.now() - start;
+    recordToolStat(name, { ok: false, latencyMs, error: 'Unknown tool' });
     return {
       ok: false,
       tool: name,
       summary: `Unknown tool "${name}". Available tools: ${COMPANION_TOOLS.map(t => t.name).join(', ')}`,
-      latencyMs: Date.now() - start
+      latencyMs
+    };
+  }
+
+  const shouldDryRun =
+    args?.dryRun === true ||
+    options?.dryRun === true ||
+    (runtimeDryRunMode && args?.dryRun !== false && options?.dryRun !== false && isExternalSideEffectCall(name, args));
+
+  if (shouldDryRun && isExternalSideEffectCall(name, args)) {
+    const latencyMs = Date.now() - start;
+    recordToolStat(name, { ok: true, dryRun: true, latencyMs });
+    return {
+      ok: true,
+      dryRun: true,
+      requiresConfirmation: true,
+      confirmationRequired: true,
+      tool: name,
+      actionType: tool.category,
+      summary: `🛡️ **[Dry-Run / Confirmation Gate]** Previewed side-effect tool \`${name}\` without executing external mutation:\n\`\`\`json\n${JSON.stringify(args, null, 2)}\n\`\`\`\n*(Pass \`"dryRun": false\` or disable Dry-Run Gate to execute live.)*`,
+      preview: {
+        tool: name,
+        category: tool.category,
+        arguments: args,
+        sideEffectProtected: true
+      },
+      latencyMs
     };
   }
 
   try {
     const result = await tool.execute(args || {}, options);
+    const latencyMs = Date.now() - start;
+    recordToolStat(name, { ok: result?.ok !== false, latencyMs, error: result?.ok === false ? result?.summary : null });
     return {
       ...result,
-      latencyMs: Date.now() - start
+      latencyMs
     };
   } catch (err) {
+    const latencyMs = Date.now() - start;
+    recordToolStat(name, { ok: false, latencyMs, error: err.message });
     return {
       ok: false,
       tool: name,
       summary: `Tool "${name}" threw an unexpected error: ${err.message}`,
-      latencyMs: Date.now() - start
+      latencyMs
     };
   }
 }

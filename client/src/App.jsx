@@ -3,13 +3,14 @@ import CompanionView from './views/CompanionView';
 import DumpView from './views/DumpView';
 import TodayView from './views/TodayView';
 import FocusView from './views/FocusView';
+import SystemMemoryView from './views/SystemMemoryView';
 
 export function App() {
   const [activeTab, setActiveTab] = useState(() => {
     try {
       const params = new URLSearchParams(window.location.search);
       const tab = params.get('tab');
-      if (['companion', 'stream', 'dump', 'today', 'focus'].includes(tab)) {
+      if (['companion', 'stream', 'dump', 'today', 'focus', 'memory'].includes(tab)) {
         return tab === 'dump' ? 'stream' : tab;
       }
     } catch {
@@ -201,7 +202,8 @@ export function App() {
           { id: 'companion', label: '💬 Companion Chat' },
           { id: 'stream', label: '🌊 Thought Stream' },
           { id: 'today', label: "📋 Today's Board" },
-          { id: 'focus', label: '🎯 Focus Mode' }
+          { id: 'focus', label: '🎯 Focus Mode' },
+          { id: 'memory', label: '🧠 Memory & Inspector' }
         ].map((tab) => {
           const isActive = activeTab === tab.id;
           return (
@@ -210,13 +212,13 @@ export function App() {
               onClick={() => setActiveTab(tab.id)}
               style={{
                 flex: 1,
-                padding: '10px 14px',
+                padding: '10px 12px',
                 borderRadius: 10,
                 border: 'none',
                 background: isActive ? 'linear-gradient(135deg, rgba(0, 240, 255, 0.2), rgba(121, 40, 202, 0.2))' : 'transparent',
                 color: isActive ? '#f8fafc' : 'var(--text-muted)',
                 fontWeight: isActive ? 700 : 500,
-                fontSize: '0.88rem',
+                fontSize: '0.84rem',
                 cursor: 'pointer',
                 transition: 'all 0.15s ease',
                 borderBottom: isActive ? '2px solid var(--accent-cyan)' : '2px solid transparent'
@@ -240,6 +242,7 @@ export function App() {
             onExitFocus={() => setActiveTab('today')}
           />
         )}
+        {activeTab === 'memory' && <SystemMemoryView />}
       </main>
 
       {/* Footer */}

@@ -76,6 +76,31 @@ export function getActiveMemories(category = null) {
 }
 
 /**
+ * Retrieve superseded/inactive memory records with their replacement lineage.
+ */
+export function getSupersededMemories(limit = 50) {
+  const db = getDb();
+  return db.prepare(`
+    SELECT c.*, r.content AS replacement_content, r.content AS superseded_by_content
+    FROM companion_context c
+    LEFT JOIN companion_context r ON c.superseded_by = r.id
+    WHERE c.is_active = 0
+    ORDER BY c.updated_at DESC, c.id DESC
+    LIMIT ?
+  `).all(limit);
+}
+
+/**
+ * Retire or delete a memory record by ID.
+ */
+export function deleteMemory(id) {
+  const db = getDb();
+  db.prepare('UPDATE companion_context SET superseded_by = NULL WHERE superseded_by = ?').run(id);
+  const info = db.prepare('DELETE FROM companion_context WHERE id = ?').run(id);
+  return { deleted: info.changes > 0, id };
+}
+
+/**
  * Retrieve decay candidates (memories older than N days without refresh).
  */
 export function getDecayCandidates(days = 30) {
@@ -91,28 +116,29 @@ export function getDecayCandidates(days = 30) {
 /**
  * Invalidate an obsolete memory or supersede it with an updated fact.
  */
-export function supersedeMemory({ targetId, newContent = null, reason = 'Superseded by user update' }) {
+export function supersedeMemory({ targetId, newContent = null, content = null, reason = 'Superseded by user update' }) {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM companion_context WHERE id = ?').get(targetId);
   if (!existing) {
     throw new Error(`Memory record #${targetId} not found`);
   }
 
+  const resolvedContent = newContent || content;
   let newId = null;
 
   const transaction = db.transaction(() => {
-    if (newContent) {
+    if (resolvedContent) {
       const insertStmt = db.prepare(`
         INSERT INTO companion_context (category, content, key, is_active, confidence)
         VALUES (?, ?, ?, 1, ?)
       `);
       const insertInfo = insertStmt.run(
         existing.category,
-        newContent.trim(),
+        resolvedContent.trim(),
         existing.key,
         existing.confidence
       );
-      newId = insertInfo.lastInsertRowid;
+      newId = Number(insertInfo.lastInsertRowid);
     }
 
     db.prepare(`
@@ -127,6 +153,7 @@ export function supersedeMemory({ targetId, newContent = null, reason = 'Superse
   return {
     invalidatedId: targetId,
     newId,
+    newMemory: newId ? { id: newId, category: existing.category, content: resolvedContent.trim() } : null,
     reason
   };
 }
