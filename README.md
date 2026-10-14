@@ -137,80 +137,185 @@ The frontend is an installable Progressive Web App (PWA) built with React 19, Vi
 
 ---
 
-## 🚀 Quickstart
+## 🚀 Quickstart (100% Standalone-Installable)
 
-Krusch Companion supports two operating modes:
-* **Option A: 100% Sovereign Local-First (Default)**: Uses local Ollama on your machine or home server. Zero LLM network egress.
-* **Option B: Zero-GPU Cloud Connector (OpenRouter 3-Specialist Cascade)**: For laptops, cloud VPS, or devices without a discrete GPU. Uses [OpenRouter](https://openrouter.ai/) with enforced **Zero Data Retention** (`provider: { data_collection: "deny" }`) and dynamically routes across 3 specialized frontier models (`qwen-2.5-coder-32b-instruct`, `qwen-2.5-72b-instruct`, and `deepseek-chat-v3-0324`). Your database, notes vault, and working memory still remain 100% local in SQLite.
+**Krusch Companion is completely self-contained** (`krusch-cascade-router` is installed directly from npm and `@krusch/toolkit` primitives are bundled inside [`src/toolkit/`](src/toolkit/)). You can clone and run this repository on any machine in three modes:
 
-### Prerequisites
+* **Option A — 100% Sovereign Local-First (Default)**: Uses local [Ollama](https://ollama.com/) (`qwen2.5-coder:7b`) on your machine or home server. Zero LLM network egress.
+* **Option B — Zero-GPU Cloud Connector (OpenRouter 3-Specialist Cascade)**: For laptops, cloud VPS, or devices without a discrete GPU. Uses [OpenRouter](https://openrouter.ai/) with enforced **Zero Data Retention** (`provider: { data_collection: "deny" }`) and dynamically routes across 3 specialized frontier models (`qwen-2.5-coder-32b-instruct`, `qwen-2.5-72b-instruct`, and `deepseek-chat-v3-0324`). Your database, notes vault, and working memory still remain 100% local in SQLite.
+* **Option C — Hermetic Zero-Dependency Evaluation Mode (`MOCK_LLM=1`)**: For CI pipelines or third-party evaluators who want to verify all 38 tests, deterministic L0 routing, `<holodata>` tool chains, and Sentinel Watchdog filters in **`<300ms`** without installing Ollama or providing an API key.
 
-#### If running Option A (Local Ollama):
-1. **Node.js**: `v22.0.0+`
-2. **Local LLM Runtime**: [Ollama](https://ollama.com/) running locally:
-   ```bash
-   ollama pull qwen2.5-coder:7b
-   ```
-3. **Hardware Expectations**:
-   * **GPU (Recommended)**: ~6–8 GB VRAM (RTX 2080 Ti, RTX 3060, Apple Silicon). ~30–50 tokens/sec.
-   * **CPU (Usable)**: ~16 GB system RAM. ~5–10 tokens/sec.
+### 1. Prerequisites
+* **Node.js**: `v22.0.0+` (includes native `fetch` and test runner)
+* **Build Tools**: Standard C++ build tools (`build-essential` / Xcode CLI tools) if `better-sqlite3` compiles from source (prebuilt binaries are downloaded automatically on Linux/macOS/Windows x64 & ARM64).
+* **LLM Backend (Choose One)**:
+  * **Local Ollama (Option A)**: Install [Ollama](https://ollama.com/) and pull the edge model:
+    ```bash
+    ollama pull qwen2.5-coder:7b
+    ```
+  * **OpenRouter API Key (Option B)**: Obtain an API key from [openrouter.ai/keys](https://openrouter.ai/keys) (no GPU required).
+  * **Hermetic Evaluator Mode (Option C)**: Set `MOCK_LLM=1` (no Ollama or API key required).
 
-#### If running Option B (OpenRouter Zero-GPU Specialist Cascade):
-1. **Node.js**: `v22.0.0+`
-2. **OpenRouter API Key**: Obtain from [openrouter.ai](https://openrouter.ai/keys). Defaults to `qwen/qwen-2.5-72b-instruct` with automatic dynamic cascade across `qwen/qwen-2.5-coder-32b-instruct` (for `<holodata>` tool calls) and `deepseek/deepseek-chat-v3-0324` (for deep reasoning).
-3. **No GPU or Ollama required**! Runs on any low-power device.
-
-### 📦 Ecosystem & Monorepo Dependencies
-
-> [!NOTE]
-> Krusch Companion is part of the Krusch homelab ecosystem. It references sibling packages via local file paths in `package.json`:
-> - `@krusch/toolkit` (at `../../lib`)
-> - `krusch-cascade-router` (at `../krusch-cascade-router`)
-> - `g-krusch` (optional Google Workspace Extension service on `http://127.0.0.1:5446`)
-
-To run Companion, ensure your directory layout matches the monorepo structure:
-
-```
-homelab/
-├── lib/                         # Shared @krusch/toolkit utilities
-└── projects/
-    ├── krusch-cascade-router/   # Microsecond CPU Cascade Router
-    ├── g-krusch/                # Optional Google Drive/Calendar/Gmail OAuth bridge (:5446)
-    └── krusch-companion/        # This repository (:3004)
-```
-
-### Installation & Run
+### 2. Installation & Build
 
 ```bash
-# 1. Clone within the homelab workspace
+# 1. Clone the repository
 git clone https://github.com/kruschdev/krusch-companion.git
 cd krusch-companion
 
 # 2. Install backend and frontend dependencies
 npm install
-cd client && npm install && cd ..
+npm --prefix client install
 
-# 3. Build the frontend client
-cd client && npm run build && cd ..
-
-# 4. Run automated tests (34 unit & integration tests across 5 suites)
-npm test
-
-# 5. Start the server
-# Path A: Local Ollama (default)
-npm start
-
-# Path B: OpenRouter Zero-GPU 3-Specialist Cascade Mode
-OPENROUTER_API_KEY="sk-or-v1-..." LLM_PROVIDER="openrouter" npm start
+# 3. Build the React 19 + Vite frontend bundle (served statically by Express on :3004)
+npm --prefix client run build
 ```
 
-Visit **`http://localhost:3004`** in your browser, or install it as a PWA on your mobile device (iOS Safari: *Share → Add to Home Screen*; Android Chrome: *Install App*).
+### 3. Run the Automated Test Suite (`38/38` Tests)
+
+```bash
+# Instant Hermetic Verification (<300ms — zero GPU or API key required)
+MOCK_LLM=1 npm test
+
+# Or Full Live Integration Verification (against local Ollama on 127.0.0.1:11434)
+npm test
+```
+
+### 4. Start the Server
+
+```bash
+# Mode A: Local Ollama (Default — http://localhost:3004)
+npm start
+
+# Mode B: OpenRouter Zero-GPU 3-Specialist Cascade Mode (with enforced ZDR)
+OPENROUTER_API_KEY="sk-or-v1-..." LLM_PROVIDER="openrouter" npm start
+
+# Mode C: Hermetic Evaluation Mode (no Ollama or API key required)
+MOCK_LLM=1 npm start
+```
+
+Open **`http://localhost:3004`** in your browser, or install it as a PWA on mobile (iOS Safari: *Share → Add to Home Screen*; Android Chrome: *Install App*).
+
+> [!TIP]
+> **Optional Google Workspace Integration (`G-Krusch` on `:5446`)**: To enable live Google Drive Hybrid RAG, Google Docs export, Google Calendar event creation, and Gmail sending, run the companion [`G-krusch`](https://github.com/kruschdev/G-krusch) service on `http://127.0.0.1:5446`. Even if `G-krusch` is not running, **every tool in Krusch Companion degrades gracefully** by saving reservation holds, calendar entries, and RFC-2822 email drafts to your local `data/notes/` vault and Today's Priority Board.
 
 ---
 
-## 🏛️ System Architecture
+## 🧪 Third-Party Evaluator Verification Guide
 
-Krusch Companion is built around the **Krusch Cascade Router**, the **`<holodata>` Dual-Engine Agentic Proxy**, the **KruschContext Engine**, and the **G-Krusch Google Workspace Bridge**:
+With the server running on `http://localhost:3004` (in Ollama, OpenRouter, or `MOCK_LLM=1` mode), you can verify every architectural subsystem directly from a terminal using `curl`:
+
+### 1. Verify Health, Privacy Gate & Registered Tools
+```bash
+# Check service health, active LLM provider, and Zero-Data-Retention status
+curl -s http://localhost:3004/api/health | jq .
+
+# List all 14 registered <holodata> Agentic Proxy tools and schemas
+curl -s http://localhost:3004/api/companion/tools | jq '{engine, count: (.tools | length), tools: [.tools[].name]}'
+```
+
+### 2. Verify Sub-15µs L0 CPU Routing (`$0.00` Token Cost)
+```bash
+# Deterministic AST arithmetic evaluated on CPU in <15µs (tierUsed: "L0_heuristic")
+curl -s -X POST http://localhost:3004/api/companion/chat \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "What is (144 / 12) ^ 2 + 15?"}' | jq '{reply, tierUsed, latencyMs, reason}'
+
+# Natural-language L0 task creation on Today's 5-Tier Priority Board ($0.00 cost)
+curl -s -X POST http://localhost:3004/api/companion/chat \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Add task: Review Q4 security architecture before 4pm"}' | jq '{reply, tierUsed, actionExecuted}'
+```
+
+### 3. Verify Concierge Reservations & Live Route Traffic (`Leave-By` Alerts)
+```bash
+# Execute concierge_reservation: looks up venue on OpenStreetMap, generates OpenTable/Resy/Maps links,
+# computes travel time & Leave-By alert, creates email draft, and places a hold on Today's Board
+curl -s -X POST http://localhost:3004/api/companion/action \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "concierge_reservation",
+    "arguments": {
+      "venue": "Canlis Seattle",
+      "partySize": 4,
+      "dateTime": "2026-10-16T19:00:00",
+      "notes": "Window table if available"
+    }
+  }' | jq .
+
+# Execute commute_departure_check: computes route distance, traffic delay, and exact Leave-By time
+curl -s -X POST http://localhost:3004/api/companion/action \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tool": "commute_departure_check",
+    "arguments": {
+      "destination": "Bellevue, WA",
+      "origin": "Seattle, WA",
+      "arrivalTime": "2026-10-16T18:00:00"
+    }
+  }' | jq .
+```
+
+### 4. Verify Multi-Channel Proactive Sentinel Watchdog (`$0.00` Polling ➔ Event-Driven LLM Wakeup)
+```bash
+# Simulate a 5-minute Sentinel Watchdog tick with:
+#  - 1 promotional newsletter email (ignored on CPU at 0 tokens)
+#  - 1 urgent contract invoice email (wakes LLM + stages [Email Action] task on Today's Board)
+#  - 2 overlapping Google Calendar meetings (wakes LLM for double-booking conflict)
+curl -s -X POST http://localhost:3004/api/sentinel/tick \
+  -H "Content-Type: application/json" \
+  -d '{
+    "emails": [
+      {
+        "id": "eval-promo-1",
+        "from": "Store Newsletter <no-reply@marketing.example.com>",
+        "subject": "50% OFF Flash Sale Ends Tonight — Unsubscribe",
+        "snippet": "Click to unsubscribe from our promotional digest."
+      },
+      {
+        "id": "eval-urgent-2",
+        "from": "Alex Rivera <alex@client-corp.com>",
+        "subject": "URGENT: Action required on Q4 Contract Invoice before 5pm",
+        "snippet": "Please sign and return the attached invoice before today deadline."
+      }
+    ],
+    "calendarEvents": [
+      {
+        "id": "eval-cal-1",
+        "summary": "Architecture Review",
+        "start": "2026-10-16T14:00:00-07:00",
+        "end": "2026-10-16T15:00:00-07:00"
+      },
+      {
+        "id": "eval-cal-2",
+        "summary": "Client Demo Call",
+        "start": "2026-10-16T14:30:00-07:00",
+        "end": "2026-10-16T15:30:00-07:00"
+      }
+    ]
+  }' | jq '{llmCallsTriggered, triggeredAlerts: [.triggeredAlerts[] | {channel, triggerReason, eventSummary, message}]}'
+```
+
+### 5. Verify KruschContext Temporal Fact Superseding & Atomic SQLite Backup
+```bash
+# Store an initial memory fact, then supersede it with lineage tracking
+curl -s -X POST http://localhost:3004/api/companion/chat \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Remember that I drink espresso after lunch"}' | jq '{reply, tierUsed}'
+
+curl -s -X POST http://localhost:3004/api/companion/chat \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Instead of espresso, remember that I switched to green tea after lunch"}' | jq '{reply, tierUsed}'
+
+# Trigger a zero-lock SQLite VACUUM INTO snapshot backup
+curl -s -X POST http://localhost:3004/api/backup | jq .
+```
+
+---
+
+## 🏛️ System Architecture & Repository Structure
+
+Krusch Companion is built around four core engines: the **Krusch Cascade Router**, the **14-Tool `<holodata>` Dual-Engine Agentic Proxy**, the **Multi-Channel Proactive Sentinel Watchdog Daemon**, and the **KruschContext Working Memory Engine**:
 
 ```
                                  [ User Interaction ]
@@ -226,10 +331,18 @@ Krusch Companion is built around the **Krusch Cascade Router**, the **`<holodata
          ▼                                ▼                                ▼
    [ Tier 0: Direct CPU ]     [ <holodata> Agentic Proxy ]     [ Tier 1 / 2 / Cloud ]
    - Safe AST Arithmetic       - Intent-Scoped Tool Pruning     - Local: 7B Edge / 14B Swarm
-   - Direct Task/Board/Memory  - 12 Live Tools + Chaining       - OpenRouter 3-Specialist
-   - <15µs Latency ($0.00)     - G-Krusch Drive/Cal/Gmail         Dynamic Cascade (ZDR)
+   - Direct Task/Board/Memory  - 14 Live Tools + Chaining       - OpenRouter 3-Specialist
+   - <15µs Latency ($0.00)     - Concierge, Traffic & G-Krusch    Dynamic Cascade (ZDR)
          │                                │                                │
-         └────────────────────────────────┴────────────────────────────────┘
+         └────────────────────────────────┼────────────────────────────────┘
+                                          ▲
+                      ┌───────────────────┴───────────────────┐
+                      │  Proactive Sentinel Watchdog Daemon   │
+                      │  - 5-Min Zero-Token CPU Polling ($0)  │
+                      │  - Gmail Unread Spam vs Action Filter │
+                      │  - Calendar Conflict & 15m Alert Gate │
+                      │  - Live Route Traffic Spike & Leave-By│
+                      └───────────────────┬───────────────────┘
                                           │
                                           ▼
                       ┌───────────────────────────────────────┐
@@ -239,6 +352,30 @@ Krusch Companion is built around the **Krusch Cascade Router**, the **`<holodata
                       │  - Knowledge Boundary Gate (Pruning)  │
                       │  - SQLite WAL + data/notes/ Vault     │
                       └───────────────────────────────────────┘
+```
+
+### 📂 Repository Structure
+
+```
+krusch-companion/
+├── src/
+│   ├── server.js                  # Express API server, routes, and static PWA host (:3004)
+│   ├── agent/
+│   │   ├── agentic-proxy.js       # <holodata> Dual-Engine parser, tool pruner & data piper
+│   │   └── tools.js               # 14 sandboxed tools (Concierge, Traffic, G-Krusch, Weather, etc.)
+│   ├── services/
+│   │   ├── sentinel-daemon.js     # Multi-Channel Sentinel Watchdog (Gmail, Calendar, Traffic)
+│   │   ├── stream.js              # Thought Stream 5-tier triage & memory extraction
+│   │   └── coach.js               # Morning briefings, focus micro-nudges & evening reflections
+│   ├── router/
+│   │   └── cascade-client.js      # L0 (<15µs) CPU router, Ollama & OpenRouter 3-Specialist cascade
+│   ├── context/
+│   │   └── memory.js              # KruschContext 5-taxonomy store, superseding & boundary gate
+│   ├── db/
+│   │   └── init.js                # SQLite WAL schema, recurring habit seeder & task rollover
+│   └── toolkit/                   # Self-contained @krusch/toolkit modules (zero external path deps)
+├── client/                        # React 19 + Vite dark glassmorphism Progressive Web App
+└── tests/                         # 38 automated unit & integration tests across 5 test files
 ```
 
 ### 1. Sub-15µs CPU Cascade Router & Dynamic Specialist Routing
@@ -329,9 +466,9 @@ For most developers and privacy-conscious users, **OpenRouter is the most practi
 
 ---
 
-## ⚙️ Configuration (`config.json`)
+## ⚙️ Configuration (`config.json` & Environment Variables)
 
-The server configuration is located in `config.json` at the project root (and overridable via environment variables):
+The server configuration is located in [`config.json`](config.json) at the project root (and overridable via environment variables):
 
 | Key | Default | Environment Var | Description |
 |:---|:---|:---|:---|
@@ -348,6 +485,11 @@ The server configuration is located in `config.json` at the project root (and ov
 | `cascade.ollamaUrl` | `"http://127.0.0.1:11434"` | `OLLAMA_HOST` | URL of local Ollama instance. |
 | `cascade.swarmUrl` | `"http://127.0.0.1:8000/v1"` | `SWARM_VLLM_URL` | URL of local network compute node or secondary vLLM server. |
 | — | `"http://127.0.0.1:5446"` | `G_KRUSCH_URL` | URL of local G-Krusch Google Workspace Extension server (Drive RAG, Calendar, Gmail). |
+| — | `""` *(OSRM Fallback)* | `GOOGLE_MAPS_API_KEY` | Optional Google Maps Directions API key for live `duration_in_traffic` telemetry (automatically falls back to zero-key OpenStreetMap + OSRM routing when unset). |
+| — | `"Seattle, WA"` | `DEFAULT_ORIGIN_ADDRESS` | Default home/office departure address for `commute_departure_check` and Sentinel Watchdog Leave-By calculations. |
+| — | `300000` *(5 mins)* | `SENTINEL_INTERVAL_MS` | Background polling interval in milliseconds for the Multi-Channel Proactive Sentinel Watchdog Daemon (`DISABLE_SENTINEL_DAEMON="true"` to disable). |
+| — | `""` | `NTFY_TOPIC` | Optional `ntfy.sh` push notification topic (`NTFY_SERVER` defaults to `"https://ntfy.sh"`). |
+| — | `""` | `MOCK_LLM` | Set `MOCK_LLM=1` for instant hermetic zero-GPU / zero-API-key test and evaluation mode. |
 | `db.path` | `"./data/companion.db"` | `DB_PATH` | Path to SQLite WAL database file. |
 | `context.decayDays` | `30` | `CONTEXT_DECAY_DAYS` | Age threshold in days before memories are flagged for decay review. |
 
@@ -417,10 +559,10 @@ docker compose ps
 
 | Symptom | Probable Cause | Resolution |
 |:---|:---|:---|
-| `fetch failed: ECONNREFUSED 127.0.0.1:11434` | Ollama is not running. | Run `ollama serve`, or switch to OpenRouter mode (`LLM_PROVIDER="openrouter"`). |
+| `fetch failed: ECONNREFUSED 127.0.0.1:11434` | Ollama is not running. | Run `ollama serve`, switch to OpenRouter mode (`LLM_PROVIDER="openrouter"`), or run in hermetic evaluation mode (`MOCK_LLM=1 npm start`). |
 | `Ollama error: model 'qwen2.5-coder:7b' not found` | Recommended model has not been pulled. | Execute `ollama pull qwen2.5-coder:7b`. |
 | `G-Krusch Google Drive/Calendar/Gmail returned: Not authenticated` | Google OAuth not connected on `g-krusch` (`:5446`). | Connect Google OAuth at `http://localhost:5446/auth/google` (while disconnected, Companion automatically falls back to saving notes/drafts in `data/notes/` and tasks on Today's Board). |
-| `Cannot find module '@krusch/toolkit'` | Monorepo layout path mismatch. | Ensure sibling directories exist (`../../lib` and `../krusch-cascade-router`). |
+| `commute_departure_check` uses `"OpenStreetMap + OSRM"` instead of `"Google Maps Live Traffic"` | `GOOGLE_MAPS_API_KEY` is not set. | Optional: set `GOOGLE_MAPS_API_KEY` for live Google Maps `duration_in_traffic`; when unset, Companion automatically computes routes and rush-hour buffers via zero-key OSRM. |
 | `No audible speech detected` on voice upload | Microphone muted or Whisper server down. | Verify microphone permissions in browser or check Whisper service on port 9000. |
 | Tasks not persisting across container restarts | Docker volume not mounted. | Ensure `./data` is mounted to `/app/data` in `docker-compose.yml`. |
 
@@ -428,9 +570,9 @@ docker compose ps
 
 ## 📌 Project Status & Known Limitations
 
-* **Current Stage**: Active daily driver in the Krusch homelab fleet (`38/38` unit & integration tests passing). Single-user architecture; code integrates with the `@krusch/toolkit`, `krusch-cascade-router`, and `g-krusch` monorepo ecosystem.
-* **Single User**: No authentication or multi-tenant user segregation out of the box (intended for private home networks or Tailscale mesh).
-* **Hardware Sensitivity**: Local speech-to-text and Ollama LLM inference response times depend directly on host GPU/CPU capabilities (or use OpenRouter Zero-GPU mode for `<500ms` cloud specialist execution).
+* **Current Stage**: Production daily driver (`38/38` unit & integration tests passing across 5 test files; standalone-installable with zero sibling directory requirements).
+* **Single User**: No authentication or multi-tenant user segregation out of the box (intended for private home networks, localhost, or Tailscale mesh).
+* **Hardware Sensitivity**: Local speech-to-text and Ollama LLM inference response times depend directly on host GPU/CPU capabilities (or use OpenRouter Zero-GPU mode for `<500ms` cloud specialist execution, or `MOCK_LLM=1` for `<300ms` hermetic evaluation).
 
 ---
 

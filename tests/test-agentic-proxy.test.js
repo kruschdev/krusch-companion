@@ -315,7 +315,8 @@ describe('Krusch Companion — Agentic Proxy (<holodata> Dual-Engine for 7B/14B 
     const turnResult = await executeAgenticProxyTurn({
       prompt: 'Make a reservation at Canlis Seattle for 4 people on Friday at 7pm',
       callLlm: mockLlm,
-      fetchImpl: mockReservationFetch
+      fetchImpl: mockReservationFetch,
+      notesDir: fs.mkdtempSync(path.join(os.tmpdir(), 'companion-res-'))
     });
 
     assert.ok(turnResult);

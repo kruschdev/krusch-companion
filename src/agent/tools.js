@@ -1203,15 +1203,22 @@ export const COMPANION_TOOLS = [
       notes: 'string (OPTIONAL: Special requests, patio seating, anniversary, or dietary notes)'
     },
     required: ['venue'],
-    async execute(args, { fetchImpl = fetch } = {}) {
-      const venue = String(args?.venue || '').trim();
+    async execute(args, { fetchImpl = fetch, notesDir } = {}) {
+      const baseVenue = String(args?.venue || args?.venue_name || '').trim();
+      const venueLocation = String(args?.location || '').trim();
+      const venue = venueLocation && !baseVenue.toLowerCase().includes(venueLocation.toLowerCase())
+        ? `${baseVenue}, ${venueLocation}`
+        : baseVenue;
       if (!venue) {
         return { ok: false, tool: 'concierge_reservation', summary: 'Parameter "venue" is required for concierge_reservation.' };
       }
 
-      const partySize = Math.min(Math.max(1, parseInt(args?.partySize || '2', 10) || 2), 20);
-      const rawDateTime = String(args?.dateTime || 'Tonight at 7:00 PM').trim();
-      const specialNotes = String(args?.notes || '').trim();
+      const partySize = Math.min(Math.max(1, parseInt(args?.partySize || args?.party_size || '2', 10) || 2), 20);
+      const rawDatePart = String(args?.date || '').trim();
+      const rawTimePart = String(args?.time || '').trim();
+      const combinedDateTime = rawDatePart && rawTimePart ? `${rawDatePart}T${rawTimePart}` : (rawDatePart || rawTimePart);
+      const rawDateTime = String(args?.dateTime || args?.date_time || combinedDateTime || 'Tonight at 7:00 PM').trim();
+      const specialNotes = String(args?.notes || args?.special_requests || '').trim();
       const parsedDate = parseArrivalDateTime(rawDateTime);
       const isoDateTime = parsedDate.toISOString();
       const isoDateOnly = isoDateTime.slice(0, 10);
@@ -1303,7 +1310,9 @@ export const COMPANION_TOOLS = [
       } catch {
         const filename = toSafeNoteFilename(`reservation-${venue}`);
         const md = `# Reservation Dossier: ${venue}\n- **Party Size**: ${partySize}\n- **Requested Time**: ${rawDateTime}\n- **Leave By**: ${commute.leaveByFormatted} (${commute.trafficMinutes}m drive in ${commute.trafficLevel} traffic)\n- **Address**: ${placeInfo.displayName}\n- **Phone**: ${placeInfo.phone || 'N/A'}\n- **Website**: ${placeInfo.website || 'N/A'}\n- **OpenTable**: ${openTableUrl}\n- **Resy**: ${resyUrl}\n\n## Concierge Email Draft (To: ${targetEmail})\n**Subject**: ${emailSubject}\n\n${emailBody}\n`;
-        fs.writeFileSync(path.join(getNotesDirectory(), filename), md, 'utf-8');
+        const targetDir = notesDir || getNotesDirectory();
+        fs.mkdirSync(targetDir, { recursive: true });
+        fs.writeFileSync(path.join(targetDir, filename), md, 'utf-8');
         emailStatusLine = `📝 **Saved Reservation Dossier & Email Draft** to \`data/notes/${filename}\``;
       }
 
@@ -1393,7 +1402,7 @@ export const COMPANION_TOOLS = [
       const commute = await calculateCommuteAndDeparture({
         origin: args?.origin || null,
         destination,
-        arrivalTime: args?.arrivalTime || args?.startTime || null,
+        arrivalTime: args?.arrivalTime || args?.startTime || args?.event_time || null,
         bufferMinutes: args?.bufferMinutes ?? 10,
         fetchImpl
       });
