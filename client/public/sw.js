@@ -1,4 +1,4 @@
-const CACHE_NAME = 'krusch-companion-v1';
+const CACHE_NAME = 'krusch-companion-v2';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -46,22 +46,22 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Static assets: cache-first with network fallback
+  // Network-first with cache fallback so UI updates are reflected immediately when online
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request).then((response) => {
-        if (!response || response.status !== 200 || response.type !== 'basic') {
-          return response;
+    fetch(event.request)
+      .then((response) => {
+        if (response && response.status === 200 && response.type === 'basic') {
+          const toCache = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, toCache);
+          });
         }
-        const toCache = response.clone();
-        caches.open(CACHE_NAME).then((cache) => {
-          cache.put(event.request, toCache);
-        });
         return response;
-      });
-    }).catch(() => {
-      return caches.match('/index.html');
-    })
+      })
+      .catch(() => {
+        return caches.match(event.request).then((cached) => {
+          return cached || caches.match('/index.html');
+        });
+      })
   );
 });

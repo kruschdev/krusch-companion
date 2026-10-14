@@ -135,13 +135,13 @@ The frontend is an installable Progressive Web App (PWA) built with React 19, Vi
 
 | 💬 Companion Chat | 🌊 Thought Stream |
 |:---:|:---:|
-| ![Companion Chat](docs/screenshots/companion-view.png) | ![Thought Stream](docs/screenshots/thought-stream.png) |
-| *Real-time L0/L1/L2/L3 routing badges, expandable `<holodata>` Agentic Proxy traces, and morning focus briefings.* | *Live HTML5 microphone waveform visualizer and stream-of-consciousness text input.* |
+| ![Companion Chat](docs/screenshots/companion-view-v2.png) | ![Thought Stream](docs/screenshots/thought-stream-v2.png) |
+| *Real-time L0/L1/L2/L3 routing badges, expandable `<holodata>` Agentic Proxy traces, Sentinel Watchdog alerts, and morning focus briefings.* | *Live HTML5 microphone waveform visualizer and Dual-Axis stream-of-consciousness text triage.* |
 
 | 📋 Today's Board | 🎯 Focus Mode |
 |:---:|:---:|
-| ![Today's Board](docs/screenshots/today-board.png) | ![Focus Mode](docs/screenshots/focus-mode.png) |
-| *Dual-Axis Priority Board (`Execution Priority Lanes 1–4` × `6 Life Pillar Badges`), 1-click `🚨 Must-Do` promotion, task rollover & step decomposition.* | *Distraction-free single-task execution with ambient timer ring and hotkeys.* |
+| ![Today's Board](docs/screenshots/today-board-v2.png) | ![Focus Mode](docs/screenshots/focus-mode-v2.png) |
+| *Dual-Axis Priority Board (`Execution Priority Lanes 1–4` × `6 Life Pillar Badges`), 1-click `🚨 Must-Do` promotion, task rollover & step decomposition.* | *Distraction-free single-task execution with Dual-Axis badges, ambient timer ring, and hotkeys.* |
 
 ---
 

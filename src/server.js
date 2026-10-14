@@ -36,10 +36,18 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 
 app.use(cors());
 app.use(express.json());
 
-// Serve static frontend assets if built
+// Serve static frontend assets if built (with no-cache on index.html and sw.js so UI updates apply immediately)
 const clientDist = path.join(projectRoot, 'client', 'dist');
 if (fs.existsSync(clientDist)) {
-  app.use(express.static(clientDist));
+  app.use(
+    express.static(clientDist, {
+      setHeaders: (res, filePath) => {
+        if (filePath.endsWith('index.html') || filePath.endsWith('sw.js')) {
+          res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        }
+      }
+    })
+  );
 }
 
 // ── Health ──────────────────────────────────────────────────────────────────
