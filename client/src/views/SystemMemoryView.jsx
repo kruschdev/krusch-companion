@@ -571,16 +571,63 @@ export function SystemMemoryView() {
             )}
           </div>
 
+          {/* Dynamic Tool Pruning & Sentinel Watchdog Telemetry */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14 }}>
+            <div className="glass-panel" style={{ padding: 16 }}>
+              <h3 style={{ fontSize: '0.96rem', fontWeight: 700, marginBottom: 8 }}>
+                ✂️ Dynamic Tool Pruning Visibility
+              </h3>
+              {debugInfo?.toolPruningReport ? (
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div>
+                    <strong>Schema Reduction:</strong> {debugInfo.toolPruningReport.totalToolsAvailable} tools →{' '}
+                    <span style={{ color: 'var(--accent-cyan)' }}>{debugInfo.toolPruningReport.prunedCount} injected</span> ({debugInfo.toolPruningReport.reductionPct}% pruned)
+                  </div>
+                  <div>
+                    <strong>Injected Schemas:</strong> {(debugInfo.toolPruningReport.selectedTools || []).join(', ')}
+                  </div>
+                </div>
+              ) : (
+                <p style={{ fontSize: '0.82rem', color: 'var(--text-dim)', fontStyle: 'italic' }}>
+                  Prunes 21 schemas down to ≤ 4 domain-matched tools per turn (~81% prompt reduction).
+                </p>
+              )}
+            </div>
+
+            <div className="glass-panel" style={{ padding: 16 }}>
+              <h3 style={{ fontSize: '0.96rem', fontWeight: 700, marginBottom: 8 }}>
+                🛰️ Sentinel Watchdog Wake / Silent Audit
+              </h3>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div>
+                  <strong>Daemon State:</strong>{' '}
+                  <span style={{ color: debugInfo?.sentinelStatus?.isRunning ? '#2dd4bf' : 'var(--text-dim)' }}>
+                    {debugInfo?.sentinelStatus?.isRunning ? '🟢 Active Polling' : '⚪ Standby'}
+                  </span>
+                </div>
+                <div>
+                  <strong>Total Checks:</strong> {debugInfo?.sentinelStatus?.totalChecks || 0} |{' '}
+                  <strong>Silent:</strong> {debugInfo?.sentinelStatus?.silentChecks || 0} |{' '}
+                  <strong>LLM Wakes:</strong> {debugInfo?.sentinelStatus?.totalAlertsTriggered || 0}
+                </div>
+                <div>
+                  <strong>Last Decision:</strong> {debugInfo?.sentinelStatus?.lastDecisionReason || 'No threshold breaches'}
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Agentic Tool Execution Telemetry */}
           <div className="glass-panel" style={{ padding: 18 }}>
             <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: 10 }}>
-              🔧 &lt;holodata&gt; Agentic Proxy Tool Telemetry
+              🔧 &lt;holodata&gt; Agentic Proxy Tool Telemetry &amp; TTL Cache
             </h3>
             <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 12, fontFamily: 'var(--font-mono)', fontSize: '0.82rem' }}>
               <span>Total Calls: <strong>{debugInfo?.agenticTools?.totalCalls || 0}</strong></span>
               <span style={{ color: '#2dd4bf' }}>Success: <strong>{debugInfo?.agenticTools?.totalSuccess || 0}</strong></span>
               <span style={{ color: '#f87171' }}>Failures: <strong>{debugInfo?.agenticTools?.totalFailures || 0}</strong></span>
               <span style={{ color: '#f0c040' }}>Dry-Run Previews: <strong>{debugInfo?.agenticTools?.totalDryRuns || 0}</strong></span>
+              <span style={{ color: '#38bdf8' }}>60s TTL Cache Hits: <strong>{debugInfo?.agenticTools?.cacheHits || 0}</strong></span>
             </div>
             {debugInfo?.agenticTools?.perTool && Object.keys(debugInfo.agenticTools.perTool).length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -600,7 +647,7 @@ export function SystemMemoryView() {
                   >
                     <strong>{toolName}</strong>
                     <span>
-                      Calls: {stat.calls} | OK: {stat.success} | Fail: {stat.failures} | DryRun: {stat.dryRuns} | Last: {stat.lastLatencyMs}ms
+                      Calls: {stat.calls} | OK: {stat.success} | Fail: {stat.failures} | DryRun: {stat.dryRuns} | Cache: {stat.cacheHits || 0} | Last: {stat.lastLatencyMs}ms
                     </span>
                   </div>
                 ))}
@@ -609,6 +656,26 @@ export function SystemMemoryView() {
               <p style={{ color: 'var(--text-dim)', fontSize: '0.84rem', fontStyle: 'italic' }}>
                 No agentic tool calls recorded in this session yet.
               </p>
+            )}
+
+            {/* Local Failed / Low-Confidence Extraction Audit Log */}
+            {Array.isArray(debugInfo?.failedToolCallLogs) && debugInfo.failedToolCallLogs.length > 0 && (
+              <div style={{ marginTop: 14 }}>
+                <h4 style={{ fontSize: '0.86rem', fontWeight: 700, marginBottom: 6, color: '#f0c040' }}>
+                  ⚠️ Local Failed &amp; Low-Confidence Tool Call Audit Log ({debugInfo.failedToolCallLogs.length})
+                </h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {debugInfo.failedToolCallLogs.slice(0, 8).map((entry, idx) => (
+                    <div
+                      key={idx}
+                      className="glass-card"
+                      style={{ padding: '8px 12px', fontFamily: 'var(--font-mono)', fontSize: '0.75rem', borderLeft: '3px solid #f0c040' }}
+                    >
+                      [{entry.type}] <strong>{entry.tool}</strong>: {entry.reason} ({entry.timestamp})
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
         </div>

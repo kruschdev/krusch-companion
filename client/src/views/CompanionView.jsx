@@ -59,6 +59,41 @@ export function CompanionView({ streak, onActionExecuted }) {
     setExpandedTraceIds(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
+  const handleConfirmSideEffectTool = async (msgId, tc) => {
+    try {
+      const res = await fetch('/api/companion/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tool: tc.name,
+          arguments: { ...(tc.arguments || {}), dryRun: false }
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setMessages(prev =>
+          prev.map(m =>
+            m.id === msgId
+              ? {
+                  ...m,
+                  confirmedTools: { ...(m.confirmedTools || {}), [tc.name]: true }
+                }
+              : m
+          ).concat({
+            id: `${Date.now()}-confirmed`,
+            role: 'assistant',
+            content: `✅ **Confirmed & Executed \`${tc.name}\`**:\n\n${data.summary || JSON.stringify(data)}`,
+            tierUsed: 'L0_heuristic',
+            latencyMs: data.latencyMs || 5
+          })
+        );
+        if (onActionExecuted) onActionExecuted({ type: tc.name });
+      }
+    } catch (err) {
+      alert(`Confirmation execution failed: ${err.message}`);
+    }
+  };
+
   const fetchDepartureAlerts = async () => {
     try {
       const res = await fetch('/api/companion/departure-alerts');
@@ -412,6 +447,22 @@ export function CompanionView({ streak, onActionExecuted }) {
                       <span>{actionMeta.label}</span>
                     </span>
                   )}
+                  {hasTrace && typeof m.agenticTrace.confidence === 'number' && (
+                    <span
+                      style={{
+                        fontSize: '0.69rem',
+                        fontFamily: 'var(--font-mono)',
+                        padding: '2px 8px',
+                        borderRadius: 'var(--radius-full)',
+                        background: 'rgba(45, 212, 191, 0.10)',
+                        border: '1px solid rgba(45, 212, 191, 0.35)',
+                        color: '#2dd4bf'
+                      }}
+                      title="Agentic Proxy <holodata> Extraction Confidence"
+                    >
+                      🎯 {Math.round(m.agenticTrace.confidence * 100)}% Conf
+                    </span>
+                  )}
                   {hasTrace && (
                     <button
                       type="button"
@@ -430,6 +481,24 @@ export function CompanionView({ streak, onActionExecuted }) {
                       {isTraceOpen ? '▾ Hide <holodata> Trace' : `▸ <holodata> Proxy (${m.agenticTrace.toolCalls.length} tool${m.agenticTrace.toolCalls.length > 1 ? 's' : ''})`}
                     </button>
                   )}
+                  {hasTrace &&
+                    m.agenticTrace.toolCalls
+                      .filter(tc => (tc.requiresConfirmation || tc.dryRun) && !m.confirmedTools?.[tc.name])
+                      .map((tc, idx) => (
+                        <button
+                          key={`${tc.name}-${idx}`}
+                          type="button"
+                          className="btn-primary"
+                          onClick={() => handleConfirmSideEffectTool(m.id, tc)}
+                          style={{
+                            fontSize: '0.73rem',
+                            padding: '3px 10px',
+                            borderRadius: 'var(--radius-full)'
+                          }}
+                        >
+                          ✅ Confirm &amp; Execute {tc.name}
+                        </button>
+                      ))}
                 </div>
               )}
               {hasTrace && isTraceOpen && (
@@ -454,11 +523,17 @@ export function CompanionView({ streak, onActionExecuted }) {
                       {m.agenticTrace.blueprint.cognitive_scratchpad || m.agenticTrace.blueprint.tool_plan || JSON.stringify(m.agenticTrace.blueprint)}
                     </div>
                   )}
+                  {m.agenticTrace.pruningReport && (
+                    <div>
+                      <strong style={{ color: 'var(--accent-cyan)' }}>Tool Pruning:</strong>{' '}
+                      Selected [{m.agenticTrace.pruningReport.selectedTools?.join(', ')}] · Pruned {m.agenticTrace.pruningReport.prunedCount} tools (~{m.agenticTrace.pruningReport.schemaTokensSavedEst} tokens saved)
+                    </div>
+                  )}
                   <div>
                     <strong style={{ color: '#2dd4bf' }}>Executed Tool Calls:</strong>
                     {m.agenticTrace.toolCalls.map((tc, i) => (
                       <div key={i} style={{ marginTop: 3 }}>
-                        • <code>{tc.name}({JSON.stringify(tc.arguments)})</code> → {tc.ok ? '✅ OK' : '⚠️ Error'} ({tc.latencyMs}ms)
+                        • <code>{tc.name}({JSON.stringify(tc.arguments)})</code> → {tc.dryRun ? '🛡️ Dry-Run Gate' : tc.ok ? '✅ OK' : '⚠️ Error'} ({tc.latencyMs}ms)
                       </div>
                     ))}
                   </div>

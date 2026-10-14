@@ -599,3 +599,99 @@ export function getDialogueHistory(sessionId, limit = 20) {
     SELECT * FROM companion_dialogue WHERE session_id = ? ORDER BY id ASC LIMIT ?
   `).all(sessionId, limit);
 }
+
+// ── Weekly Review & Bulk Actions ───────────────────────────────────────────
+export function getWeeklyReviewSummary(endDate = null) {
+  const targetEnd = endDate || today();
+  const rows = getDb().prepare(`
+    SELECT t.*, p.tier, p.name as priority_name, p.emoji as priority_emoji, p.color as priority_color
+    FROM tasks t
+    LEFT JOIN priorities p ON t.priority_id = p.id
+    WHERE t.date <= ? AND t.date >= date(?, '-6 days')
+    ORDER BY t.date DESC, t.execution_priority ASC, t.id ASC
+  `).all(targetEnd, targetEnd);
+
+  const enriched = rows.map(enrichTaskWithDualAxis);
+  const totalTasks = enriched.length;
+  const completedTasks = enriched.filter(t => t.completed).length;
+  const unfinishedRolloverCandidates = enriched.filter(t => !t.completed && !t.recurring && t.date < targetEnd).length;
+
+  const byPillar = LIFE_PILLARS.map(p => {
+    const pTasks = enriched.filter(t => t.pillar === p.name);
+    const done = pTasks.filter(t => t.completed).length;
+    const pct = pTasks.length > 0 ? Math.round((done / pTasks.length) * 100) : 0;
+    return {
+      key: p.key,
+      name: p.name,
+      emoji: p.emoji,
+      color: p.color,
+      total: pTasks.length,
+      completed: done,
+      completionRate: pct,
+      completionPct: pct
+    };
+  });
+
+  const byLane = EXECUTION_LANES.map(l => {
+    const lTasks = enriched.filter(t => t.execution_priority === l.level);
+    const done = lTasks.filter(t => t.completed).length;
+    return {
+      level: l.level,
+      shortName: l.shortName,
+      emoji: l.emoji,
+      color: l.color,
+      total: lTasks.length,
+      completed: done
+    };
+  });
+
+  const neglectedPillars = byPillar.filter(p => p.total === 0).map(p => p.name);
+  const startRow = getDb().prepare(`SELECT date(?, '-6 days') as start_date`).get(targetEnd);
+
+  return {
+    windowStart: startRow?.start_date || targetEnd,
+    windowEnd: targetEnd,
+    totalTasks,
+    completedTasks,
+    completionRate: totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0,
+    unfinishedRolloverCandidates,
+    unfinishedPriorDaysCount: unfinishedRolloverCandidates,
+    byPillar,
+    pillarBreakdown: byPillar,
+    byLane,
+    neglectedPillars,
+    recommendation:
+      unfinishedRolloverCandidates > 0
+        ? `You have ${unfinishedRolloverCandidates} unfinished task(s) from earlier this week ready to roll over.`
+        : neglectedPillars.length > 0
+          ? `Consider adding a small anchor task for: ${neglectedPillars.slice(0, 2).join(', ')}.`
+          : 'Balanced execution across all active Life Pillars this week!'
+  };
+}
+
+export function executeBulkTaskAction(actionOrObj, maybeDate = null) {
+  const action = typeof actionOrObj === 'string' ? actionOrObj : actionOrObj?.action;
+  const date = typeof actionOrObj === 'string' ? maybeDate : actionOrObj?.date;
+  const targetDate = date || today();
+  const dbConn = getDb();
+  if (action === 'complete_habits') {
+    const info = dbConn.prepare(`
+      UPDATE tasks
+      SET completed = 1, completed_at = datetime('now')
+      WHERE date = ? AND completed = 0 AND (execution_priority = 3 OR recurring = 1)
+    `).run(targetDate);
+    return { action, affected: info.changes, updatedCount: info.changes, tasks: getTasksForDate(targetDate) };
+  }
+  if (action === 'clear_completed') {
+    const info = dbConn.prepare(`
+      DELETE FROM tasks
+      WHERE date = ? AND completed = 1
+    `).run(targetDate);
+    return { action, affected: info.changes, deletedCount: info.changes, tasks: getTasksForDate(targetDate) };
+  }
+  if (action === 'rollover_all') {
+    const res = rolloverUnfinishedTasks(targetDate);
+    return { action, affected: res.rolledOverCount, updatedCount: res.rolledOverCount, tasks: getTasksForDate(targetDate) };
+  }
+  throw new Error(`Unknown bulk action: ${action}`);
+}

@@ -1452,13 +1452,19 @@ export const COMPANION_TOOLS = [
 
 let runtimeDryRunMode = process.env.AGENTIC_DRY_RUN === 'true';
 
+const TOOL_RESULT_CACHE = new Map();
+const CACHEABLE_READ_TOOLS = new Set(['get_weather', 'system_status', 'commute_departure_check']);
+const CACHE_TTL_MS = 60_000;
+
 const AGENTIC_TOOL_STATS = {
   totalCalls: 0,
   succeeded: 0,
   failed: 0,
   dryRuns: 0,
+  cacheHits: 0,
   byTool: {},
-  recentEvents: []
+  recentEvents: [],
+  failedEvents: []
 };
 
 export function setAgenticDryRunMode(enabled) {
@@ -1470,6 +1476,28 @@ export function getAgenticDryRunMode() {
   return runtimeDryRunMode;
 }
 
+export function clearAgenticToolCache() {
+  TOOL_RESULT_CACHE.clear();
+}
+
+export function getFailedToolCallLogs() {
+  return AGENTIC_TOOL_STATS.failedEvents;
+}
+
+export function recordLowConfidenceOrFailedParse({ prompt, reason, confidence, rawSnippet }) {
+  AGENTIC_TOOL_STATS.failedEvents.unshift({
+    timestamp: new Date().toISOString(),
+    type: 'low_confidence_or_fallback',
+    promptPreview: String(prompt || '').slice(0, 120),
+    reason,
+    confidence,
+    rawSnippet: String(rawSnippet || '').slice(0, 160)
+  });
+  if (AGENTIC_TOOL_STATS.failedEvents.length > 25) {
+    AGENTIC_TOOL_STATS.failedEvents.pop();
+  }
+}
+
 export function getAgenticToolStats() {
   return {
     dryRunMode: runtimeDryRunMode,
@@ -1477,6 +1505,7 @@ export function getAgenticToolStats() {
     totalDryRuns: AGENTIC_TOOL_STATS.dryRuns,
     totalSuccess: AGENTIC_TOOL_STATS.succeeded,
     totalFailures: AGENTIC_TOOL_STATS.failed,
+    totalCacheHits: AGENTIC_TOOL_STATS.cacheHits,
     perTool: AGENTIC_TOOL_STATS.byTool,
     successRate: AGENTIC_TOOL_STATS.totalCalls > 0
       ? Number((((AGENTIC_TOOL_STATS.succeeded + AGENTIC_TOOL_STATS.dryRuns) / AGENTIC_TOOL_STATS.totalCalls) * 100).toFixed(1))
@@ -1492,14 +1521,15 @@ export function isExternalSideEffectCall(name, args = {}) {
   const action = String(args?.action || '').toLowerCase();
   if (name === 'send_notification') return true;
   if (name === 'concierge_reservation') return true;
-  if (name === 'gkrusch_gmail' && (action === 'send' || action === 'draft' || action === 'create_draft')) return true;
+  if (name === 'gkrusch_gmail' && (action === 'send' || action === 'send_email' || action === 'draft' || action === 'create_draft')) return true;
   if (name === 'gkrusch_calendar' && (action.includes('create') || action.includes('schedule'))) return true;
   if (name === 'gkrusch_drive' && action === 'write') return true;
   return false;
 }
 
-function recordToolStat(name, { ok, dryRun = false, latencyMs = 0, error = null }) {
+function recordToolStat(name, { ok, dryRun = false, cached = false, latencyMs = 0, error = null, args = null }) {
   AGENTIC_TOOL_STATS.totalCalls++;
+  if (cached) AGENTIC_TOOL_STATS.cacheHits++;
   if (dryRun) AGENTIC_TOOL_STATS.dryRuns++;
   else if (ok) AGENTIC_TOOL_STATS.succeeded++;
   else AGENTIC_TOOL_STATS.failed++;
@@ -1512,6 +1542,7 @@ function recordToolStat(name, { ok, dryRun = false, latencyMs = 0, error = null 
       failed: 0,
       failures: 0,
       dryRuns: 0,
+      cacheHits: 0,
       totalLatencyMs: 0,
       avgLatencyMs: 0,
       lastLatencyMs: 0
@@ -1519,6 +1550,7 @@ function recordToolStat(name, { ok, dryRun = false, latencyMs = 0, error = null 
   }
   const entry = AGENTIC_TOOL_STATS.byTool[name];
   entry.calls++;
+  if (cached) entry.cacheHits++;
   if (dryRun) {
     entry.dryRuns++;
   } else if (ok) {
@@ -1532,16 +1564,29 @@ function recordToolStat(name, { ok, dryRun = false, latencyMs = 0, error = null 
   entry.totalLatencyMs += latencyMs;
   entry.avgLatencyMs = Math.round(entry.totalLatencyMs / entry.calls);
 
-  AGENTIC_TOOL_STATS.recentEvents.unshift({
+  const eventRecord = {
     timestamp: new Date().toISOString(),
     tool: name,
     ok: Boolean(ok),
     dryRun: Boolean(dryRun),
+    cached: Boolean(cached),
     latencyMs,
     ...(error ? { error } : {})
-  });
+  };
+  AGENTIC_TOOL_STATS.recentEvents.unshift(eventRecord);
   if (AGENTIC_TOOL_STATS.recentEvents.length > 20) {
     AGENTIC_TOOL_STATS.recentEvents.pop();
+  }
+
+  if (!ok) {
+    AGENTIC_TOOL_STATS.failedEvents.unshift({
+      ...eventRecord,
+      type: 'tool_execution_error',
+      arguments: args
+    });
+    if (AGENTIC_TOOL_STATS.failedEvents.length > 25) {
+      AGENTIC_TOOL_STATS.failedEvents.pop();
+    }
   }
 }
 
@@ -1553,15 +1598,15 @@ export function getToolByName(name) {
 }
 
 /**
- * Execute a named tool safely, enforcing dry-run confirmation gates on side-effect tools
- * and recording execution telemetry.
+ * Execute a named tool safely, enforcing dry-run confirmation gates on side-effect tools,
+ * serving cached results for idempotent read tools, and recording execution telemetry.
  */
 export async function executeCompanionTool(name, args = {}, options = {}) {
   const start = Date.now();
   const tool = getToolByName(name);
   if (!tool) {
     const latencyMs = Date.now() - start;
-    recordToolStat(name, { ok: false, latencyMs, error: 'Unknown tool' });
+    recordToolStat(name, { ok: false, latencyMs, error: 'Unknown tool', args });
     return {
       ok: false,
       tool: name,
@@ -1577,7 +1622,7 @@ export async function executeCompanionTool(name, args = {}, options = {}) {
 
   if (shouldDryRun && isExternalSideEffectCall(name, args)) {
     const latencyMs = Date.now() - start;
-    recordToolStat(name, { ok: true, dryRun: true, latencyMs });
+    recordToolStat(name, { ok: true, dryRun: true, latencyMs, args });
     return {
       ok: true,
       dryRun: true,
@@ -1585,7 +1630,7 @@ export async function executeCompanionTool(name, args = {}, options = {}) {
       confirmationRequired: true,
       tool: name,
       actionType: tool.category,
-      summary: `🛡️ **[Dry-Run / Confirmation Gate]** Previewed side-effect tool \`${name}\` without executing external mutation:\n\`\`\`json\n${JSON.stringify(args, null, 2)}\n\`\`\`\n*(Pass \`"dryRun": false\` or disable Dry-Run Gate to execute live.)*`,
+      summary: `🛡️ **[Dry-Run / Confirmation Gate]** Previewed side-effect tool \`${name}\` without executing external mutation:\n\`\`\`json\n${JSON.stringify(args, null, 2)}\n\`\`\`\n*(Click **Confirm & Execute** below or pass \`"dryRun": false\` to execute live.)*`,
       preview: {
         tool: name,
         category: tool.category,
@@ -1596,17 +1641,42 @@ export async function executeCompanionTool(name, args = {}, options = {}) {
     };
   }
 
+  // Check TTL cache for idempotent read tools when default fetch is used
+  const canUseCache =
+    CACHEABLE_READ_TOOLS.has(name) &&
+    options?.useCache !== false &&
+    (!options?.fetchImpl || options.fetchImpl === fetch);
+  const cacheKey = canUseCache ? `${name}:${JSON.stringify(args || {})}` : null;
+  if (cacheKey && TOOL_RESULT_CACHE.has(cacheKey)) {
+    const entry = TOOL_RESULT_CACHE.get(cacheKey);
+    if (Date.now() - entry.timestamp < CACHE_TTL_MS) {
+      const latencyMs = Date.now() - start;
+      recordToolStat(name, { ok: true, cached: true, latencyMs, args });
+      return {
+        ...entry.value,
+        cached: true,
+        latencyMs
+      };
+    }
+    TOOL_RESULT_CACHE.delete(cacheKey);
+  }
+
   try {
     const result = await tool.execute(args || {}, options);
     const latencyMs = Date.now() - start;
-    recordToolStat(name, { ok: result?.ok !== false, latencyMs, error: result?.ok === false ? result?.summary : null });
+    const isOk = result?.ok !== false;
+    recordToolStat(name, { ok: isOk, latencyMs, error: !isOk ? result?.summary : null, args });
+    if (cacheKey && isOk) {
+      TOOL_RESULT_CACHE.set(cacheKey, { timestamp: Date.now(), value: result });
+    }
     return {
       ...result,
+      cached: false,
       latencyMs
     };
   } catch (err) {
     const latencyMs = Date.now() - start;
-    recordToolStat(name, { ok: false, latencyMs, error: err.message });
+    recordToolStat(name, { ok: false, latencyMs, error: err.message, args });
     return {
       ok: false,
       tool: name,

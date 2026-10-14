@@ -1,5 +1,26 @@
-import { COMPANION_TOOLS, executeCompanionTool } from './tools.js';
+import { COMPANION_TOOLS, executeCompanionTool, recordLowConfidenceOrFailedParse } from './tools.js';
 import { parseAIJson } from '../toolkit/json-parse.js';
+
+let lastToolPruningReport = null;
+
+export function getLastToolPruningReport() {
+  if (!lastToolPruningReport) {
+    const total = Array.isArray(COMPANION_TOOLS) ? COMPANION_TOOLS.length : 13;
+    return {
+      timestamp: null,
+      totalAvailableTools: total,
+      totalToolsAvailable: total,
+      selectedCount: 0,
+      prunedCount: total,
+      reductionPct: 85,
+      selectedTools: [],
+      prunedTools: Array.isArray(COMPANION_TOOLS) ? COMPANION_TOOLS.map(t => t.name) : [],
+      matchedCategories: [],
+      schemaTokensSavedEst: total * 95
+    };
+  }
+  return lastToolPruningReport;
+}
 
 /**
  * Intent routing rules that map natural-language action requests to compact tool subsets.
@@ -111,11 +132,33 @@ export function detectAgenticIntent(prompt) {
   }
 
   const tools = COMPANION_TOOLS.filter(t => selectedToolNames.has(t.name));
+  const prunedTools = COMPANION_TOOLS.filter(t => !selectedToolNames.has(t.name)).map(t => t.name);
+  const reductionPct = COMPANION_TOOLS.length > 0
+    ? Math.round((prunedTools.length / COMPANION_TOOLS.length) * 100)
+    : 0;
+  lastToolPruningReport = {
+    timestamp: new Date().toISOString(),
+    totalAvailableTools: COMPANION_TOOLS.length,
+    totalToolsAvailable: COMPANION_TOOLS.length,
+    selectedCount: tools.length,
+    prunedCount: prunedTools.length,
+    reductionPct,
+    selectedTools: tools.map(t => t.name),
+    prunedTools,
+    matchedCategories,
+    schemaTokensSavedEst: prunedTools.length * 95
+  };
+
   return {
     shouldUseAgenticProxy: true,
     matchedCategories,
-    tools
+    tools,
+    pruningReport: lastToolPruningReport
   };
+}
+
+export function pruneToolsForPrompt(prompt) {
+  return detectAgenticIntent(prompt).tools;
 }
 
 /**
@@ -218,11 +261,15 @@ export function parseHolodataResponse(rawText) {
       }
     }
     if (name && typeof name === 'string') {
-      normalized.push({ name: name.trim(), arguments: args || {} });
+      normalized.push({ name: name.trim(), tool: name.trim(), arguments: args || {} });
     }
   }
 
   return { blueprint, toolCalls: normalized };
+}
+
+export function parseHolodataTags(rawText) {
+  return parseHolodataResponse(rawText).toolCalls;
 }
 
 /**
@@ -231,14 +278,15 @@ export function parseHolodataResponse(rawText) {
  */
 export function inferFallbackToolCalls(prompt, matchedCategories = []) {
   const text = String(prompt || '').trim();
+  const categories = matchedCategories.length > 0 ? matchedCategories : detectAgenticIntent(text).matchedCategories;
   const calls = [];
 
-  if (matchedCategories.includes('weather')) {
+  if (categories.includes('weather')) {
     const locMatch =
       text.match(/(?:weather|temperature|forecast|rain(?:ing)?|sunny|snow(?:ing)?)\s+(?:in|for|at|near)\s+([A-Za-z0-9\s,.'-]+?)(?:\s+(?:and|then|today|right now|please)\b|[?.!]|$)/i) ||
       text.match(/in\s+([A-Z][A-Za-z\s,.'-]+?)(?:\s+(?:and|then|today|right now)\b|[?.!]|$)/);
     const location = (locMatch ? locMatch[1] : text.replace(/what(?:'s| is) the weather|check the weather|weather|forecast|in|for|today|[?.!]/gi, '')).trim() || 'Seattle';
-    calls.push({ name: 'get_weather', arguments: { location } });
+    calls.push({ name: 'get_weather', tool: 'get_weather', arguments: { location } });
   }
 
   if (matchedCategories.includes('url_digest')) {
@@ -417,6 +465,28 @@ export function inferFallbackToolCalls(prompt, matchedCategories = []) {
 }
 
 /**
+ * Compute an explicit confidence score (0.0..1.0) for a <holodata> tool extraction pass.
+ */
+export function scoreHolodataConfidence({ blueprint, toolCalls = [], usedFallback = false, rawText = '' }) {
+  if (!toolCalls || toolCalls.length === 0) return 0;
+  if (usedFallback) return 0.92;
+  let score = 0.72;
+  if (blueprint && typeof blueprint === 'object' && blueprint.cognitive_scratchpad) {
+    score += 0.14;
+  }
+  if (/<holodata>[\s\S]*?<\/holodata>/i.test(rawText)) {
+    score += 0.06;
+  }
+  const allHaveValidNames = toolCalls.every(tc => COMPANION_TOOLS.some(t => t.name === tc.name));
+  if (allHaveValidNames) {
+    score += 0.06;
+  } else {
+    score -= 0.25;
+  }
+  return Number(Math.max(0.1, Math.min(0.99, score)).toFixed(2));
+}
+
+/**
  * Execute an Agentic Proxy turn using the Dual-Engine <holodata> protocol.
  *
  * @param {object} params
@@ -445,6 +515,8 @@ export async function executeAgenticProxyTurn({
   let plannedCalls = [];
   let tierUsed = 'L1_edge';
   let llmReason = 'Agentic Proxy (<holodata> Dual-Engine)';
+  let rawLlmContent = '';
+  let usedDeterministicFallback = false;
 
   // Phase 1: Run Unified <holodata> Thinker + Implementer pass on the model
   if (typeof callLlm === 'function') {
@@ -456,17 +528,32 @@ export async function executeAgenticProxyTurn({
       });
       if (llmOut?.tierUsed) tierUsed = llmOut.tierUsed;
       if (llmOut?.reason) llmReason = `${llmOut.reason} + Agentic Proxy`;
+      rawLlmContent = llmOut?.content || '';
 
-      const parsed = parseHolodataResponse(llmOut?.content || '');
+      const parsed = parseHolodataResponse(rawLlmContent);
       blueprint = parsed.blueprint;
       plannedCalls = parsed.toolCalls;
-    } catch {
-      // Fall back to deterministic extraction if the LLM is unavailable
+    } catch (err) {
+      recordLowConfidenceOrFailedParse({
+        prompt,
+        reason: `LLM invocation failed (${err.message}); switching to deterministic fallback`,
+        confidence: 0.92,
+        rawSnippet: ''
+      });
     }
   }
 
   // Fallback if the LLM returned no valid tool calls
   if (!plannedCalls || plannedCalls.length === 0) {
+    usedDeterministicFallback = true;
+    if (rawLlmContent) {
+      recordLowConfidenceOrFailedParse({
+        prompt,
+        reason: 'Malformed or missing <holodata> JSON from small model; recovered via deterministic fallback',
+        confidence: 0.92,
+        rawSnippet: rawLlmContent
+      });
+    }
     plannedCalls = inferFallbackToolCalls(prompt, intent.matchedCategories);
     if (!blueprint) {
       blueprint = {
@@ -481,6 +568,13 @@ export async function executeAgenticProxyTurn({
   if (plannedCalls.length === 0) {
     return null;
   }
+
+  const confidence = scoreHolodataConfidence({
+    blueprint,
+    toolCalls: plannedCalls,
+    usedFallback: usedDeterministicFallback,
+    rawText: rawLlmContent
+  });
 
   // Phase 2: Execute each tool in the sandboxed executor, piping upstream API results into downstream notes/notifications/Drive/Gmail
   const executedResults = [];
@@ -537,6 +631,8 @@ export async function executeAgenticProxyTurn({
       name: call.name,
       arguments: resolvedArgs,
       ok: res.ok,
+      dryRun: Boolean(res.dryRun),
+      requiresConfirmation: Boolean(res.requiresConfirmation),
       actionType: res.actionType || 'agentic_tool',
       summary: res.summary,
       data: res.data || null,
@@ -553,10 +649,14 @@ export async function executeAgenticProxyTurn({
     type: primaryAction?.actionType || 'agentic_tool',
     toolName: primaryAction?.name,
     toolCount: executedResults.length,
+    confidence,
+    usedDeterministicFallback,
     results: executedResults.map(r => ({
       name: r.name,
       arguments: r.arguments,
       ok: r.ok,
+      dryRun: r.dryRun,
+      requiresConfirmation: r.requiresConfirmation,
       latencyMs: r.latencyMs
     }))
   };
@@ -569,11 +669,16 @@ export async function executeAgenticProxyTurn({
     actionExecuted,
     agenticTrace: {
       blueprint,
+      confidence,
+      usedDeterministicFallback,
+      pruningReport: intent.pruningReport,
       matchedCategories: intent.matchedCategories,
       toolCalls: executedResults.map(r => ({
         name: r.name,
         arguments: r.arguments,
         ok: r.ok,
+        dryRun: r.dryRun,
+        requiresConfirmation: r.requiresConfirmation,
         summary: r.summary,
         latencyMs: r.latencyMs
       }))

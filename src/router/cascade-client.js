@@ -470,8 +470,22 @@ export function evaluateL0Heuristic(rawText) {
   return null;
 }
 
+let activeResourceMode = process.env.RESOURCE_MODE || 'balanced'; // 'minimal' | 'balanced' | 'quality'
+
+export function setCascadeResourceMode(mode) {
+  if (['minimal', 'balanced', 'quality'].includes(mode)) {
+    activeResourceMode = mode;
+  }
+  return activeResourceMode;
+}
+
+export function getCascadeResourceMode() {
+  return activeResourceMode;
+}
+
 /**
- * Classifies prompt into appropriate execution tier using Krusch Cascade Router.
+ * Classifies prompt into appropriate execution tier using Krusch Cascade Router
+ * and the active runtime resource mode ('minimal' | 'balanced' | 'quality').
  */
 export function classifyCompanionPrompt(prompt) {
   // Check L0 first
@@ -482,6 +496,7 @@ export function classifyCompanionPrompt(prompt) {
       isFastPath: true,
       confidence: 'high',
       complexityScore: 0.0,
+      resourceMode: activeResourceMode,
       suggestedAction: 'dispatch_specialist',
       l0Result: l0
     };
@@ -491,18 +506,33 @@ export function classifyCompanionPrompt(prompt) {
   const preRoute = classifyPreRoute(prompt, {
     prunePreRouting: true,
     knowledgeBoundaryGating: true,
-    lengthThreshold: 1500
+    lengthThreshold: activeResourceMode === 'minimal' ? 800 : 1500
   });
 
   let tier = TIERS.L1_EDGE;
 
-  // Escalate to L2 if prompt has high complexity score or deep reasoning role
-  if (
-    preRoute.complexityScore >= 0.40 ||
-    preRoute.role === 'reasoning_deep' ||
-    preRoute.role === 'comprehension_rc'
-  ) {
-    tier = TIERS.L2_SWARM;
+  if (activeResourceMode === 'minimal') {
+    // Minimal CPU/Edge mode: strictly keep all inference on L0 or L1 Edge
+    tier = TIERS.L1_EDGE;
+  } else if (activeResourceMode === 'quality') {
+    // Quality mode: lower complexity threshold for deep reasoning escalation
+    if (
+      preRoute.complexityScore >= 0.20 ||
+      String(prompt || '').length >= 120 ||
+      preRoute.role === 'reasoning_deep' ||
+      preRoute.role === 'comprehension_rc'
+    ) {
+      tier = TIERS.L2_SWARM;
+    }
+  } else {
+    // Balanced mode (default): escalate to L2 if prompt has high complexity score or deep reasoning role
+    if (
+      preRoute.complexityScore >= 0.40 ||
+      preRoute.role === 'reasoning_deep' ||
+      preRoute.role === 'comprehension_rc'
+    ) {
+      tier = TIERS.L2_SWARM;
+    }
   }
 
   return {
@@ -511,6 +541,7 @@ export function classifyCompanionPrompt(prompt) {
     role: preRoute.role,
     confidence: preRoute.confidence,
     complexityScore: preRoute.complexityScore,
+    resourceMode: activeResourceMode,
     suggestedAction: preRoute.suggestedAction
   };
 }

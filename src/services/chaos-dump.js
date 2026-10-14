@@ -4,6 +4,52 @@ import { createTask, getPriorities, today, getTasksForDate } from '../db/index.j
 import { rememberMemory } from '../context/memory-store.js';
 
 /**
+ * Deterministic voice/text segment classifier & lightweight speaker diarization post-processor.
+ * Tags each clause in a voice dump as an urgent_task, habit_task, focus_task, memory_fact, or context_note.
+ */
+export function classifyTranscriptSegments(rawText) {
+  if (!rawText || typeof rawText !== 'string') return [];
+  const clauses = rawText
+    .split(/(?:[.!?\n]+|,\s+(?:and|also|plus|then)\s+|;\s*)/i)
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  return clauses.map((clause, idx) => {
+    let speaker = 'User';
+    let text = clause;
+    const speakerMatch = clause.match(/^(Speaker\s*\d+|Me|User|Partner|Wife|Husband|Client|Boss)\s*:\s*(.+)$/i);
+    if (speakerMatch) {
+      speaker = speakerMatch[1].trim();
+      text = speakerMatch[2].trim();
+    }
+
+    let intent = 'context_note';
+    let label = '💬 Context';
+    if (/\b(?:remember\s+that|we\s+decided|decided\s+to|always\s+|never\s+|requested\s+a|prefers?\s+|rule\s+is)\b/i.test(text)) {
+      intent = 'memory_fact';
+      label = '🧠 Working Memory Fact';
+    } else if (/\b(?:before\s+\d+\s*(?:am|pm)|urgent|asap|pay\s+.*(?:bill|invoice|tax|rent|mortgage)|due\s+today|prescription|dentist|doctor)\b/i.test(text)) {
+      intent = 'urgent_task';
+      label = '🚨 Task (P1: Must Happen Today)';
+    } else if (/\b(?:drink\s+.*water|liters?\s+of\s+water|every\s+day|daily|morning\s+gratitude|prayer|stretch|workout\s+routine)\b/i.test(text)) {
+      intent = 'habit_task';
+      label = '🌱 Task (P3: Daily Habit)';
+    } else if (/\b(?:need\s+to|have\s+to|must\s+|call\s+|email\s+|review\s+|finish\s+|schedule\s+|pick\s+up|buy\s+|prepare\s+|draft\s+|send\s+)\b/i.test(text)) {
+      intent = 'focus_task';
+      label = '⚡ Task (P2: High-Impact Focus)';
+    }
+
+    return {
+      index: idx + 1,
+      speaker,
+      intent,
+      label,
+      text
+    };
+  });
+}
+
+/**
  * Takes unformatted voice transcription or stream-of-consciousness text,
  * extracts actionable tasks with 5-tier priority assignments, identifies
  * permanent life memories/habits, and auto-persists them to SQLite.
@@ -18,6 +64,7 @@ export async function processThoughtStream({
     throw new Error('Thought stream text cannot be empty');
   }
 
+  const segments = classifyTranscriptSegments(text);
   const targetDate = date || today();
   const priorities = getPriorities();
   const priorityGuide = priorities
@@ -137,6 +184,7 @@ You MUST respond with valid JSON ONLY in the following format:
   }
 
   return {
+    segments,
     rawTasks,
     rawMemories,
     savedTasks,

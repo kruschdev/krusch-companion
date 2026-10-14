@@ -32,6 +32,10 @@ export function App() {
   });
   const [backendHealth, setBackendHealth] = useState(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [showSetupWizard, setShowSetupWizard] = useState(false);
+  const [isRunningDemo, setIsRunningDemo] = useState(false);
+  const [runtimeMode, setRuntimeMode] = useState('balanced');
+  const [dryRunGate, setDryRunGate] = useState(false);
 
   useEffect(() => {
     fetchHealth();
@@ -50,12 +54,56 @@ export function App() {
 
   const fetchHealth = async () => {
     try {
-      const res = await fetch('/api/health');
+      const [res, dbgRes] = await Promise.all([fetch('/api/health'), fetch('/api/debug')]);
       if (res.ok) {
         setBackendHealth(await res.json());
       }
+      if (dbgRes.ok) {
+        const dbg = await dbgRes.json();
+        if (dbg.resourceMode) setRuntimeMode(dbg.resourceMode);
+        if (typeof dbg.dryRunMode === 'boolean') setDryRunGate(dbg.dryRunMode);
+      }
     } catch {
       // Local dev offline
+    }
+  };
+
+  const handleUpdateRuntimeQuick = async (patch) => {
+    try {
+      const res = await fetch('/api/settings/runtime', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setRuntimeMode(data.resourceMode);
+        setDryRunGate(Boolean(data.dryRunMode));
+      }
+    } catch {
+      // Non-fatal
+    }
+  };
+
+  const handleRunSampleTryItFlow = async () => {
+    setIsRunningDemo(true);
+    try {
+      const sampleStream =
+        'Pay electric bill and review Q4 client invoice before 5pm today, call the dentist to confirm Thursday appointment, pick up prescription at CVS, drink 2 liters of water every day, and remember that we decided to keep Friday evenings device-free for family dinner.';
+      const res = await fetch('/api/companion/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: sampleStream })
+      });
+      if (res.ok) {
+        await fetchStreak();
+        setShowSetupWizard(false);
+        setActiveTab('today');
+      }
+    } catch (err) {
+      alert(`Demo flow error: ${err.message}`);
+    } finally {
+      setIsRunningDemo(false);
     }
   };
 
@@ -128,7 +176,25 @@ export function App() {
         </div>
 
         {/* Status Pills */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <button
+            id="btn-quick-setup-wizard"
+            type="button"
+            className="btn-secondary"
+            onClick={() => setShowSetupWizard(prev => !prev)}
+            style={{
+              fontSize: '0.76rem',
+              padding: '6px 12px',
+              borderRadius: 'var(--radius-full)',
+              borderColor: 'var(--accent-cyan)',
+              color: '#f8fafc',
+              fontWeight: 700
+            }}
+            title="Open Guided Setup, Resource Mode & 1-Click Sample Flow"
+          >
+            🚀 Setup & Try It
+          </button>
+
           <div
             style={{
               display: 'flex',
@@ -180,11 +246,114 @@ export function App() {
               }}
             >
               <span>⚡</span>
-              <span>{backendHealth.edgeModel}</span>
+              <span>{backendHealth.edgeModel} · {runtimeMode.toUpperCase()}</span>
             </div>
           ) : null}
         </div>
       </header>
+
+      {/* Guided First-Run Setup & 1-Click "Try It" Wizard Panel */}
+      {showSetupWizard && (
+        <div
+          className="glass-panel"
+          style={{
+            padding: 20,
+            marginBottom: 20,
+            borderLeft: '4px solid var(--accent-cyan)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 14
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <h3 style={{ fontSize: '1.08rem', fontWeight: 800 }}>
+                🚀 Guided First-Run Setup & 1-Click &ldquo;Try It&rdquo; Onboarding
+              </h3>
+              <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)' }}>
+                Configure your compute profile, side-effect safety gate, or populate a sample Thought Stream in one click.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => setShowSetupWizard(false)}
+              style={{ fontSize: '0.78rem', padding: '4px 10px' }}
+            >
+              ✕ Close
+            </button>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
+            <div className="glass-card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <strong style={{ fontSize: '0.86rem', color: 'var(--accent-cyan)' }}>
+                1. Resource & Routing Mode
+              </strong>
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-dim)' }}>
+                Choose <strong>Minimal</strong> on CPU-only laptops (locks to L0/L1), <strong>Balanced</strong> for standard cascade, or <strong>Quality</strong> for deep reasoning.
+              </span>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {['minimal', 'balanced', 'quality'].map(m => (
+                  <button
+                    key={m}
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => handleUpdateRuntimeQuick({ resourceMode: m })}
+                    style={{
+                      fontSize: '0.74rem',
+                      padding: '4px 10px',
+                      borderColor: runtimeMode === m ? 'var(--accent-cyan)' : undefined,
+                      background: runtimeMode === m ? 'rgba(0,240,255,0.14)' : undefined
+                    }}
+                  >
+                    {m.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="glass-card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <strong style={{ fontSize: '0.86rem', color: '#f0c040' }}>
+                2. Side-Effect Confirmation Gate
+              </strong>
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-dim)' }}>
+                Require explicit confirmation before executing external tools (Gmail send, Calendar create, Concierge booking).
+              </span>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => handleUpdateRuntimeQuick({ dryRunMode: !dryRunGate })}
+                style={{
+                  fontSize: '0.76rem',
+                  padding: '6px 10px',
+                  borderColor: dryRunGate ? '#f0c040' : '#2dd4bf',
+                  color: dryRunGate ? '#f0c040' : '#2dd4bf'
+                }}
+              >
+                {dryRunGate ? '🛡️ Confirm-Before-Act: ON' : '⚡ Live Execution: ON (Click for Confirm Gate)'}
+              </button>
+            </div>
+
+            <div className="glass-card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <strong style={{ fontSize: '0.86rem', color: '#2dd4bf' }}>
+                3. Instant &ldquo;Try It&rdquo; Sample Flow
+              </strong>
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-dim)' }}>
+                Triages a sample Thought Stream into Dual-Axis tasks & Working Memory and opens Today&apos;s Board immediately.
+              </span>
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={isRunningDemo}
+                onClick={handleRunSampleTryItFlow}
+                style={{ fontSize: '0.78rem', padding: '7px 12px' }}
+              >
+                {isRunningDemo ? '⚡ Extracting Sample Stream...' : '✨ Run Sample Stream → Open Board'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Navigation Tabs */}
       <nav

@@ -58,6 +58,8 @@ export function TodayView({ onFocusTaskSelected }) {
   const [newExecPriority, setNewExecPriority] = useState(2);
   const [newPillar, setNewPillar] = useState('Work & Mastery');
   const [viewMode, setViewMode] = useState('execution'); // 'execution' | 'pillar'
+  const [showWeeklyReview, setShowWeeklyReview] = useState(false);
+  const [weeklyReview, setWeeklyReview] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [statusBanner, setStatusBanner] = useState(null);
   const [breakingDownId, setBreakingDownId] = useState(null);
@@ -78,6 +80,9 @@ export function TodayView({ onFocusTaskSelected }) {
       } else if (e.key === 'r' || e.key === 'R') {
         e.preventDefault();
         handleRollover();
+      } else if (e.key === 'w' || e.key === 'W') {
+        e.preventDefault();
+        handleToggleWeeklyReview();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -106,6 +111,45 @@ export function TodayView({ onFocusTaskSelected }) {
       console.error('Failed to load data:', err);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleToggleWeeklyReview = async () => {
+    setShowWeeklyReview(prev => {
+      const next = !prev;
+      if (next) {
+        fetch('/api/tasks/weekly-review')
+          .then(r => (r.ok ? r.json() : null))
+          .then(data => {
+            if (data) setWeeklyReview(data);
+          })
+          .catch(() => {});
+      }
+      return next;
+    });
+  };
+
+  const handleBulkAction = async (action) => {
+    try {
+      const res = await fetch('/api/tasks/bulk-action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setStatusBanner(
+          action === 'complete_habits'
+            ? `🌱 Marked ${data.affected || 0} Daily Habit task(s) complete.`
+            : action === 'clear_completed'
+              ? `🧹 Cleared ${data.affected || 0} completed task(s) from today's board.`
+              : `🔄 Rolled over ${data.affected || 0} unfinished task(s).`
+        );
+        await loadData();
+        setTimeout(() => setStatusBanner(null), 4000);
+      }
+    } catch (err) {
+      alert(`Bulk action failed: ${err.message}`);
     }
   };
 
@@ -417,12 +461,12 @@ export function TodayView({ onFocusTaskSelected }) {
           <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>
             Ranked by <strong>Execution Priority</strong> (Deadlines & Life Provision first) with color-coded <strong>Life Pillar</strong> tags.{' '}
             <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', color: 'var(--text-dim)' }}>
-              [Shortcuts: N=New · G=Group · R=Rollover]
+              [Shortcuts: N=New · G=Group · R=Rollover · W=Weekly Review]
             </span>
           </p>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {gamify.opted_in && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255, 183, 0, 0.15)', padding: '6px 14px', borderRadius: 'var(--radius-full)', border: '1px solid rgba(255, 183, 0, 0.3)' }}>
               <span style={{ fontSize: '1.1rem' }}>⭐</span>
@@ -433,25 +477,59 @@ export function TodayView({ onFocusTaskSelected }) {
             id="btn-toggle-view-mode"
             className="btn-secondary"
             onClick={() => setViewMode(prev => (prev === 'execution' ? 'pillar' : 'execution'))}
-            style={{ fontSize: '0.8rem', padding: '6px 12px' }}
+            style={{ fontSize: '0.78rem', padding: '6px 11px' }}
             title="Switch between Execution Priority lanes and Life Pillar sections (Shortcut: G)"
           >
-            {viewMode === 'execution' ? '🧭 Group by Life Pillar' : '⚡ Group by Execution Priority'}
+            {viewMode === 'execution' ? '🧭 By Life Pillar' : '⚡ By Exec Priority'}
+          </button>
+          <button
+            id="btn-weekly-review"
+            className="btn-secondary"
+            onClick={handleToggleWeeklyReview}
+            style={{
+              fontSize: '0.78rem',
+              padding: '6px 11px',
+              borderColor: showWeeklyReview ? 'var(--accent-cyan)' : undefined,
+              color: showWeeklyReview ? 'var(--accent-cyan)' : undefined
+            }}
+            title="Open 7-Day Weekly Review & Life-Pillar Balance Analytics (Shortcut: W)"
+          >
+            📅 Weekly Review
           </button>
           <button
             id="btn-rollover-tasks"
             className="btn-secondary"
             onClick={handleRollover}
-            style={{ fontSize: '0.8rem', padding: '6px 12px' }}
+            style={{ fontSize: '0.78rem', padding: '6px 11px' }}
             title="Move incomplete tasks from previous days onto today's board (Shortcut: R)"
           >
-            ↻ Roll Over Unfinished
+            ↻ Rollover
           </button>
+          <button
+            id="btn-bulk-habits"
+            className="btn-secondary"
+            onClick={() => handleBulkAction('complete_habits')}
+            style={{ fontSize: '0.78rem', padding: '6px 11px' }}
+            title="Bulk Action: Mark all Lane 3 Daily Habits complete for today"
+          >
+            🌱 Habits Done
+          </button>
+          {completedCount > 0 && (
+            <button
+              id="btn-bulk-clear-completed"
+              className="btn-secondary"
+              onClick={() => handleBulkAction('clear_completed')}
+              style={{ fontSize: '0.78rem', padding: '6px 11px' }}
+              title="Bulk Action: Clear completed tasks from today's board"
+            >
+              🧹 Clear Done ({completedCount})
+            </button>
+          )}
           <a
             href="/api/export?format=markdown"
             download
             className="btn-secondary"
-            style={{ fontSize: '0.8rem', padding: '6px 12px', textDecoration: 'none' }}
+            style={{ fontSize: '0.78rem', padding: '6px 11px', textDecoration: 'none' }}
             title="Export all tasks & working memories as portable Markdown"
           >
             📥 Export MD
@@ -460,12 +538,78 @@ export function TodayView({ onFocusTaskSelected }) {
             id="btn-toggle-gamify"
             className="btn-secondary"
             onClick={handleToggleGamify}
-            style={{ fontSize: '0.8rem', padding: '6px 12px' }}
+            style={{ fontSize: '0.78rem', padding: '6px 11px' }}
           >
-            {gamify.opted_in ? '🎮 Gamify Active' : '🎮 Enable Gamify'}
+            {gamify.opted_in ? '🎮 Gamify On' : '🎮 Gamify'}
           </button>
         </div>
       </div>
+
+      {/* 7-Day Weekly Review & Life-Pillar Analytics Panel */}
+      {showWeeklyReview && weeklyReview && (
+        <div
+          className="glass-panel animate-fade-in"
+          style={{
+            padding: 18,
+            borderLeft: '4px solid var(--accent-cyan)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+            <div>
+              <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--accent-cyan)' }}>
+                📅 7-Day Weekly Review & Life-Pillar Analytics ({weeklyReview.windowStart} → {weeklyReview.windowEnd})
+              </h3>
+              <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                Completed <strong>{weeklyReview.completedTasks}</strong> of <strong>{weeklyReview.totalTasks}</strong> tasks ({weeklyReview.completionRate}%) ·{' '}
+                <strong>{weeklyReview.unfinishedPriorDaysCount}</strong> unfinished prior-day item(s) ready for rollover.
+              </p>
+            </div>
+            {weeklyReview.unfinishedPriorDaysCount > 0 && (
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={handleRollover}
+                style={{ fontSize: '0.78rem', padding: '6px 12px' }}
+              >
+                ↻ Roll Over {weeklyReview.unfinishedPriorDaysCount} Unfinished Item(s)
+              </button>
+            )}
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
+            {(weeklyReview.pillarBreakdown || []).map(pb => (
+              <div
+                key={pb.key}
+                className="glass-card"
+                style={{
+                  padding: '10px 12px',
+                  borderLeft: `3px solid ${pb.color}`,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 4
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', fontWeight: 700 }}>
+                  <span>{pb.emoji} {pb.name}</span>
+                  <span style={{ color: pb.color, fontFamily: 'var(--font-mono)' }}>{pb.completed}/{pb.total}</span>
+                </div>
+                <div style={{ height: 5, background: 'rgba(255,255,255,0.08)', borderRadius: 999, overflow: 'hidden' }}>
+                  <div
+                    style={{
+                      width: `${pb.completionPct}%`,
+                      height: '100%',
+                      background: pb.color
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Life-Pillar Balance Strip */}
       <div

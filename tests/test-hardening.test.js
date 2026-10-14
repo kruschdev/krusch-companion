@@ -13,12 +13,13 @@ if (fs.existsSync(`${testDbPath}-wal`)) fs.unlinkSync(`${testDbPath}-wal`);
 if (fs.existsSync(`${testDbPath}-shm`)) fs.unlinkSync(`${testDbPath}-shm`);
 if (fs.existsSync(testBackupDir)) fs.rmSync(testBackupDir, { recursive: true, force: true });
 
-const { initCompanionDb, getTasksForDate, createTask, rolloverUnfinishedTasks, today } = await import('../src/db/index.js');
-const { safeEvaluateArithmetic, evaluateL0Heuristic, breakdownTaskIntoSubtasks, TIERS } = await import('../src/router/cascade-client.js');
+const { initCompanionDb, getTasksForDate, createTask, rolloverUnfinishedTasks, getWeeklyReviewSummary, executeBulkTaskAction, today } = await import('../src/db/index.js');
+const { safeEvaluateArithmetic, evaluateL0Heuristic, breakdownTaskIntoSubtasks, setCascadeResourceMode, getCascadeResourceMode, TIERS } = await import('../src/router/cascade-client.js');
 const { rememberMemory, supersedeMemory, getActiveMemories, getSupersededMemories, deleteMemory, getDecayCandidates, createDatabaseBackup, compileStateBriefing } = await import('../src/context/memory-store.js');
 const { evaluateCompanionContext } = await import('../src/context/boundary-gate.js');
-const { processChaosDump } = await import('../src/services/chaos-dump.js');
-const { executeCompanionTool, getAgenticToolStats, setAgenticDryRunMode } = await import('../src/agent/tools.js');
+const { processChaosDump, classifyTranscriptSegments } = await import('../src/services/chaos-dump.js');
+const { executeCompanionTool, getAgenticToolStats, setAgenticDryRunMode, getFailedToolCallLogs } = await import('../src/agent/tools.js');
+const { scoreHolodataConfidence, pruneToolsForPrompt, getLastToolPruningReport, parseHolodataTags, inferFallbackToolCalls } = await import('../src/agent/agentic-proxy.js');
 const { runDoctorChecks } = await import('../scripts/doctor.js');
 
 initCompanionDb(testDbPath);
@@ -263,6 +264,64 @@ test('Hardening: Dual-Axis Task includes lane_reason ("Why this lane?") and Setu
   assert.ok(doc && Array.isArray(doc.checks));
   assert.ok(doc.checks.some(c => c.id === 'node_version' && c.status === 'ok'));
   assert.ok(doc.checks.some(c => c.id === 'sqlite_wal' && c.status === 'ok'));
+});
+
+test('Hardening: Weekly Review Analytics & Bulk Task Actions (complete_habits, clear_completed)', () => {
+  const reviewBefore = getWeeklyReviewSummary(today());
+  assert.ok(reviewBefore.totalTasks >= 1);
+  assert.ok(Array.isArray(reviewBefore.pillarBreakdown));
+  assert.strictEqual(reviewBefore.pillarBreakdown.length, 6);
+
+  const habitsRes = executeBulkTaskAction('complete_habits', today());
+  assert.strictEqual(habitsRes.action, 'complete_habits');
+  assert.ok(habitsRes.affected >= 0);
+
+  const clearRes = executeBulkTaskAction('clear_completed', today());
+  assert.strictEqual(clearRes.action, 'clear_completed');
+  assert.ok(clearRes.affected >= 1);
+});
+
+test('Hardening: Cascade Resource Modes (minimal / balanced / quality) & Transcript Segment Post-Processing', () => {
+  assert.strictEqual(setCascadeResourceMode('minimal'), 'minimal');
+  assert.strictEqual(getCascadeResourceMode(), 'minimal');
+  assert.strictEqual(setCascadeResourceMode('quality'), 'quality');
+  assert.strictEqual(setCascadeResourceMode('balanced'), 'balanced');
+
+  const segments = classifyTranscriptSegments(
+    'Speaker 1: I need to pay the electric bill before 5pm today. Speaker 2: Remember that Sophia has piano lesson on Wednesday at 5pm.'
+  );
+  assert.ok(segments.length >= 2);
+  assert.strictEqual(segments[0].speaker, 'Speaker 1');
+  assert.strictEqual(segments[0].intent, 'urgent_task');
+  assert.strictEqual(segments[1].speaker, 'Speaker 2');
+  assert.strictEqual(segments[1].intent, 'memory_fact');
+});
+
+test('Hardening: <holodata> Confidence Scoring, Dynamic Tool Pruning Report & Malformed LLM Recovery', async () => {
+  const pruned = pruneToolsForPrompt('Check my email inbox and calendar for today');
+  assert.ok(pruned.length <= 4);
+  const report = getLastToolPruningReport();
+  assert.ok(report.totalToolsAvailable >= 13);
+  assert.ok(report.reductionPct >= 80);
+
+  // Malformed <holodata> output should return empty array cleanly and fall back to deterministic intent inference
+  const malformedCalls = parseHolodataTags('<holodata>{"tool": "get_weather", broken_json</holodata>');
+  assert.strictEqual(malformedCalls.length, 0);
+
+  const fallbackCalls = inferFallbackToolCalls('What is the weather in Seattle today?');
+  assert.ok(fallbackCalls.length >= 1);
+  assert.strictEqual(fallbackCalls[0].tool, 'get_weather');
+
+  const conf = scoreHolodataConfidence({ toolCalls: fallbackCalls, usedFallback: true });
+  assert.ok(conf >= 0.8);
+
+  // Verify 60s TTL cache on idempotent system_status tool
+  await executeCompanionTool('system_status', {});
+  const cachedRes = await executeCompanionTool('system_status', {});
+  assert.strictEqual(cachedRes.cached, true);
+  const stats = getAgenticToolStats();
+  assert.ok(stats.cacheHits >= 1);
+  assert.ok(Array.isArray(getFailedToolCallLogs()));
 });
 
 test('Hardening: Cleanup test artifacts', () => {

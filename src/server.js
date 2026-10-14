@@ -18,15 +18,23 @@ import {
   getDecayCandidates
 } from './context/memory-store.js';
 import { evaluateCompanionContext } from './context/boundary-gate.js';
-import { dispatchCompanionChat, classifyCompanionPrompt, breakdownTaskIntoSubtasks } from './router/cascade-client.js';
+import {
+  dispatchCompanionChat,
+  classifyCompanionPrompt,
+  breakdownTaskIntoSubtasks,
+  setCascadeResourceMode,
+  getCascadeResourceMode
+} from './router/cascade-client.js';
 import {
   COMPANION_TOOLS,
   executeCompanionTool,
   calculateCommuteAndDeparture,
   getAgenticToolStats,
+  getFailedToolCallLogs,
   setAgenticDryRunMode,
   getAgenticDryRunMode
 } from './agent/tools.js';
+import { getLastToolPruningReport } from './agent/agentic-proxy.js';
 import { processThoughtStream, processChaosDump } from './services/chaos-dump.js';
 import { generateDailyFocus, generateDailyReflection, generateNudge } from './services/coach.js';
 import { transcribeAudio } from './services/stt.js';
@@ -156,6 +164,24 @@ app.post('/api/tasks/rollover', (req, res) => {
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/tasks/weekly-review', (req, res) => {
+  try {
+    const endDate = req.query.date || db.today();
+    res.json(db.getWeeklyReviewSummary(endDate));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/tasks/bulk-action', (req, res) => {
+  try {
+    const { action, date } = req.body || {};
+    res.json(db.executeBulkTaskAction({ action, date }));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
   }
 });
 
@@ -612,14 +638,20 @@ app.get('/api/debug', (_req, res) => {
       avgLatencyMs: Number(r.avg_latency_ms || 0)
     }));
 
+    const toolStats = getAgenticToolStats();
     res.json({
+      resourceMode: getCascadeResourceMode(),
+      dryRunMode: getAgenticDryRunMode(),
       lastRoutingDecision,
       totalAssistantTurns: totalTurns,
       tierDistribution,
-      agenticToolStats: getAgenticToolStats(),
+      agenticTools: toolStats,
+      agenticToolStats: toolStats,
+      toolPruningReport: getLastToolPruningReport(),
+      failedToolCallLogs: getFailedToolCallLogs(),
       sentinelStatus: getSentinelStatus(),
       runtimeSettings: {
-        resourceMode: runtimeResourceMode,
+        resourceMode: getCascadeResourceMode(),
         dryRunMode: getAgenticDryRunMode(),
         provider: config.cascade.provider,
         edgeModel: config.cascade.edgeModel,
@@ -635,14 +667,14 @@ app.post('/api/settings/runtime', (req, res) => {
   try {
     const { resourceMode, dryRunMode } = req.body || {};
     if (resourceMode && ['minimal', 'balanced', 'quality'].includes(resourceMode)) {
-      runtimeResourceMode = resourceMode;
+      runtimeResourceMode = setCascadeResourceMode(resourceMode);
     }
     if (typeof dryRunMode === 'boolean') {
       setAgenticDryRunMode(dryRunMode);
     }
     res.json({
       ok: true,
-      resourceMode: runtimeResourceMode,
+      resourceMode: getCascadeResourceMode(),
       dryRunMode: getAgenticDryRunMode()
     });
   } catch (err) {

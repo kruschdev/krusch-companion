@@ -264,6 +264,51 @@ export function DumpView({ onTasksCreated }) {
               </div>
             </div>
           )}
+
+          {/* Speaker & Clause-Intent Post-Processing Breakdown */}
+          {Array.isArray(result.segments) && result.segments.length > 0 && (
+            <div>
+              <h4 style={{ fontSize: '0.9rem', fontWeight: 700, marginBottom: 8, color: 'var(--text-muted)' }}>
+                🎙️ TRANSCRIPT SEGMENT & SPEAKER POST-PROCESSING ({result.segments.length} CLAUSES)
+              </h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {result.segments.map((seg, idx) => (
+                  <div
+                    key={idx}
+                    className="glass-card"
+                    style={{
+                      padding: '8px 12px',
+                      fontSize: '0.82rem',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: 8
+                    }}
+                  >
+                    <span>
+                      <strong style={{ color: 'var(--accent-cyan)', fontFamily: 'var(--font-mono)', marginRight: 6 }}>
+                        [{seg.speaker}]
+                      </strong>
+                      {seg.text}
+                    </span>
+                    <span
+                      style={{
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: '0.72rem',
+                        padding: '2px 8px',
+                        borderRadius: 999,
+                        background: 'rgba(255,255,255,0.06)',
+                        color: 'var(--text-muted)'
+                      }}
+                    >
+                      {seg.label} ({Math.round((seg.confidence || 0.85) * 100)}%)
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
