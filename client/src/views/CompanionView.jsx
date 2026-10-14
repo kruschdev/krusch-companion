@@ -103,7 +103,21 @@ export function CompanionView({ streak, onActionExecuted }) {
             role: 'assistant',
             content: `✅ **Confirmed & Executed \`${tc.name}\`**:\n\n${data.summary || JSON.stringify(data)}`,
             tierUsed: 'L0_heuristic',
-            latencyMs: data.latencyMs || 5
+            latencyMs: data.latencyMs || 5,
+            actionExecuted: { type: data.actionType || tc.name },
+            agenticTrace: {
+              confidence: 0.99,
+              toolCalls: [
+                {
+                  name: tc.name,
+                  arguments: tc.arguments || {},
+                  ok: true,
+                  dryRun: false,
+                  data: data.data || null,
+                  latencyMs: data.latencyMs || 5
+                }
+              ]
+            }
           })
         );
         if (onActionExecuted) onActionExecuted({ type: tc.name });
@@ -653,6 +667,134 @@ export function CompanionView({ streak, onActionExecuted }) {
                           ✅ Confirm &amp; Execute {tc.name}
                         </button>
                       ))}
+                  {hasTrace &&
+                    m.agenticTrace.toolCalls
+                      .filter(tc => !tc.dryRun && tc.data)
+                      .map((tc, idx) => {
+                        const walletUrl = tc.data.saveUrl || tc.data.links?.googleWalletPassUrl;
+                        const openTableUrl = tc.data.links?.openTableUrl;
+                        const resyUrl = tc.data.links?.resyUrl;
+                        const sevenRoomsUrl = tc.data.links?.sevenRoomsUrl;
+                        const mandateId = tc.data.mandateId;
+                        return (
+                          <React.Fragment key={`rich-${tc.name}-${idx}`}>
+                            {walletUrl && (
+                              <a
+                                href={walletUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{
+                                  fontSize: '0.72rem',
+                                  fontFamily: 'var(--font-mono)',
+                                  padding: '3px 10px',
+                                  borderRadius: 'var(--radius-full)',
+                                  background: 'rgba(45, 212, 191, 0.14)',
+                                  border: '1px solid #2dd4bf',
+                                  color: '#2dd4bf',
+                                  textDecoration: 'none',
+                                  fontWeight: 700
+                                }}
+                              >
+                                📲 Add to Google Wallet
+                              </a>
+                            )}
+                            {openTableUrl && (
+                              <a
+                                href={openTableUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{
+                                  fontSize: '0.72rem',
+                                  fontFamily: 'var(--font-mono)',
+                                  padding: '3px 10px',
+                                  borderRadius: 'var(--radius-full)',
+                                  background: 'rgba(240, 192, 64, 0.14)',
+                                  border: '1px solid #f0c040',
+                                  color: '#f0c040',
+                                  textDecoration: 'none',
+                                  fontWeight: 700
+                                }}
+                              >
+                                🍽️ OpenTable
+                              </a>
+                            )}
+                            {resyUrl && (
+                              <a
+                                href={resyUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{
+                                  fontSize: '0.72rem',
+                                  fontFamily: 'var(--font-mono)',
+                                  padding: '3px 10px',
+                                  borderRadius: 'var(--radius-full)',
+                                  background: 'rgba(56, 189, 248, 0.14)',
+                                  border: '1px solid #38bdf8',
+                                  color: '#38bdf8',
+                                  textDecoration: 'none',
+                                  fontWeight: 700
+                                }}
+                              >
+                                🍽️ Resy
+                              </a>
+                            )}
+                            {sevenRoomsUrl && (
+                              <a
+                                href={sevenRoomsUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{
+                                  fontSize: '0.72rem',
+                                  fontFamily: 'var(--font-mono)',
+                                  padding: '3px 10px',
+                                  borderRadius: 'var(--radius-full)',
+                                  background: 'rgba(167, 139, 250, 0.14)',
+                                  border: '1px solid #a78bfa',
+                                  color: '#a78bfa',
+                                  textDecoration: 'none',
+                                  fontWeight: 700
+                                }}
+                              >
+                                🍽️ SevenRooms
+                              </a>
+                            )}
+                            {mandateId && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard?.writeText(
+                                    JSON.stringify(
+                                      {
+                                        mandateId: tc.data.mandateId,
+                                        signature: tc.data.signature,
+                                        intentMandate: tc.data.intentMandate,
+                                        cartMandate: tc.data.cartMandate,
+                                        paymentMandate: tc.data.paymentMandate
+                                      },
+                                      null,
+                                      2
+                                    )
+                                  );
+                                }}
+                                style={{
+                                  fontSize: '0.72rem',
+                                  fontFamily: 'var(--font-mono)',
+                                  padding: '3px 10px',
+                                  borderRadius: 'var(--radius-full)',
+                                  background: 'rgba(240, 192, 64, 0.14)',
+                                  border: '1px solid #f0c040',
+                                  color: '#f0c040',
+                                  cursor: 'pointer',
+                                  fontWeight: 700
+                                }}
+                                title="Copy Signed AP2 Mandate Bundle JSON to Clipboard"
+                              >
+                                💳 Copy AP2 Mandate ({tc.data.signature?.slice(0, 10)}…)
+                              </button>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
                 </div>
               )}
               {hasTrace && isTraceOpen && (

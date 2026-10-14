@@ -721,6 +721,7 @@ export async function executeAgenticProxyTurn({
         dryRun: r.dryRun,
         requiresConfirmation: r.requiresConfirmation,
         summary: r.summary,
+        data: r.data || null,
         latencyMs: r.latencyMs
       }))
     }

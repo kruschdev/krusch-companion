@@ -1257,9 +1257,10 @@ export const COMPANION_TOOLS = [
         // Non-fatal if OSM lookup times out
       }
 
-      // 2. Build Pre-Filled Deep Booking Links (OpenTable, Resy, Google Maps)
+      // 2. Build Pre-Filled Deep Booking Links (OpenTable, Resy, SevenRooms, Google Maps)
       const openTableUrl = `https://www.opentable.com/s?covers=${partySize}&dateTime=${encodeURIComponent(isoDateTime.slice(0, 19))}&term=${encodeURIComponent(venue)}`;
       const resyUrl = `https://resy.com/cities/search?query=${encodeURIComponent(venue)}&date=${isoDateOnly}&seats=${partySize}`;
+      const sevenRoomsUrl = `https://www.sevenrooms.com/reservations?party_size=${partySize}&date=${isoDateOnly}&query=${encodeURIComponent(venue)}`;
       const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(venue)}`;
 
       // 3. Calculate Driving Time, Traffic Delay & Recommended Leave-By Alert
@@ -1373,6 +1374,7 @@ export const COMPANION_TOOLS = [
         `- **Instant 1-Click Booking, Wallet Pass & Navigation Links**:`,
         `  • [Book on OpenTable (Party of ${partySize})](${openTableUrl})`,
         `  • [Book on Resy (Party of ${partySize})](${resyUrl})`,
+        `  • [Book on SevenRooms (Party of ${partySize})](${sevenRoomsUrl})`,
         `  • [📲 Add Reservation Pass to Google Wallet (${walletPass.mode === 'google_wallet_jwt' ? 'Signed RS256 Pass' : 'Mobile Pass & Calendar Card'})](${walletPass.saveUrl})`,
         `  • [Turn-by-Turn Google Maps Directions (${commute.distanceText})](${commute.googleMapsDirectionsUrl})`,
         `- ${emailStatusLine}`,
@@ -1394,6 +1396,7 @@ export const COMPANION_TOOLS = [
           links: {
             openTableUrl,
             resyUrl,
+            sevenRoomsUrl,
             googleMapsUrl,
             directionsUrl: commute.googleMapsDirectionsUrl,
             googleWalletPassUrl: walletPass.saveUrl
