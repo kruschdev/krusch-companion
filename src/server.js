@@ -496,6 +496,27 @@ app.post('/api/companion/voice', upload.single('audio'), async (req, res) => {
   }
 });
 
+// Dedicated Voice-to-Text endpoint for Companion Chat dictation
+app.post('/api/companion/transcribe', upload.single('audio'), async (req, res) => {
+  try {
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({ error: 'Audio file buffer is required' });
+    }
+
+    const transcribedText = await transcribeAudio(req.file.buffer, req.file.originalname || 'chat-voice.webm');
+    if (!transcribedText || transcribedText.trim().length === 0) {
+      return res.status(422).json({ error: 'No audible speech detected in transcription' });
+    }
+
+    res.json({
+      ok: true,
+      transcription: transcribedText.trim()
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Coach & Daily Focus ─────────────────────────────────────────────────────
 app.get('/api/coach/focus', (req, res) => {
   try {

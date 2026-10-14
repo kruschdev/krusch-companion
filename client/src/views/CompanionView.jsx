@@ -44,11 +44,28 @@ export function CompanionView({ streak, onActionExecuted }) {
   const [departureAlerts, setDepartureAlerts] = useState([]);
   const [sentinelAlerts, setSentinelAlerts] = useState([]);
   const [expandedTraceIds, setExpandedTraceIds] = useState({});
+  const [isRecordingVoice, setIsRecordingVoice] = useState(false);
+  const [isTranscribingVoice, setIsTranscribingVoice] = useState(false);
+  const [autoSendVoice, setAutoSendVoice] = useState(true);
+  const [voiceStatus, setVoiceStatus] = useState(null);
   const chatEndRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const speechRecRef = useRef(null);
+  const liveTranscriptRef = useRef('');
 
   useEffect(() => {
     fetchFocus();
     fetchDepartureAlerts();
+    return () => {
+      if (speechRecRef.current) {
+        try {
+          speechRecRef.current.stop();
+        } catch {
+          // ignore
+        }
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -159,14 +176,14 @@ export function CompanionView({ streak, onActionExecuted }) {
     }
   };
 
-  const handleSend = async (e) => {
-    e?.preventDefault();
-    if (!input.trim() || isLoading) return;
+  const sendPromptText = async (rawPrompt) => {
+    const cleanPrompt = String(rawPrompt || '').trim();
+    if (!cleanPrompt || isLoading) return;
 
     const userMsg = {
       id: Date.now().toString(),
       role: 'user',
-      content: input.trim()
+      content: cleanPrompt
     };
 
     setMessages(prev => [...prev, userMsg]);
@@ -217,6 +234,141 @@ export function CompanionView({ streak, onActionExecuted }) {
       ]);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleSend = async (e) => {
+    e?.preventDefault();
+    await sendPromptText(input);
+  };
+
+  const handleToggleVoiceChat = async () => {
+    if (isRecordingVoice) {
+      // Stop active recording
+      setIsRecordingVoice(false);
+      if (speechRecRef.current) {
+        try {
+          speechRecRef.current.stop();
+        } catch {
+          // ignore
+        }
+      }
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+      }
+      return;
+    }
+
+    setVoiceStatus('🎙️ Listening... Speak naturally (click Stop when finished)');
+    liveTranscriptRef.current = input ? `${input.trim()} ` : '';
+
+    // 1. Start Browser Web Speech API for real-time zero-latency dictation into input box
+    const SpeechRecognition =
+      typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
+    if (SpeechRecognition) {
+      try {
+        const rec = new SpeechRecognition();
+        rec.continuous = true;
+        rec.interimResults = true;
+        rec.lang = 'en-US';
+        rec.onresult = (event) => {
+          let finalChunk = '';
+          let interimChunk = '';
+          for (let i = 0; i < event.results.length; i++) {
+            const transcript = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+              finalChunk += `${transcript} `;
+            } else {
+              interimChunk += transcript;
+            }
+          }
+          const combined = `${finalChunk}${interimChunk}`.trim();
+          if (combined) {
+            liveTranscriptRef.current = combined;
+            setInput(combined);
+          }
+        };
+        rec.onerror = () => {};
+        rec.start();
+        speechRecRef.current = rec;
+      } catch {
+        // Fallback to MediaRecorder Whisper STT
+      }
+    }
+
+    // 2. Start MediaRecorder for Local Whisper STT fallback
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
+      };
+
+      recorder.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        const browserText = liveTranscriptRef.current.trim();
+
+        // If Browser Web Speech API already captured speech cleanly, use it immediately!
+        if (browserText.length > 0) {
+          setVoiceStatus(`✅ Voice captured (${browserText.split(/\s+/).length} words)`);
+          setTimeout(() => setVoiceStatus(null), 3000);
+          if (autoSendVoice) {
+            await sendPromptText(browserText);
+          }
+          return;
+        }
+
+        // Otherwise, send recorded audio blob to Local Whisper STT (/api/companion/transcribe)
+        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        if (blob.size < 200) {
+          setVoiceStatus(null);
+          return;
+        }
+
+        setIsTranscribingVoice(true);
+        setVoiceStatus('⚡ Transcribing voice via Local Whisper STT...');
+        try {
+          const formData = new FormData();
+          formData.append('audio', blob, 'chat-voice.webm');
+          const res = await fetch('/api/companion/transcribe', {
+            method: 'POST',
+            body: formData
+          });
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.error || `STT HTTP ${res.status}`);
+          }
+          const data = await res.json();
+          if (data.transcription) {
+            setInput(data.transcription);
+            setVoiceStatus(`✅ Whisper STT transcribed (${data.transcription.split(/\s+/).length} words)`);
+            setTimeout(() => setVoiceStatus(null), 3000);
+            if (autoSendVoice) {
+              await sendPromptText(data.transcription);
+            }
+          }
+        } catch (err) {
+          setVoiceStatus(`⚠️ Voice STT unavailable (${err.message}). Use Chrome/Edge/Safari for instant Web Speech dictation.`);
+          setTimeout(() => setVoiceStatus(null), 5000);
+        } finally {
+          setIsTranscribingVoice(false);
+        }
+      };
+
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+      setIsRecordingVoice(true);
+    } catch (err) {
+      if (speechRecRef.current) {
+        setIsRecordingVoice(true);
+      } else {
+        setVoiceStatus(`⚠️ Microphone permission denied or unavailable: ${err.message}`);
+        setTimeout(() => setVoiceStatus(null), 4500);
+      }
     }
   };
 
@@ -572,15 +724,79 @@ export function CompanionView({ streak, onActionExecuted }) {
         ))}
       </div>
 
-      {/* Input Box */}
-      <form onSubmit={handleSend} style={{ display: 'flex', gap: 10 }}>
+      {/* Live Voice-to-Text Status Banner */}
+      {voiceStatus && (
+        <div
+          className="glass-card"
+          style={{
+            padding: '8px 14px',
+            borderLeft: `3px solid ${isRecordingVoice ? '#f87171' : 'var(--accent-cyan)'}`,
+            fontSize: '0.82rem',
+            fontFamily: 'var(--font-mono)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 10
+          }}
+        >
+          <span>{voiceStatus}</span>
+          <label
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              cursor: 'pointer',
+              fontSize: '0.75rem',
+              color: 'var(--text-muted)'
+            }}
+            title="Automatically send the chat message as soon as you stop speaking"
+          >
+            <input
+              type="checkbox"
+              checked={autoSendVoice}
+              onChange={(e) => setAutoSendVoice(e.target.checked)}
+              style={{ width: 14, height: 14, accentColor: 'var(--accent-cyan)' }}
+            />
+            Auto-Send on Stop
+          </label>
+        </div>
+      )}
+
+      {/* Input Box + Voice-to-Text Dictation Button */}
+      <form onSubmit={handleSend} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <button
+          id="btn-companion-voice"
+          type="button"
+          onClick={handleToggleVoiceChat}
+          disabled={isLoading || isTranscribingVoice}
+          className={isRecordingVoice ? 'btn-danger' : 'btn-secondary'}
+          style={{
+            padding: '10px 14px',
+            whiteSpace: 'nowrap',
+            borderColor: isRecordingVoice ? '#ef4444' : 'var(--accent-cyan)',
+            color: isRecordingVoice ? '#fff' : 'var(--accent-cyan)',
+            fontWeight: 700
+          }}
+          title="Speak your command or message (Web Speech live dictation + Local Whisper STT fallback)"
+        >
+          {isTranscribingVoice
+            ? '⚡ STT...'
+            : isRecordingVoice
+              ? '⏹️ Stop'
+              : '🎙️ Speak'}
+        </button>
         <input
           id="input-companion-chat"
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Ask for weather, Google Drive/Calendar/Gmail actions, web research, notes, or tasks..."
+          placeholder={
+            isRecordingVoice
+              ? 'Listening... speak your request (or type here)...'
+              : 'Speak (🎙️) or type: weather, Calendar/Gmail/Drive actions, reservations, traffic, tasks...'
+          }
           disabled={isLoading}
+          style={{ flex: 1 }}
         />
         <button id="btn-companion-send" type="submit" className="btn-primary" disabled={isLoading || !input.trim()}>
           <span>Send</span>
