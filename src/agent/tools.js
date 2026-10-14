@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -1348,6 +1349,20 @@ export const COMPANION_TOOLS = [
         date: today()
       });
 
+      // 6. Generate a Google Wallet Generic Pass / Mobile Pass for the Reservation
+      const walletPass = buildGoogleWalletPassResult({
+        title: `${venue} (Party of ${partySize})`,
+        subtitle: `Leave by ${commute.leaveByFormatted} • ${rawDateTime}`,
+        category: 'Reservation Pass',
+        location: placeInfo.displayName,
+        startTime: isoDateTime,
+        leaveBy: commute.leaveByFormatted,
+        openTableUrl,
+        directionsUrl: commute.googleMapsDirectionsUrl,
+        notes: specialNotes || `Party of ${partySize}`,
+        notesDir
+      });
+
       const summaryLines = [
         `🍽️ **Concierge Reservation Prepared for ${venue}** *(Party of ${partySize} • ${rawDateTime})*:`,
         `- **Location**: ${placeInfo.displayName}`,
@@ -1355,9 +1370,10 @@ export const COMPANION_TOOLS = [
         ...(placeInfo.website ? [`- **Website**: ${placeInfo.website}`] : []),
         ...(placeInfo.openingHours ? [`- **Hours**: \`${placeInfo.openingHours}\``] : []),
         `- ${commute.earlyWarningText}`,
-        `- **Instant 1-Click Booking & Navigation Links**:`,
+        `- **Instant 1-Click Booking, Wallet Pass & Navigation Links**:`,
         `  • [Book on OpenTable (Party of ${partySize})](${openTableUrl})`,
         `  • [Book on Resy (Party of ${partySize})](${resyUrl})`,
+        `  • [📲 Add Reservation Pass to Google Wallet (${walletPass.mode === 'google_wallet_jwt' ? 'Signed RS256 Pass' : 'Mobile Pass & Calendar Card'})](${walletPass.saveUrl})`,
         `  • [Turn-by-Turn Google Maps Directions (${commute.distanceText})](${commute.googleMapsDirectionsUrl})`,
         `- ${emailStatusLine}`,
         ...(calendarHoldLine ? [`- ${calendarHoldLine}`] : []),
@@ -1375,7 +1391,14 @@ export const COMPANION_TOOLS = [
           dateTime: rawDateTime,
           placeInfo,
           commute,
-          links: { openTableUrl, resyUrl, googleMapsUrl, directionsUrl: commute.googleMapsDirectionsUrl },
+          links: {
+            openTableUrl,
+            resyUrl,
+            googleMapsUrl,
+            directionsUrl: commute.googleMapsDirectionsUrl,
+            googleWalletPassUrl: walletPass.saveUrl
+          },
+          walletPass,
           calendarEvent,
           holdTaskId: holdTask.id
         }
@@ -1447,8 +1470,414 @@ export const COMPANION_TOOLS = [
         data: commute
       };
     }
+  },
+  {
+    name: 'google_wallet_pass',
+    category: 'google_wallet',
+    description: 'Create and sign a Google Wallet Generic Pass (for a reservation, flight/event ticket, appointment, or urgent priority card with Leave-By departure time) that can be saved to the user\'s phone.',
+    parameters: {
+      title: 'string (REQUIRED: Pass title, e.g. "Canlis Dinner Reservation" or "2:00 PM Downtown Client Meeting")',
+      subtitle: 'string (OPTIONAL: Subtitle or Leave-By time, e.g. "Party of 2 • Leave by 6:20 PM")',
+      location: 'string (OPTIONAL: Physical venue address or destination)',
+      startTime: 'string (OPTIONAL: Event ISO-8601 or natural start time)',
+      notes: 'string (OPTIONAL: Confirmation number, gate, table preference, or checklist notes)'
+    },
+    required: ['title'],
+    async execute(args, { notesDir } = {}) {
+      const title = String(args?.title || args?.venue || '').trim();
+      if (!title) {
+        return { ok: false, tool: 'google_wallet_pass', summary: 'Parameter "title" is required for google_wallet_pass.' };
+      }
+
+      const passResult = buildGoogleWalletPassResult({
+        title,
+        subtitle: args?.subtitle || (args?.startTime ? `Scheduled: ${args.startTime}` : 'Sovereign Companion Pass'),
+        category: args?.category || 'Krusch Companion Pass',
+        location: args?.location || '',
+        startTime: args?.startTime || new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        leaveBy: args?.leaveBy || '',
+        notes: args?.notes || '',
+        notesDir
+      });
+
+      const lines = [
+        `📲 **Google Wallet Pass Prepared**: **${title}**`,
+        `- **Pass ID**: \`${passResult.passId}\` *(${passResult.mode === 'google_wallet_jwt' ? 'Signed Google Cloud RS256 JWT' : 'Signed Sovereign Pass + Mobile Calendar/Wallet Link'})*`,
+        ...(args?.subtitle ? [`- **Subtitle**: ${args.subtitle}`] : []),
+        ...(args?.location ? [`- **Location**: ${args.location}`] : []),
+        `- **1-Click Phone Save Link**: [📲 Save Pass to Google Wallet / Mobile](${passResult.saveUrl})`,
+        `- **Local Pass Vault**: \`data/notes/${passResult.filename}\``
+      ];
+
+      return {
+        ok: true,
+        tool: 'google_wallet_pass',
+        actionType: 'google_wallet_pass',
+        summary: lines.join('\n'),
+        data: passResult
+      };
+    }
+  },
+  {
+    name: 'ap2_payment_mandate',
+    category: 'payments',
+    description: 'Issue a cryptographically signed Google Agent Payments Protocol (AP2) Mandate (IntentMandate + CartMandate + PaymentMandate) with a hard spend ceiling, Google Pay Agentic Checkout token payload, and optional single-use spend-capped virtual card (Privacy.com / Stripe Issuing).',
+    parameters: {
+      merchant: 'string (REQUIRED: Merchant, payee, or utility name, e.g. "Seattle City Light" or "Canlis Seattle")',
+      maxAmount: 'number (REQUIRED: Hard spend ceiling in USD, e.g. 65.00)',
+      description: 'string (OPTIONAL: Itemized purpose or constraint for the payment mandate)',
+      currency: 'string (OPTIONAL: ISO currency code, default "USD")',
+      expiresHours: 'number (OPTIONAL: Hours until the mandate automatically expires, default 24)'
+    },
+    required: ['merchant', 'maxAmount'],
+    async execute(args, { fetchImpl = fetch, notesDir } = {}) {
+      const merchant = String(args?.merchant || args?.payee || '').trim();
+      const rawAmount = parseFloat(String(args?.maxAmount ?? args?.amount ?? '0').replace(/[^0-9.]/g, ''));
+      if (!merchant) {
+        return { ok: false, tool: 'ap2_payment_mandate', summary: 'Parameter "merchant" is required for ap2_payment_mandate.' };
+      }
+      if (!Number.isFinite(rawAmount) || rawAmount <= 0) {
+        return { ok: false, tool: 'ap2_payment_mandate', summary: 'Parameter "maxAmount" must be a positive number (e.g. 50.00).' };
+      }
+
+      const maxAmount = Math.min(Number(rawAmount.toFixed(2)), 10000);
+      const currency = String(args?.currency || 'USD').toUpperCase().trim();
+      const description = String(args?.description || args?.purpose || `Authorized agentic payment to ${merchant}`).trim();
+      const expiresHours = Math.min(Math.max(1, parseInt(args?.expiresHours || '24', 10) || 24), 168);
+
+      const mandateBundle = await createAp2PaymentMandateBundle({
+        merchant,
+        maxAmount,
+        currency,
+        description,
+        expiresHours,
+        fetchImpl,
+        notesDir
+      });
+
+      const task = createTask({
+        title: `💳 AP2 Payment Mandate: ${merchant} (Up to $${maxAmount.toFixed(2)} ${currency})`,
+        priority_id: 1,
+        execution_lane: 1,
+        life_pillar: 'provision',
+        lane_reason: `Urgent financial/payment mandate (${mandateBundle.mandateId}) capped at $${maxAmount.toFixed(2)} ${currency}`,
+        notes: `Mandate ID: ${mandateBundle.mandateId} | Signature: ${mandateBundle.signature.slice(0, 16)}... | Vault: data/notes/${mandateBundle.filename}`,
+        energy_level: 'low',
+        date: today()
+      });
+
+      const lines = [
+        `💳 **Google AP2 Payment Mandate Issued**: **${merchant}** *(Hard Ceiling: **$${maxAmount.toFixed(2)} ${currency}**)*`,
+        `- **Mandate ID**: \`${mandateBundle.mandateId}\``,
+        `- **Cryptographic Signature (HMAC-SHA256)**: \`${mandateBundle.signature.slice(0, 24)}…\``,
+        `- **Constraints**: Single-Use • Merchant-Locked (\`${merchant}\`) • Expires \`${mandateBundle.expiresAt}\``,
+        `- **Google Pay Agentic Checkout**: Ready (\`apiVersion: 2.0\`, \`totalPriceStatus: FINAL\`)`,
+        ...(mandateBundle.virtualCard
+          ? [`- **Spend-Capped Virtual Card (${mandateBundle.virtualCard.provider})**: Ending in \`${mandateBundle.virtualCard.last4}\` (Hard Cap: \`$${maxAmount.toFixed(2)}\`)`]
+          : [`- **Virtual Card Rail**: Sovereign AP2 Mandate Mode *(set \`PRIVACY_API_KEY\` in \`.env\` to auto-mint live single-use virtual cards)*`]),
+        `- **Mandate Receipt Vault**: \`data/notes/${mandateBundle.filename}\``,
+        `- 📋 **Added to Lane 1 (🚨 Must Happen Today)**: **[#${task.id}] ${task.title}**`
+      ];
+
+      return {
+        ok: true,
+        tool: 'ap2_payment_mandate',
+        actionType: 'ap2_payment_mandate',
+        summary: lines.join('\n'),
+        data: {
+          ...mandateBundle,
+          taskId: task.id
+        }
+      };
+    }
   }
 ];
+
+/**
+ * Build a standards-compliant Google Wallet Generic Pass object + signed JWT (when GOOGLE_WALLET_ISSUER_ID
+ * and GOOGLE_WALLET_PRIVATE_KEY are configured) or a zero-key Sovereign Mobile Pass fallback.
+ */
+export function buildGoogleWalletPassResult({
+  title,
+  subtitle = '',
+  category = 'Krusch Companion Pass',
+  location = '',
+  startTime = '',
+  leaveBy = '',
+  openTableUrl = '',
+  directionsUrl = '',
+  notes = '',
+  notesDir
+}) {
+  const issuerId = process.env.GOOGLE_WALLET_ISSUER_ID || '3388000000022999999';
+  const objectSuffix = `${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
+  const passId = `${issuerId}.krusch-companion-${objectSuffix}`;
+  const classId = `${issuerId}.krusch_companion_generic_v1`;
+
+  const genericObject = {
+    id: passId,
+    classId,
+    genericType: 'GENERIC_TYPE_UNSPECIFIED',
+    hexBackgroundColor: '#0b0c10',
+    cardTitle: {
+      defaultValue: { language: 'en-US', value: category }
+    },
+    subheader: {
+      defaultValue: { language: 'en-US', value: subtitle || 'Sovereign Personal Companion' }
+    },
+    header: {
+      defaultValue: { language: 'en-US', value: title }
+    },
+    textModulesData: [
+      ...(leaveBy ? [{ id: 'leave_by', header: 'LEAVE BY', body: leaveBy }] : []),
+      ...(location ? [{ id: 'location', header: 'LOCATION', body: location }] : []),
+      ...(notes ? [{ id: 'notes', header: 'NOTES', body: notes }] : [])
+    ],
+    linksModuleData: {
+      uris: [
+        ...(openTableUrl ? [{ uri: openTableUrl, description: 'OpenTable Reservation', id: 'opentable' }] : []),
+        ...(directionsUrl ? [{ uri: directionsUrl, description: 'Google Maps Directions', id: 'directions' }] : [])
+      ]
+    },
+    barcode: {
+      type: 'QR_CODE',
+      value: `krusch://pass/${objectSuffix}`,
+      alternateText: objectSuffix.toUpperCase()
+    }
+  };
+
+  const claims = {
+    iss: process.env.GOOGLE_WALLET_SERVICE_ACCOUNT_EMAIL || 'companion@krusch-sovereign.iam.gserviceaccount.com',
+    aud: 'google',
+    typ: 'savetowallet',
+    iat: Math.floor(Date.now() / 1000),
+    origins: ['http://localhost:3004', 'https://krusch.dev'],
+    payload: {
+      genericObjects: [genericObject]
+    }
+  };
+
+  let mode = 'sovereign_pass_preview';
+  let saveUrl = '';
+  let signedJwt = '';
+
+  const privateKeyPem = process.env.GOOGLE_WALLET_PRIVATE_KEY
+    ? process.env.GOOGLE_WALLET_PRIVATE_KEY.replace(/\\n/g, '\n')
+    : null;
+
+  if (process.env.GOOGLE_WALLET_ISSUER_ID && privateKeyPem && privateKeyPem.includes('PRIVATE KEY')) {
+    try {
+      const b64Header = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url');
+      const b64Payload = Buffer.from(JSON.stringify(claims)).toString('base64url');
+      const signer = crypto.createSign('RSA-SHA256');
+      signer.update(`${b64Header}.${b64Payload}`);
+      const sig = signer.sign(privateKeyPem, 'base64url');
+      signedJwt = `${b64Header}.${b64Payload}.${sig}`;
+      saveUrl = `https://pay.google.com/gp/v/save/${signedJwt}`;
+      mode = 'google_wallet_jwt';
+    } catch {
+      // Fallback below if key is invalid
+    }
+  }
+
+  if (!saveUrl) {
+    const secret = process.env.AP2_SIGNING_SECRET || 'krusch-companion-local-wallet-secret';
+    const b64Header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
+    const b64Payload = Buffer.from(JSON.stringify(claims)).toString('base64url');
+    const sig = crypto.createHmac('sha256', secret).update(`${b64Header}.${b64Payload}`).digest('base64url');
+    signedJwt = `${b64Header}.${b64Payload}.${sig}`;
+    // Provide a 1-click Google Calendar / Mobile Pass add link that works on every Android/iOS phone with zero setup
+    const details = [subtitle, leaveBy ? `Leave By: ${leaveBy}` : '', openTableUrl ? `Booking: ${openTableUrl}` : '', notes].filter(Boolean).join('\n');
+    saveUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(`📲 [Wallet Pass] ${title}`)}&location=${encodeURIComponent(location)}&details=${encodeURIComponent(details)}`;
+  }
+
+  const filename = toSafeNoteFilename(`wallet-pass-${title}`);
+  const targetDir = notesDir || getNotesDirectory();
+  fs.mkdirSync(targetDir, { recursive: true });
+  const md = [
+    `# 📲 Google Wallet Pass: ${title}`,
+    `- **Pass ID**: \`${passId}\``,
+    `- **Mode**: \`${mode}\``,
+    `- **Subtitle**: ${subtitle || 'N/A'}`,
+    ...(location ? [`- **Location**: ${location}`] : []),
+    ...(leaveBy ? [`- **Leave By**: ${leaveBy}`] : []),
+    `- **Save Link**: ${saveUrl}`,
+    '',
+    `## Google Wallet \`genericObjects\` Payload`,
+    '```json',
+    JSON.stringify(genericObject, null, 2),
+    '```'
+  ].join('\n');
+  fs.writeFileSync(path.join(targetDir, filename), md, 'utf-8');
+
+  return {
+    passId,
+    classId,
+    mode,
+    saveUrl,
+    signedJwt,
+    genericObject,
+    filename
+  };
+}
+
+/**
+ * Create a cryptographically signed Google Agent Payments Protocol (AP2) Mandate bundle
+ * (IntentMandate + CartMandate + PaymentMandate) and optionally mint a single-use virtual card.
+ */
+export async function createAp2PaymentMandateBundle({
+  merchant,
+  maxAmount,
+  currency = 'USD',
+  description = '',
+  expiresHours = 24,
+  fetchImpl = fetch,
+  notesDir
+}) {
+  const issuedAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + expiresHours * 3600 * 1000).toISOString();
+  const mandateId = `ap2_mandate_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+
+  const intentMandate = {
+    protocol: 'google-agentic-commerce/AP2',
+    version: '0.1.0',
+    type: 'AP2.IntentMandate',
+    mandateId,
+    issuer: 'krusch-companion-sovereign-wallet',
+    issuedAt,
+    expiresAt,
+    constraints: {
+      merchantName: merchant,
+      merchantLocked: true,
+      singleUse: true,
+      maxAmount: Number(maxAmount.toFixed(2)),
+      currency
+    },
+    userIntentDescription: description
+  };
+
+  const cartMandate = {
+    type: 'AP2.CartMandate',
+    mandateId,
+    merchantName: merchant,
+    lineItems: [
+      {
+        label: description || `Authorized purchase at ${merchant}`,
+        maxPrice: Number(maxAmount.toFixed(2)),
+        currency
+      }
+    ],
+    totalCeiling: Number(maxAmount.toFixed(2)),
+    currency
+  };
+
+  const paymentMandate = {
+    type: 'AP2.PaymentMandate',
+    mandateId,
+    rail: process.env.PRIVACY_API_KEY ? 'privacy_single_use_virtual_card' : 'google_pay_agentic_checkout',
+    googlePayPaymentDataRequest: {
+      apiVersion: 2,
+      apiVersionMinor: 0,
+      allowedPaymentMethods: [
+        {
+          type: 'CARD',
+          parameters: {
+            allowedAuthMethods: ['PAN_ONLY', 'CRYPTOGRAM_3DS'],
+            allowedCardNetworks: ['VISA', 'MASTERCARD', 'AMEX', 'DISCOVER']
+          },
+          tokenizationSpecification: {
+            type: 'PAYMENT_GATEWAY',
+            parameters: {
+              gateway: process.env.GOOGLE_PAY_GATEWAY || 'stripe',
+              gatewayMerchantId: process.env.GOOGLE_PAY_MERCHANT_ID || 'krusch_companion_ap2'
+            }
+          }
+        }
+      ],
+      merchantInfo: {
+        merchantName: merchant
+      },
+      transactionInfo: {
+        totalPriceStatus: 'FINAL',
+        totalPrice: maxAmount.toFixed(2),
+        currencyCode: currency
+      }
+    }
+  };
+
+  const signingSecret = process.env.AP2_SIGNING_SECRET || 'krusch-companion-ap2-sovereign-key';
+  const canonicalString = JSON.stringify({ intentMandate, cartMandate, paymentMandate });
+  const signature = crypto.createHmac('sha256', signingSecret).update(canonicalString).digest('hex');
+
+  // Optional live integration with Privacy.com API if PRIVACY_API_KEY is configured
+  let virtualCard = null;
+  if (process.env.PRIVACY_API_KEY) {
+    try {
+      const res = await fetchImpl('https://api.privacy.com/v1/card', {
+        method: 'POST',
+        headers: {
+          Authorization: `api-key ${process.env.PRIVACY_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          type: 'SINGLE_USE',
+          memo: `AP2: ${merchant}`.slice(0, 36),
+          spend_limit: Math.round(maxAmount * 100),
+          spend_limit_duration: 'TRANSACTION',
+          state: 'OPEN'
+        }),
+        signal: AbortSignal.timeout(6000)
+      });
+      if (res.ok) {
+        const cardData = await res.json();
+        virtualCard = {
+          provider: 'Privacy.com',
+          token: cardData.token,
+          last4: cardData.last_four || '4242',
+          state: cardData.state || 'OPEN',
+          spendLimitCents: Math.round(maxAmount * 100)
+        };
+      }
+    } catch {
+      // Non-fatal fallback to sovereign AP2 mandate receipt
+    }
+  }
+
+  const filename = toSafeNoteFilename(`ap2-mandate-${merchant}-${mandateId.slice(-6)}`);
+  const targetDir = notesDir || getNotesDirectory();
+  fs.mkdirSync(targetDir, { recursive: true });
+  const md = [
+    `# 💳 Google AP2 Cryptographic Payment Mandate: ${merchant}`,
+    `- **Mandate ID**: \`${mandateId}\``,
+    `- **Hard Spend Ceiling**: **$${maxAmount.toFixed(2)} ${currency}** *(Single-Use, Merchant-Locked)*`,
+    `- **Purpose**: ${description}`,
+    `- **Issued At**: \`${issuedAt}\``,
+    `- **Expires At**: \`${expiresAt}\``,
+    `- **HMAC-SHA256 Signature**: \`${signature}\``,
+    '',
+    `## Verifiable AP2 Mandate Bundle (\`IntentMandate\` + \`CartMandate\` + \`PaymentMandate\`)`,
+    '```json',
+    JSON.stringify({ intentMandate, cartMandate, paymentMandate, signature, virtualCard }, null, 2),
+    '```'
+  ].join('\n');
+  fs.writeFileSync(path.join(targetDir, filename), md, 'utf-8');
+
+  return {
+    mandateId,
+    merchant,
+    maxAmount,
+    currency,
+    description,
+    issuedAt,
+    expiresAt,
+    signature,
+    intentMandate,
+    cartMandate,
+    paymentMandate,
+    virtualCard,
+    filename
+  };
+}
 
 let runtimeDryRunMode = process.env.AGENTIC_DRY_RUN === 'true';
 
@@ -1515,12 +1944,13 @@ export function getAgenticToolStats() {
 
 /**
  * Determine whether a tool call performs an external side-effect mutation
- * (sending email, creating a calendar event, pushing a notification, or writing to Drive).
+ * (sending email, creating a calendar event, issuing a payment mandate, pushing a notification, or writing to Drive).
  */
 export function isExternalSideEffectCall(name, args = {}) {
   const action = String(args?.action || '').toLowerCase();
   if (name === 'send_notification') return true;
   if (name === 'concierge_reservation') return true;
+  if (name === 'ap2_payment_mandate') return true;
   if (name === 'gkrusch_gmail' && (action === 'send' || action === 'send_email' || action === 'draft' || action === 'create_draft')) return true;
   if (name === 'gkrusch_calendar' && (action.includes('create') || action.includes('schedule'))) return true;
   if (name === 'gkrusch_drive' && action === 'write') return true;

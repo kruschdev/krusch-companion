@@ -324,6 +324,54 @@ test('Hardening: <holodata> Confidence Scoring, Dynamic Tool Pruning Report & Ma
   assert.ok(Array.isArray(getFailedToolCallLogs()));
 });
 
+test('Hardening: Google AP2 Payment Mandate (Confirm-Before-Act Gate + HMAC-SHA256 Signature) & Google Wallet Pass', async () => {
+  // 1. Verify AP2 Payment Mandate is gated by Confirm-Before-Act when dryRunMode is true
+  setAgenticDryRunMode(true);
+  const dryRunMandate = await executeCompanionTool('ap2_payment_mandate', {
+    merchant: 'Seattle City Light',
+    maxAmount: 65.0,
+    description: 'Monthly electric utility bill'
+  });
+  assert.strictEqual(dryRunMandate.ok, true);
+  assert.strictEqual(dryRunMandate.dryRun, true);
+  assert.strictEqual(dryRunMandate.confirmationRequired, true);
+  setAgenticDryRunMode(false);
+
+  // 2. Execute confirmed AP2 Payment Mandate and verify IntentMandate, CartMandate, PaymentMandate & HMAC-SHA256 signature
+  const liveMandate = await executeCompanionTool('ap2_payment_mandate', {
+    merchant: 'Seattle City Light',
+    maxAmount: 65.0,
+    description: 'Monthly electric utility bill'
+  });
+  assert.strictEqual(liveMandate.ok, true);
+  assert.strictEqual(liveMandate.actionType, 'ap2_payment_mandate');
+  assert.ok(liveMandate.data.mandateId.startsWith('ap2_mandate_'));
+  assert.strictEqual(liveMandate.data.signature.length, 64);
+  assert.strictEqual(liveMandate.data.intentMandate.constraints.maxAmount, 65.0);
+  assert.strictEqual(liveMandate.data.intentMandate.constraints.merchantLocked, true);
+  assert.strictEqual(liveMandate.data.paymentMandate.googlePayPaymentDataRequest.apiVersion, 2);
+
+  // 3. Execute Google Wallet Pass creation and verify genericObjects + saveUrl
+  const walletRes = await executeCompanionTool('google_wallet_pass', {
+    title: 'Canlis Dinner Reservation',
+    subtitle: 'Party of 2 • Leave by 6:20 PM',
+    location: '2576 Aurora Ave N, Seattle, WA'
+  });
+  assert.strictEqual(walletRes.ok, true);
+  assert.strictEqual(walletRes.actionType, 'google_wallet_pass');
+  assert.ok(walletRes.data.passId.includes('krusch-companion-'));
+  assert.ok(walletRes.data.saveUrl.startsWith('https://'));
+  assert.ok(walletRes.data.genericObject.header.defaultValue.value === 'Canlis Dinner Reservation');
+
+  // 4. Verify deterministic fallback extraction for both AP2 payments and Google Wallet passes
+  const ap2Fallback = inferFallbackToolCalls('Authorize a $65 payment mandate for Seattle City Light');
+  assert.strictEqual(ap2Fallback[0]?.name, 'ap2_payment_mandate');
+  assert.strictEqual(ap2Fallback[0]?.arguments?.maxAmount, 65);
+
+  const walletFallback = inferFallbackToolCalls('Add a Google Wallet pass for Canlis Dinner at 7pm');
+  assert.strictEqual(walletFallback[0]?.name, 'google_wallet_pass');
+});
+
 test('Hardening: Cleanup test artifacts', () => {
   if (fs.existsSync(testDbPath)) fs.unlinkSync(testDbPath);
   if (fs.existsSync(`${testDbPath}-wal`)) fs.unlinkSync(`${testDbPath}-wal`);

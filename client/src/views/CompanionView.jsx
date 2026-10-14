@@ -24,6 +24,8 @@ const ACTION_LABELS = {
   google_gmail: { icon: '✉️', label: 'G-Krusch: Gmail Extension', color: '#f87171' },
   concierge_reservation: { icon: '🍽️', label: 'Agentic Proxy: Concierge Reservation', color: '#f0c040' },
   commute_departure: { icon: '🚗', label: 'Agentic Proxy: Traffic & Time-to-Leave', color: '#38bdf8' },
+  google_wallet_pass: { icon: '📲', label: 'Google Wallet: Generic Pass Issued', color: '#2dd4bf' },
+  ap2_payment_mandate: { icon: '💳', label: 'Google AP2: Signed Payment Mandate', color: '#f0c040' },
   agentic_tool: { icon: '⚡', label: 'Agentic Proxy: Tool Executed', color: '#00f0ff' }
 };
 
@@ -706,11 +708,12 @@ export function CompanionView({ streak, onActionExecuted }) {
       {/* Quick Starters */}
       <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
         {[
+          'Authorize a $65 payment mandate for Seattle City Light',
+          'Add a Google Wallet pass for Canlis Dinner at 7pm',
+          'Book a reservation at Canlis Seattle for 2 at 7pm',
           "What's the weather in Seattle?",
           'Search my Google Drive for project specs',
           "What's on my Google Calendar today?",
-          'Check system status',
-          'Save a note titled Weekly Goals: Ship v2.0 & review priorities',
           'Show my tasks for today'
         ].map((quick, idx) => (
           <button

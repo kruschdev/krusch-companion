@@ -91,6 +91,16 @@ const INTENT_PATTERNS = [
     category: 'commute',
     tools: ['commute_departure_check'],
     regex: /\b(?:when\s+(?:do\s+i\s+need\s+to|should\s+i)\s+leave|time\s+to\s+leave|check\s+traffic|how(?:'s|\s+is)\s+traffic|drive\s+time\s+to|travel\s+time\s+to|directions\s+to|commute\s+to|leave\s+early)\b/i
+  },
+  {
+    category: 'google_wallet',
+    tools: ['google_wallet_pass'],
+    regex: /\b(?:google\s+wallet|(?:add|push|save|create|issue)\s+(?:a\s+|an\s+|my\s+)?(?:wallet\s+)?pass|wallet\s+pass|boarding\s+pass\s+to\s+wallet)\b/i
+  },
+  {
+    category: 'payments',
+    tools: ['ap2_payment_mandate'],
+    regex: /\b(?:ap2|payment\s+mandate|agent\s+payment|google\s+pay|virtual\s+card|authorize\s+(?:a\s+|an\s+)?(?:\$?\d+(?:\.\d{2})?\s+)?payment|issue\s+(?:a\s+|an\s+)?(?:payment\s+)?mandate|pay\s+\$?\d+(?:\.\d{2})?\s+(?:to|for|at))\b/i
   }
 ];
 
@@ -451,7 +461,7 @@ export function inferFallbackToolCalls(prompt, matchedCategories = []) {
     });
   }
 
-  if (matchedCategories.includes('board')) {
+  if (categories.includes('board')) {
     const addTaskMatch = text.match(/\b(?:add|create|schedule)\s+(?:a\s+)?task\s+(?:to\s+)?(.+?)$/i);
     if (addTaskMatch) {
       calls.push({
@@ -459,6 +469,37 @@ export function inferFallbackToolCalls(prompt, matchedCategories = []) {
         arguments: { action: 'add_task', title: addTaskMatch[1].trim() }
       });
     }
+  }
+
+  if (categories.includes('google_wallet')) {
+    const titleMatch =
+      text.match(/\b(?:pass\s+for|wallet\s+for|add|push|save)\s+(.+?)(?:\s+to\s+google\s+wallet|[?.!]|$)/i);
+    const title = (titleMatch ? titleMatch[1] : text)
+      .replace(/^(?:a\s+|an\s+|my\s+)?(?:google\s+wallet\s+pass|wallet\s+pass)\s*(?:for|:)?\s*/i, '')
+      .trim() || 'Krusch Companion Pass';
+    calls.push({
+      name: 'google_wallet_pass',
+      tool: 'google_wallet_pass',
+      arguments: { title }
+    });
+  }
+
+  if (categories.includes('payments')) {
+    const amountMatch = text.match(/\$\s*(\d+(?:\.\d{1,2})?)|\b(\d+(?:\.\d{1,2})?)\s*(?:dollars|usd)\b/i);
+    const maxAmount = amountMatch ? parseFloat(amountMatch[1] || amountMatch[2]) : 50.0;
+    const merchantMatch =
+      text.match(/\b(?:to|for|at)\s+([A-Z][A-Za-z0-9\s,'&.-]+?)(?:\s+(?:up\s+to|for\s+\$|with\s+a|expires?)\b|[?.!]|$)/) ||
+      text.match(/\b(?:pay|mandate\s+for)\s+([A-Za-z0-9\s,'&.-]+?)(?:\s+\$|\s+up\s+to|[?.!]|$)/i);
+    const merchant = (merchantMatch ? merchantMatch[1] : 'Authorized Merchant').trim();
+    calls.push({
+      name: 'ap2_payment_mandate',
+      tool: 'ap2_payment_mandate',
+      arguments: {
+        merchant,
+        maxAmount,
+        description: text
+      }
+    });
   }
 
   return calls;
