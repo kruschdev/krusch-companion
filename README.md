@@ -9,53 +9,58 @@
 <p align="center">
   <a href="https://github.com/kruschdev/krusch-companion/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="License"></a>
   <img src="https://img.shields.io/badge/node-%3E%3D22.0.0-green.svg?style=flat-square" alt="Node Version">
-  <a href="https://github.com/kruschdev/krusch-cascade-router"><img src="https://img.shields.io/badge/Router-krusch--cascade--router-cyan.svg?style=flat-square" alt="Powered By krusch-cascade-router"></a>
-  <a href="https://github.com/kruschdev/krusch-context-mcp"><img src="https://img.shields.io/badge/Memory-KruschContext%20Engine-purple.svg?style=flat-square" alt="KruschContext Engine"></a>
-  <a href="https://github.com/kruschdev/krusch-agentic-mcp"><img src="https://img.shields.io/badge/Agentic%20Proxy-%3Cholodata%3E%20Dual--Engine-orange.svg?style=flat-square" alt="Krusch Agentic Proxy"></a>
-  <a href="https://github.com/kruschdev/G-krusch"><img src="https://img.shields.io/badge/Workspace-G--Krusch%20Extensions-4285F4.svg?style=flat-square" alt="G-Krusch Google Workspace Extensions"></a>
+  <img src="https://img.shields.io/badge/Cascade%20Router-%3C15%C2%B5s%20L0%20%2B%20L1%2FL2-cyan.svg?style=flat-square" alt="Cascade Router">
+  <img src="https://img.shields.io/badge/Memory-Temporal%20Superseding-purple.svg?style=flat-square" alt="Working Memory">
+  <img src="https://img.shields.io/badge/Agentic%20Proxy-%3Cholodata%3E%20%2B%20Confirm%20Gate-orange.svg?style=flat-square" alt="Agentic Proxy">
+  <img src="https://img.shields.io/badge/Voice--to--Text-Web%20Speech%20%2B%20Whisper%20STT-2dd4bf.svg?style=flat-square" alt="Voice-to-Text">
   <a href="https://github.com/kruschdev/krusch-companion/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/CI-passing-brightgreen.svg?style=flat-square" alt="CI"></a>
-  <img src="https://img.shields.io/badge/tests-39%20passed-brightgreen.svg?style=flat-square" alt="Tests Passed">
+  <img src="https://img.shields.io/badge/tests-45%20passed-brightgreen.svg?style=flat-square" alt="Tests Passed">
 </p>
 
 ---
 
 ## 💡 What It Does For You
 
-**Krusch Companion** is a sovereign, local-first personal AI assistant and daily companion—a 100% private, user-owned alternative to **OpenClaw / Grokbot**, **Meta Muse**, or **OpenAI Dot**. Instead of surrendering your personal thoughts, daily schedule, and life notes to centralized cloud data centers, Companion runs on your own hardware—turning raw voice streams into clear daily priorities via a **Dual-Axis Priority Board (`Execution Priority Lanes 1–4` × `6 Life Pillar Tags`)**, executing **14 live external APIs, concierge reservations, live traffic & Time-to-Leave alerts, Google Workspace extensions, and multi-step personal assistant actions** via the **Krusch Agentic Proxy (`<holodata>` Dual-Engine)**, running a **Multi-Channel Zero-Token Proactive Sentinel Watchdog Daemon** that polls **Gmail, Google Calendar, and Live Route Traffic** on CPU and wakes the LLM only when an actionable event occurs, maintaining durable working memory across conversations, and providing supportive morning briefings and evening reflections.
+**Krusch Companion** is a **100% standalone**, local-first personal AI assistant and daily companion—a user-owned alternative to **OpenClaw / Grokbot**, **Meta Muse**, or **OpenAI Dot**. Instead of surrendering your personal thoughts, daily schedule, and life notes to centralized cloud data centers, Companion runs on your own hardware (or in Zero-GPU OpenRouter Zero-Data-Retention mode)—providing **hands-free Voice-to-Text (`🎙️ Speak` with `Auto-Send on Stop`) directly in both Companion Chat and Thought Stream**, turning rambling voice streams into clear daily priorities via a **Dual-Axis Priority Board (`Execution Priority Lanes 1–4` × `6 Life Pillar Tags`)**, executing **14 live external APIs, concierge reservations, live traffic & Time-to-Leave alerts, Google Workspace extensions, and multi-step personal assistant actions** via the **Krusch Agentic Proxy (`<holodata>` Dual-Engine with Confidence Scoring & Side-Effect Confirmation Gates)**, running a **Multi-Channel Zero-Token Proactive Sentinel Watchdog Daemon** that polls **Gmail, Google Calendar, and Live Route Traffic** on CPU and wakes the LLM only when an actionable event occurs, and maintaining durable working memory with temporal fact superseding across conversations.
 
 ### 🔄 The Daily Loop
 
 ```
   ┌─────────────────┐       ┌─────────────────┐       ┌─────────────────┐       ┌─────────────────┐
-  │ 1. Thought      │  ──►  │ 2. Dual-Axis    │  ──►  │ 3. Agentic      │  ──►  │ 4. Focus &      │
-  │    Stream       │       │    Board        │       │    Proxy (<holo>│       │    Reflection   │
-  │ Voice or text   │       │ 4 lanes × 6 tags│       │ 14 live APIs    │       │ Timer & wins    │
+  │ 1. Voice-First  │  ──►  │ 2. Dual-Axis    │  ──►  │ 3. Agentic      │  ──►  │ 4. Focus,       │
+  │    Capture      │       │    Board        │       │    Proxy (<holo>│       │    Memory &     │
+  │ Chat & Stream   │       │ 4 lanes × 6 tags│       │ 14 APIs + Gate  │       │    Weekly Review│
   └─────────────────┘       └─────────────────┘       └─────────────────┘       └─────────────────┘
 ```
 
-1. **Thought Stream (Capture)**: Speak into the microphone or paste an unfiltered stream-of-consciousness thought stream.
-2. **Dual-Axis Triage (Organize)**: Traditional single-tier boards suffer from the *"Priority Paradox"*—even though *Core Values & Faith* or *Family* are your highest macro values, real-life responsibilities that provide for your family (paying the electric bill before 5pm, shipping a client deliverable, or fixing a broken lock) cannot sit at the bottom of the board underneath non-urgent daily habits. Companion resolves this by classifying every task across **two orthogonal axes**:
+1. **Hands-Free Voice-to-Text Everywhere (Chat & Thought Stream)**:
+   - **In Companion Chat (`🎙️ Speak` / `⏹️ Stop`)**: Dictate any question or multi-step command with real-time Browser Web Speech API streaming into the chat box + automatic Local Whisper STT fallback (`POST /api/companion/transcribe`) and an **`Auto-Send on Stop`** toggle so you never have to type long prompts by hand.
+   - **In Thought Stream (`🌊 Thought Stream`)**: Speak or paste an unfiltered stream-of-consciousness dump (or click **`✨ Try Sample Thought Stream`** for a 1-click demo). Includes **Speaker Diarization & Clause-Intent Post-Processing** ([`classifyTranscriptSegments`](src/services/chaos-dump.js)) that labels each clause (`urgent_task`, `habit_task`, `focus_task`, `memory_fact`, `context_note`) and speaker (`Speaker 1`, `Speaker 2`, `Self`).
+2. **Dual-Axis Triage (Resolving the Priority Paradox)**: Traditional single-tier boards suffer from the *"Priority Paradox"*—even though *Core Values & Faith* or *Family* are your highest macro values, real-life responsibilities that provide for your family (paying the electric bill before 5pm, shipping a client deliverable, or fixing a broken lock) cannot sit at the bottom of the board underneath non-urgent daily habits. Companion classifies every task across **two orthogonal axes**:
    - **Axis 1 — Execution Priority Lanes (Board Order)**:
      1. **`🚨 Must Happen Today — Deadlines & Provision`**: Time-sensitive deadlines, bills, client deliverables, appointments, and urgent life necessities that keep life running.
      2. **`⚡ High-Impact Focus — Move the Needle`**: Important daily work, family commitments, and meaningful progress.
      3. **`🌱 Daily Habits & Anchors`**: Recurring daily anchors (prayer/reflection, hydration, reading, stretching) that keep you grounded without burying urgent deadlines.
      4. **`📥 Backlog — When Time Permits`**: Low-urgency ideas and someday tasks.
    - **Axis 2 — Life Pillar Tags (Color-Coded Badges)**: `🙏 Core Values & Faith`, `💕 Family & Partner`, `👧 Children & Loved Ones`, `💪 Health & Self`, `🔧 Work & Mastery`, and `🏠 Provision & Finance`.
-3. **Today's Board & Lifecycle (Execute)**: Tactile daily board grouped by **Execution Priority** (with a 1-click toggle to group by **Life Pillar**), 1-click **`🚨 Must-Do`** promotion on any task card, automatic daily recurring habit seeding, 1-click **"↻ Roll Over Unfinished"** task migration from prior days, 1-click **"🧩 Steps"** task decomposition, gamified checkmarks, and streak tracking.
-4. **Agentic Action Proxy & L0 Commands (Act)**:
+3. **Today's Board, Bulk Actions & 7-Day Weekly Review (Execute)**:
+   - Tactile daily board grouped by **Execution Priority** (with a 1-click toggle to group by **Life Pillar**), *"Why this lane?"* (`lane_reason`) explanations on every card, a live **Life-Pillar Balance Strip**, keyboard shortcuts (`N` = New Task, `G` = Group Mode, `R` = Rollover, `W` = Weekly Review), 1-click **`🚨 Must-Do`** promotion, **Bulk Actions** (**`🌱 Habits Done`**, **`🧹 Clear Done`**), 1-click **"🧩 Steps"** task decomposition, and an expandable **📅 7-Day Weekly Review & Life-Pillar Analytics** panel (`GET /api/tasks/weekly-review`).
+4. **Agentic Action Proxy, Confidence Scoring & Confirmation Gates (Act)**:
    - **Instant `<15µs` L0 CPU Commands (`$0.00` Token Cost)**: `Add task`, `Prioritize task / Make task urgent`, `Complete task`, `Delete task`, `Show my tasks`, `Roll over unfinished tasks`, `Break down task into steps`, `Instead of X, remember that Y`, plus safe AST arithmetic.
-   - **14-Tool `<holodata>` Dual-Engine Agentic Proxy + G-Krusch Google Workspace Extensions**: Enables local 7B/14B models (or OpenRouter 32B/72B specialists) to execute real APIs and multi-step chains with automatic upstream-to-downstream data piping.
-5. **Focus Mode & Coach Briefings (Deep Work & Review)**: Fullscreen distraction-free timer with ambient progress ring, AI micro-nudges (`"Just do 3 minutes"`), morning focus alignment, and evening wins reflection.
+   - **14-Tool `<holodata>` Dual-Engine Agentic Proxy**: Enables local 7B/14B models (or OpenRouter 32B/72B specialists) to execute real APIs and multi-step chains with explicit **extraction confidence scoring (`🎯 % Conf`)**, **60-second TTL caching** on idempotent read tools, and an optional **Confirm-Before-Act (`dryRunMode`)** gate with an inline **`✅ Confirm & Execute`** button for external side-effect tools (Gmail, Calendar, Reservations, Push Alerts).
+5. **Working Memory Hygiene, Routing Inspector & Focus Mode**:
+   - Dedicated **`🧠 Memory & Inspector`** view to browse active 5-taxonomy facts, supersede outdated habits with 1 click, inspect **Temporal Superseding Lineage History**, review **30-Day Decay Candidates**, export all tasks & memories to **Markdown or JSON**, and inspect live **Cascade Routing, Tool Pruning, and Sentinel Watchdog** telemetry.
 
 ---
 
 ## ⚡ The 14-Tool Agentic Proxy (`<holodata>` Dual-Engine) & G-Krusch Workspace
 
-Standard 7B/14B local models often struggle with deeply nested OpenAI JSON tool schemas when 10+ tools are injected into the prompt at once. Krusch Companion solves this by embedding the **`<holodata>` Dual-Engine Cognitive Blueprint** (adapted from [`krusch-agentic-mcp`](https://github.com/kruschdev/krusch-agentic-mcp)):
-1. **Intent-Scoped Tool Pruning (`<250` tokens)**: [`detectAgenticIntent()`](src/agent/agentic-proxy.js) prunes the tool catalog down to only the 1–3 tools relevant to the user's request before calling the LLM.
+Standard 7B/14B local models often struggle with deeply nested OpenAI JSON tool schemas when 10+ tools are injected into the prompt at once. Krusch Companion solves this by embedding the **`<holodata>` Dual-Engine Cognitive Blueprint**:
+1. **Intent-Scoped Tool Pruning (`<250` tokens, `~81%` Schema Reduction)**: [`detectAgenticIntent()`](src/agent/agentic-proxy.js) prunes the tool catalog down to only the 1–3 tools relevant to the user's request before calling the LLM, and records a live **Tool Pruning Report** (`getLastToolPruningReport()`).
 2. **Unified `<holodata>` Thinker + Flat Tool Array**: The model first reasons through parameter constraints inside `<holodata>...</holodata>` XML tags and then emits a flat JSON tool array (`[{"name": "...", "arguments": {...}}]`).
-3. **Upstream-to-Downstream Live Data Piping**: When chaining multiple tools in one turn (e.g., `get_weather` ➔ `save_note` or `gkrusch_drive` ➔ `gkrusch_gmail`), [`executeAgenticProxyTurn()`](src/agent/agentic-proxy.js) automatically pipes live upstream API outputs directly into downstream notes, push notifications, Google Drive docs, or Gmail drafts.
-4. **Deterministic Offline Fallback**: Even if your local LLM or Google OAuth is temporarily offline, [`inferFallbackToolCalls()`](src/agent/agentic-proxy.js) and sovereign local fallbacks ensure tasks, notes, and drafts are never lost.
+3. **Explicit Confidence Scoring & Confirm-Before-Act Safety Gate**: Every `<holodata>` extraction is scored (`scoreHolodataConfidence()`), and side-effect tools (`gkrusch_gmail`, `gkrusch_calendar`, `concierge_reservation`, `send_notification`) support **Confirm-Before-Act (`dryRunMode`)** preview cards with an inline **`✅ Confirm & Execute`** button in Chat.
+4. **Upstream-to-Downstream Live Data Piping & 60s TTL Cache**: When chaining multiple tools in one turn (e.g., `get_weather` ➔ `save_note` or `gkrusch_drive` ➔ `gkrusch_gmail`), [`executeAgenticProxyTurn()`](src/agent/agentic-proxy.js) automatically pipes live upstream API outputs directly into downstream notes, push notifications, Google Drive docs, or Gmail drafts, while caching idempotent read tools (`get_weather`, `system_status`, `commute_departure_check`) for 60 seconds.
+5. **Deterministic Offline Fallback & Audit Log**: Even if a small 7B model emits malformed JSON or is temporarily offline, [`inferFallbackToolCalls()`](src/agent/agentic-proxy.js) recovers deterministically and logs low-confidence/fallback events locally (`getFailedToolCallLogs()`).
 
 ### 🛠️ Complete 14-Tool Capability Matrix
 
@@ -74,7 +79,7 @@ Standard 7B/14B local models often struggle with deeply nested OpenAI JSON tool 
 | **🔔 Push Alerts** | `send_notification` | Dispatches real-time push notifications to your phone or desktop via `ntfy.sh` or a custom self-hosted webhook topic. | *"Send a push notification to my phone: Pick up groceries at 5pm"* |
 | **🖥️ Host Telemetry** | `system_status` | Reports live host CPU load, RAM usage, uptime, SQLite WAL `PRAGMA integrity_check`, active memory count, and board completion streak. | *"Check system status and telemetry"* |
 | **⚖️ Sovereign Law/Biz** | `sovereign_gateway_query` | Queries local **KruschLaw (`:8085`)** for statutory RAG / tenant defense or **KruschBiz (`:8086`)** for corporate contract graphs. | *"Search KruschLaw statutes for California security deposit return deadlines"* |
-| **📋 Board & Memory** | `board_action` | Creates or completes tasks on Today's 5-Tier Priority Board or saves durable facts to Working Memory as part of a multi-step tool chain. | *"Check the weather in Seattle and add a task to go for a 3-mile run"* |
+| **📋 Board & Memory** | `board_action` | Creates or completes tasks on Today's Dual-Axis Priority Board or saves durable facts to Working Memory as part of a multi-step tool chain. | *"Check the weather in Seattle and add a task to go for a 3-mile run"* |
 
 ### 🚨 Multi-Channel Proactive Sentinel Watchdog Daemon (`$0.00` Polling ➔ Event-Driven LLM Wakeup)
 
@@ -96,9 +101,9 @@ Instead of burning LLM tokens polling for changes in a loop, [`src/services/sent
   > *"What is the weather in Seattle right now, save a note titled Run Forecast, and add a task to go for a 20-minute walk?"*
   > ➜ **Tool 1 (`get_weather`)**: Queries live Open-Meteo API (`60.8°F / 16°C — Overcast ☁️, Wind 1.9 mph, Precip 10%`).
   > ➜ **Tool 2 (`save_note`)**: Automatically pipes the live weather forecast into `data/notes/run-forecast.md`.
-  > ➜ **Tool 3 (`board_action`)**: Creates **[Tier 4: Health & Self 💪] Go for a 20-minute walk** on Today's Board.
+  > ➜ **Tool 3 (`board_action`)**: Creates **[Health & Self 💪] Go for a 20-minute walk** on Today's Board.
 
-* **Voice/Text Thought Stream (Dual-Axis Triage)**:
+* **Voice/Text Thought Stream (Dual-Axis Triage + Speaker Post-Processing)**:
   > *"I need to pay the electric bill before 5pm, send the updated invoice to Alex, fix the door latch before tonight, and I kept forgetting to stretch today."*
   > ➜ **Extracted onto Today's Dual-Axis Board**:
   > 1. `Pay the electric bill before 5pm` — **`🚨 Must Happen Today — Deadlines & Provision`** · Tag: `🏠 Provision & Finance`
@@ -110,7 +115,7 @@ Instead of burning LLM tokens polling for changes in a loop, [`src/services/sent
 * **Instant L0 Task & Board Commands in Chat (`<15µs` CPU, `$0.00` LLM Cost)**:
   > *"Add task: Pay electric bill before 5pm"* ➜ Automatically inferred as **`🚨 Must Happen Today — Deadlines & Provision`** (`🏠 Provision & Finance`) and placed at the top of Today's Board.
   > *"Prioritize task: Quarterly review"* (or *"Make task quarterly review urgent"*) ➜ Promotes any existing task to **`🚨 Must Happen Today`** in `<15µs`.
-  > *"Complete task: electric bill"* ➜ Marks the matching task completed on Today's Board and awards gamification points (`+20 pts` for Lane 1 Must-Do tasks).
+  > *"Complete task: electric bill"* ➜ Marks the matching task completed on Today's Board and awards gamification points (`+50 pts` for Lane 1 Must-Do tasks).
   > *"Break down 'Prepare quarterly taxes' into steps"* ➜ Decomposes the goal into 3 bite-sized (5–15 min) subtasks on Today's Board.
   > *"Roll over unfinished tasks"* ➜ Moves incomplete tasks from prior days onto Today's Board without duplicating recurring habits.
 
@@ -124,8 +129,8 @@ Instead of burning LLM tokens polling for changes in a loop, [`src/services/sent
 
 To be completely honest about scope and capabilities:
 
-* **Not a multi-user SaaS**: Companion is a single-user executive co-pilot designed for personal sovereignty. There are no multi-tenant logins or shared organization workspaces.
-* **Not zero-setup**: It requires running a local LLM runtime ([Ollama](https://ollama.com/)) on your machine or home server, or setting an OpenRouter API key for zero-GPU mode.
+* **Not a multi-user SaaS**: Companion is a single-user personal assistant designed for personal sovereignty. There are no multi-tenant logins or shared organization workspaces.
+* **Not dependent on a local GPU**: While it defaults to local [Ollama](https://ollama.com/) when available, you can run it immediately with **zero GPU** using OpenRouter Zero-Data-Retention mode (`LLM_PROVIDER="openrouter"`) or instant hermetic evaluation mode (`MOCK_LLM=1`).
 
 ---
 
@@ -133,76 +138,51 @@ To be completely honest about scope and capabilities:
 
 The frontend is an installable Progressive Web App (PWA) built with React 19, Vite, and dark glassmorphism styling compliant with Apple HIG touch targets.
 
-| 💬 Companion Chat | 🌊 Thought Stream |
+| 💬 Companion Chat (with `🎙️ Speak` Voice-to-Text) | 🌊 Thought Stream (Voice & Text Triage) |
 |:---:|:---:|
-| ![Companion Chat](docs/screenshots/companion-view-v2.png) | ![Thought Stream](docs/screenshots/thought-stream-v2.png) |
-| *Real-time L0/L1/L2/L3 routing badges, expandable `<holodata>` Agentic Proxy traces, Sentinel Watchdog alerts, and morning focus briefings.* | *Live HTML5 microphone waveform visualizer and Dual-Axis stream-of-consciousness text triage.* |
+| ![Companion Chat](docs/screenshots/companion-view-v3.png) | ![Thought Stream](docs/screenshots/thought-stream-v3.png) |
+| *Inline `🎙️ Speak` Voice-to-Text dictation (`Auto-Send on Stop`), L0/L1/L2 routing badges, `<holodata>` Confidence & Confirm-Before-Act gates, Sentinel Watchdog alerts, and `🚀 Setup & Try It` wizard.* | *Live HTML5 microphone waveform visualizer, Web Speech API + Local Whisper STT fallback, 1-Click Sample Stream demo, and Speaker/Clause-Intent post-processing.* |
 
-| 📋 Today's Board | 🎯 Focus Mode |
+| 📋 Today's Dual-Axis Board & Weekly Review | 🧠 Working Memory, Routing Inspector & Setup Doctor |
 |:---:|:---:|
-| ![Today's Board](docs/screenshots/today-board-v2.png) | ![Focus Mode](docs/screenshots/focus-mode-v2.png) |
-| *Dual-Axis Priority Board (`Execution Priority Lanes 1–4` × `6 Life Pillar Badges`), 1-click `🚨 Must-Do` promotion, task rollover & step decomposition.* | *Distraction-free single-task execution with Dual-Axis badges, ambient timer ring, and hotkeys.* |
+| ![Today's Board](docs/screenshots/today-board-v3.png) | ![Memory & Inspector](docs/screenshots/memory-inspector-v3.png) |
+| *Dual-Axis Priority Board (`Execution Priority Lanes 1–4` × `6 Life Pillar Badges`), *"Why this lane?"* explanations, Life-Pillar Balance strip, `📅 Weekly Review`, and Bulk Actions (`🌱 Habits Done`, `🧹 Clear Done`).* | *Active 5-taxonomy Working Memory, 1-click Temporal Superseding with lineage history, 30-day decay review, Markdown/JSON export, `<holodata>` & Tool Pruning Inspector, and Setup Doctor.* |
+
+| 🎯 Single-Task Focus Mode |
+|:---:|
+| ![Focus Mode](docs/screenshots/focus-mode-v3.png) |
+| *Distraction-free single-task execution with Dual-Axis badges, ambient SVG timer ring, keyboard hotkeys (`Space`, `D`, `N`), micro-nudges, and quick voice capture.* |
 
 ---
 
-## 🚀 Quickstart (100% Standalone-Installable)
+## 🚀 Quickstart (100% Standalone — Zero Monorepo Dependencies)
 
-**Krusch Companion is completely self-contained** (`krusch-cascade-router` is installed directly from npm and `@krusch/toolkit` primitives are bundled inside [`src/toolkit/`](src/toolkit/)). You can clone and run this repository on any machine in three modes:
+**Krusch Companion is 100% standalone-installable** with a committed `package-lock.json` and self-contained [`Dockerfile`](Dockerfile) / [`docker-compose.yml`](docker-compose.yml). Choose any of three one-command paths:
 
-* **Option A — 100% Sovereign Local-First (Default)**: Uses local [Ollama](https://ollama.com/) (`qwen2.5-coder:7b`) on your machine or home server. Zero LLM network egress.
-* **Option B — Zero-GPU Cloud Connector (OpenRouter 3-Specialist Cascade)**: For laptops, cloud VPS, or devices without a discrete GPU. Uses [OpenRouter](https://openrouter.ai/) with enforced **Zero Data Retention** (`provider: { data_collection: "deny" }`) and dynamically routes across 3 specialized frontier models (`qwen-2.5-coder-32b-instruct`, `qwen-2.5-72b-instruct`, and `deepseek-chat-v3-0324`). Your database, notes vault, and working memory still remain 100% local in SQLite.
-* **Option C — Hermetic Zero-Dependency Evaluation Mode (`MOCK_LLM=1`)**: For CI pipelines or third-party evaluators who want to verify all 39 tests, deterministic L0 routing, `<holodata>` tool chains, and Sentinel Watchdog filters in **`<300ms`** without installing Ollama or providing an API key.
-
-### 1. Prerequisites
-* **Node.js**: `v22.0.0+` (includes native `fetch` and test runner)
-* **Build Tools**: Standard C++ build tools (`build-essential` / Xcode CLI tools) if `better-sqlite3` compiles from source (prebuilt binaries are downloaded automatically on Linux/macOS/Windows x64 & ARM64).
-* **LLM Backend (Choose One)**:
-  * **Local Ollama (Option A)**: Install [Ollama](https://ollama.com/) and pull the edge model:
-    ```bash
-    ollama pull qwen2.5-coder:7b
-    ```
-  * **OpenRouter API Key (Option B)**: Obtain an API key from [openrouter.ai/keys](https://openrouter.ai/keys) (no GPU required).
-  * **Hermetic Evaluator Mode (Option C)**: Set `MOCK_LLM=1` (no Ollama or API key required).
-
-### 2. Installation & Build
-
+### Fastest Path — One-Command Install & Run
 ```bash
-# 1. Clone the repository
 git clone https://github.com/kruschdev/krusch-companion.git
 cd krusch-companion
 
-# 2. Install backend and frontend dependencies
-npm install
-npm --prefix client install
+# Install dependencies, build the React 19 PWA bundle, and check environment readiness:
+npm install && npm run build && npm run doctor
 
-# 3. Build the React 19 + Vite frontend bundle (served statically by Express on :3004)
-npm --prefix client run build
+# Start immediately (pick one):
+MOCK_LLM=1 npm start                                                      # 1. Instant Zero-Config Demo / Eval Mode (no GPU or API key needed)
+OPENROUTER_API_KEY="sk-or-v1-..." LLM_PROVIDER="openrouter" npm start     # 2. Zero-GPU Cloud Mode (OpenRouter 3-Specialist Cascade with ZDR)
+npm start                                                                 # 3. 100% Local Ollama Mode (requires `ollama pull qwen2.5-coder:7b`)
 ```
 
-### 3. Run the Automated Test Suite (`39/39` Tests)
+Once running at **`http://localhost:3004`**, click **`🚀 Setup & Try It`** in the top header to switch runtime modes, toggle the **Confirm-Before-Act** side-effect safety gate, or launch the **1-Click Sample Thought Stream → Dual-Axis Board** tour.
 
+### Run the Automated Test Suite (`45/45` Tests) & Benchmarks
 ```bash
-# Instant Hermetic Verification (<300ms — zero GPU or API key required)
+# 1. Instant Hermetic Test Suite (45/45 unit, integration & security hardening tests):
 MOCK_LLM=1 npm test
 
-# Or Full Live Integration Verification (against local Ollama on 127.0.0.1:11434)
-npm test
+# 2. Reproducible Latency, Knowledge Boundary & Temporal Superseding Benchmark Suite:
+npm run bench
 ```
-
-### 4. Start the Server
-
-```bash
-# Mode A: Local Ollama (Default — http://localhost:3004)
-npm start
-
-# Mode B: OpenRouter Zero-GPU 3-Specialist Cascade Mode (with enforced ZDR)
-OPENROUTER_API_KEY="sk-or-v1-..." LLM_PROVIDER="openrouter" npm start
-
-# Mode C: Hermetic Evaluation Mode (no Ollama or API key required)
-MOCK_LLM=1 npm start
-```
-
-Open **`http://localhost:3004`** in your browser, or install it as a PWA on mobile (iOS Safari: *Share → Add to Home Screen*; Android Chrome: *Install App*).
 
 > [!TIP]
 > **Optional Google Workspace Integration (`G-Krusch` on `:5446`)**: To enable live Google Drive Hybrid RAG, Google Docs export, Google Calendar event creation, and Gmail sending, run the companion [`G-krusch`](https://github.com/kruschdev/G-krusch) service on `http://127.0.0.1:5446`. Even if `G-krusch` is not running, **every tool in Krusch Companion degrades gracefully** by saving reservation holds, calendar entries, and RFC-2822 email drafts to your local `data/notes/` vault and Today's Priority Board.
@@ -518,23 +498,26 @@ The server configuration is located in [`config.json`](config.json) at the proje
 | `GET` | `/api/priorities` | Retrieves the priority framework definitions, Execution Lanes, and Life Pillars. |
 | `GET` | `/api/execution-lanes` | Retrieves the Dual-Axis Execution Priority Lanes (`1–4`) and 6 Life Pillar definitions. |
 | `GET` | `/api/tasks` | Retrieves tasks for date (`?date=YYYY-MM-DD`, defaults to today), enriched with Dual-Axis lane & pillar tags, sorted by execution priority. |
+| `GET` | `/api/tasks/weekly-review` | Returns 7-day completion analytics, unfinished rollover count, and per-Life-Pillar completion breakdown. |
 | `POST` | `/api/tasks` | Creates a new task (`{ title, execution_priority, pillar, priority_id, notes, recurring, energy_level, date }`). |
+| `POST` | `/api/tasks/bulk-action` | Executes bulk board actions (`{ action: "complete_habits" \| "clear_completed" \| "rollover_all", date }`). |
 | `PATCH` | `/api/tasks/:id/priority` | Updates a task's Execution Priority Lane (`1–4`) and/or Life Pillar tag (`{ execution_priority, pillar, priority_id }`). |
 | `POST` | `/api/tasks/rollover` | Rolls over unfinished tasks from prior days onto Today's Priority Board without duplicating recurring habits. |
 | `POST` | `/api/tasks/:id/breakdown` | Decomposes a complex task into 3 concrete, low-friction subtasks on Today's Board. |
-| `PATCH` | `/api/tasks/:id/complete` | Toggles task completion and updates gamification points (`+20 pts` for Lane 1 Must-Do tasks). |
+| `PATCH` | `/api/tasks/:id/complete` | Toggles task completion and updates gamification points (`+50 pts` for Lane 1 Must-Do tasks). |
 | `DELETE`| `/api/tasks/:id` | Deletes a task by ID. |
 | `GET` | `/api/streak` | Retrieves continuous task completion streak data. |
 | `GET` | `/api/gamify/today` | Retrieves today's gamification points and opt-in status. |
 | `POST` | `/api/gamify/opt-in` | Updates gamification opt-in status (`{ optedIn: boolean }`). |
 | `POST` | `/api/companion/chat` | Main conversational & `<holodata>` Agentic Proxy endpoint routed via Cascade Router (`{ prompt, history, sessionId }`). |
+| `POST` | `/api/companion/transcribe` | Transcribes multipart `audio` (WebM/WAV) via Local Whisper STT for Companion Chat voice dictation (`{ ok, transcription }`). |
 | `GET` | `/api/companion/tools` | Lists all 14 registered Agentic Proxy (`<holodata>` Dual-Engine) tools and parameter schemas (aliases `/api/agent/tools`). |
 | `POST` | `/api/companion/action` | Directly executes a sandboxed Agentic Proxy tool (`{ tool, arguments }`, aliases `/api/agent/execute`). |
 | `GET` | `/api/companion/departure-alerts` | Scans upcoming location-tagged Calendar events and Reservation Holds to return live traffic & Leave-By warnings. |
 | `GET` | `/api/sentinel/status` | Returns Multi-Channel Sentinel Watchdog daemon status, tick counters (`llmCallsTriggered` vs `zeroTokenPolls`), and active alerts. |
 | `POST` | `/api/sentinel/tick` | Manually triggers a Sentinel Watchdog scan across Gmail unread messages, Calendar conflicts, and Route traffic (`{ events, emails, calendarEvents }`). |
 | `POST` | `/api/sentinel/ack/:id` | Acknowledges and dismisses an active Sentinel Watchdog alert. |
-| `POST` | `/api/companion/stream` | Ingests unformatted Thought Stream text and triages into Dual-Axis tasks (`execution_priority` + `pillar`) and memories (aliases `/api/companion/dump`). |
+| `POST` | `/api/companion/stream` | Ingests unformatted Thought Stream text and triages into Dual-Axis tasks (`execution_priority` + `pillar`), memories, and speaker/intent segments (aliases `/api/companion/dump`). |
 | `POST` | `/api/companion/voice` | Accepts multipart `audio` (WebM/WAV) -> Whisper STT -> Thought Stream pipeline. |
 | `GET` | `/api/coach/focus` | Retrieves today's active morning focus briefing. |
 | `POST` | `/api/coach/focus` | Synthesizes a new morning focus briefing from tasks and working memory. |
@@ -547,7 +530,7 @@ The server configuration is located in [`config.json`](config.json) at the proje
 | `DELETE`| `/api/context/:id` | Permanently deletes a working memory record by ID. |
 | `GET` | `/api/context/decay` | Lists memories older than N days (`?days=30`) for hygiene review. |
 | `GET` | `/api/doctor` | Runs live Setup Doctor readiness checks (Node >=22, SQLite WAL integrity, frontend bundle, Ollama/OpenRouter, G-Krusch). |
-| `GET` | `/api/debug` | Returns live Cascade Router & Knowledge Boundary decision telemetry, `<holodata>` tool stats, and Sentinel Watchdog state. |
+| `GET` | `/api/debug` | Returns live Cascade Router & Knowledge Boundary decision telemetry, Dynamic Tool Pruning report, `<holodata>` tool stats, failed tool logs, and Sentinel Watchdog state. |
 | `POST` | `/api/settings/runtime` | Updates runtime `resourceMode` (`minimal` \| `balanced` \| `quality`) and external tool `dryRunMode` (`true` \| `false`). |
 | `GET` | `/api/export` | One-click full portability export (`?format=markdown` or `?format=json`) of all tasks, priorities, active memories, and lineage. |
 | `POST` | `/api/backup` | Creates an atomic zero-lock SQLite backup snapshot via `VACUUM INTO`. |
@@ -569,8 +552,8 @@ npm run bench
 
 | Benchmark Dimension | Measured Result | Target / Threshold | What It Verifies |
 | :--- | :---: | :---: | :--- |
-| **L0 Pure CPU Heuristic (Math AST & Time/Date)** | **`p50 = 3.2 µs` (`p95 = 7.1 µs`)** | `< 15 µs` | Shunting-yard AST math & utility checks execute in single-digit microseconds with `$0.00` token cost. |
-| **L0 Direct SQLite Board Mutation** | **`p50 = 180 µs` (`p95 = 420 µs`)** | `< 1,000 µs` | Deterministic task creation, priority promotion, and board queries via `node:sqlite` WAL. |
+| **L0 Pure CPU Heuristic (Math AST & Time/Date)** | **`p50 = 6.15 µs` (`p95 = 12.1 µs`)** | `< 15 µs` | Shunting-yard AST math & utility checks execute in single-digit microseconds with `$0.00` token cost. |
+| **L0 Direct SQLite Board Mutation** | **`p50 = 183 µs` (`p95 = 405 µs`)** | `< 1,000 µs` | Deterministic task creation, priority promotion, and board queries via `better-sqlite3` WAL. |
 | **Knowledge Boundary Gate Precision / Recall** | **`100% / 100%` (`F1 = 100%`)** | `>= 95%` | Closed-world utility queries inject `0` memory tokens; open-world personal queries hydrate working memory. |
 | **Temporal Superseding Contradiction Rate** | **`0%` (vs `100%` naive append)** | `0%` | Superseded schedule/preference records are excluded from active state briefings while preserving lineage. |
 | **Dual-Axis Thought Stream Extraction** | **`100%` Priority Paradox Resolution** | `100%` | Urgent bills/deadlines land in `P1: Must Happen Today` while recurring habits land in `P3: Daily Habits`. |
@@ -603,21 +586,22 @@ docker compose ps
 | `Ollama error: model 'qwen2.5-coder:7b' not found` | Recommended model has not been pulled. | Execute `ollama pull qwen2.5-coder:7b`. |
 | `G-Krusch Google Drive/Calendar/Gmail returned: Not authenticated` | Google OAuth not connected on `g-krusch` (`:5446`). | Connect Google OAuth at `http://localhost:5446/auth/google` (while disconnected, Companion automatically falls back to saving notes/drafts in `data/notes/` and tasks on Today's Board). |
 | `commute_departure_check` uses `"OpenStreetMap + OSRM"` instead of `"Google Maps Live Traffic"` | `GOOGLE_MAPS_API_KEY` is not set. | Optional: set `GOOGLE_MAPS_API_KEY` for live Google Maps `duration_in_traffic`; when unset, Companion automatically computes routes and rush-hour buffers via zero-key OSRM. |
-| Voice capture without local Whisper STT server | Whisper container (`:9000`) is not running. | Companion's `AudioRecorder` automatically falls back to the **Browser-Native Web Speech API (`SpeechRecognition`)** for zero-setup live voice transcription, or click **"✨ Try Sample Thought Stream"** to test extraction immediately. |
+| Voice capture without local Whisper STT server | Whisper container (`:9000`) is not running. | Companion Chat (`🎙️ Speak`) and `AudioRecorder` automatically use the **Browser-Native Web Speech API (`SpeechRecognition`)** for zero-setup live voice transcription, or click **"✨ Try Sample Thought Stream"** to test extraction immediately. |
 | Tasks not persisting across container restarts | Docker volume not mounted. | Ensure `./data` is mounted to `/app/data` in `docker-compose.yml`. |
 
 ---
 
 ## 📌 Project Status, Limitations & Failure Modes
 
-* **Current Stage**: Standalone V1 (`43/43` automated unit, integration, and security hardening tests passing across 5 test suites).
+* **Current Stage**: Standalone V1 (`45/45` automated unit, integration, and security hardening tests passing across 5 test suites).
 * **Small Local Model (7B) Constraints & Mitigations**:
   - Small 7B parameter models (`qwen2.5-coder:7b`) can occasionally omit XML tool wrappers or struggle with deeply nested multi-step tool chains.
   - **How Companion Mitigates This**:
-    1. **Intent-Scoped Tool Pruning (`selectRelevantTools`)**: Prunes the 14-tool registry down to the `1–3` relevant tools per turn to prevent small-model schema overload.
-    2. **Deterministic Fallback Layer (`inferFallbackToolCalls`)**: Common intents (weather, time-to-leave traffic checks, Google Drive/Calendar/Gmail queries, note saving, task mutations) execute deterministically even if the 7B model omits `<holodata>`.
-    3. **Side-Effect Confirmation / Dry-Run Gate**: External side-effect tools (`gkrusch_gmail` send/draft, `gkrusch_calendar` create, `concierge_reservation` book, `send_notification`) can be placed in **Confirm-Before-Act (`dryRunMode: true`)** via the `🧠 Memory & Inspector` tab (`POST /api/settings/runtime`).
-* **Single-Node / Household Scope**: Uses native `node:sqlite` in WAL mode (`Single-Writer, Multi-Reader`). Designed for personal/household sovereign deployment on `localhost`, LAN, or Tailscale mesh rather than multi-tenant public SaaS hosting.
+    1. **Intent-Scoped Tool Pruning (`detectAgenticIntent`)**: Prunes the tool registry down to `1–3` domain-matched tools per turn (`~81%` schema reduction) and surfaces a live pruning report in the `🧠 Memory & Inspector` tab.
+    2. **Explicit `<holodata>` Confidence Scoring (`scoreHolodataConfidence`)**: Scores every tool extraction and displays a live `🎯 % Conf` badge in Companion Chat.
+    3. **Deterministic Fallback Layer (`inferFallbackToolCalls`)**: Common intents (weather, time-to-leave traffic checks, Google Drive/Calendar/Gmail queries, note saving, task mutations) execute deterministically even if the 7B model omits `<holodata>`, and log fallback events to `failedToolCallLogs`.
+    4. **Side-Effect Confirmation / Dry-Run Gate**: External side-effect tools (`gkrusch_gmail` send/draft, `gkrusch_calendar` create, `concierge_reservation` book, `send_notification`) support **Confirm-Before-Act (`dryRunMode: true`)** with an inline **`✅ Confirm & Execute`** button in Companion Chat.
+* **Single-Node / Household Scope**: Uses SQLite in WAL mode (`Single-Writer, Multi-Reader`). Designed for personal/household sovereign deployment on `localhost`, LAN, or Tailscale mesh rather than multi-tenant public SaaS hosting.
 * **Architecture & Contributing**:
   - See [`docs/ADR.md`](docs/ADR.md) for the 5 core Architecture Decision Records.
   - See [`CONTRIBUTING.md`](CONTRIBUTING.md) for contributor guidelines and security invariants.
