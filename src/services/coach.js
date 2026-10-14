@@ -7,14 +7,21 @@ export async function generateDailyFocus(date = null) {
   const tasks = getTasksForDate(targetDate);
   const contextBriefing = compileStateBriefing();
 
-  const taskList = tasks.map(t => `- [Tier ${t.tier} / ${t.priority_name}] ${t.title} (${t.completed ? 'COMPLETED' : 'PENDING'})`).join('\n');
+  const pending = tasks.filter(t => !t.completed);
+  const topTask = pending[0] || tasks[0] || null;
+  const taskList = tasks
+    .map(
+      t =>
+        `- [Execution Priority ${t.execution_priority || 2}: ${t.execution_lane_short || 'High-Impact Focus'} ${t.execution_lane_emoji || '⚡'} | Pillar: ${t.pillar || t.priority_name}] ${t.title} (${t.completed ? 'COMPLETED' : 'PENDING'})`
+    )
+    .join('\n');
 
   const systemPrompt = `You are Krusch Companion, an empathetic, supportive personal assistant and daily coach.
-Given today's task list and active life context, generate a concise, inspiring morning focus briefing (max 3-4 sentences).
-Highlight the ONE single most important task to conquer first before doing anything else, and provide a grounding mindset tip.
+Given today's Dual-Axis Priority Board (sorted by Execution Priority: 1 = Must Happen Today — Deadlines & Provision, 2 = High-Impact Focus, 3 = Daily Habits & Anchors, 4 = Backlog), generate a concise, inspiring morning focus briefing (max 3-4 sentences).
+Highlight the #1 Execution Priority task ("${topTask ? topTask.title : 'your top priority'}") to conquer first before non-urgent habits, and provide a grounding mindset tip.
 Be warm, direct, and energizing. Avoid corporate jargon.`;
 
-  const prompt = `Today's Tasks (${targetDate}):\n${taskList || 'No tasks scheduled yet.'}\n\nWhat should my single focus be today?`;
+  const prompt = `Today's Dual-Axis Board (${targetDate}):\n${taskList || 'No tasks scheduled yet.'}\n\nWhat should my single focus be today?`;
 
   const res = await dispatchCompanionChat({
     prompt,

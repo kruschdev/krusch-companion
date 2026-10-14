@@ -189,9 +189,9 @@ export function compileStateBriefing({ maxTokens = 2500, date = null, includeTas
       lines.push(`- **Morning Focus**: ${dailyFocus.focus_text}`);
     }
     if (pending.length > 0) {
-      lines.push('### ⏳ Pending Tasks (Ordered by Priority Tier)');
+      lines.push('### ⏳ Pending Tasks (Ordered by Execution Priority Lane)');
       for (const t of pending) {
-        lines.push(`- **[#${t.id}] [Tier ${t.tier}: ${t.priority_name} ${t.priority_emoji}]** ${t.title}${t.notes ? ` *(${t.notes})*` : ''} (energy: ${t.energy_level || 'medium'})`);
+        lines.push(`- **[#${t.id}] [Priority ${t.execution_priority || 2}: ${t.execution_lane_short || 'High-Impact Focus'} ${t.execution_lane_emoji || '⚡'} | Pillar: ${t.pillar || t.priority_name} (Tier ${t.tier}: ${t.priority_name} ${t.priority_emoji})]** ${t.title}${t.notes ? ` *(${t.notes})*` : ''} (energy: ${t.energy_level || 'medium'})`);
       }
     } else {
       lines.push('### 🎉 All scheduled tasks for today are completed!');

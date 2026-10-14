@@ -20,8 +20,14 @@ export function App() {
   const [streak, setStreak] = useState(0);
   const [focusTask, setFocusTask] = useState({
     id: 4,
-    title: 'Review top priority for today',
-    notes: 'Priority Tier 5: Work & Mastery'
+    title: 'Pay electric bill & review Q4 contract invoice before 5pm',
+    notes: 'Lane 1: Must Happen Today — Deadlines & Provision',
+    execution_lane_emoji: '🚨',
+    execution_lane_short: 'Must Happen Today',
+    execution_lane_color: '#ef4444',
+    pillar_emoji: '🏠',
+    pillar_name: 'Provision & Finance',
+    pillar_color: '#f97316'
   });
   const [backendHealth, setBackendHealth] = useState(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);

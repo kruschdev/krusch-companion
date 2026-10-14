@@ -106,11 +106,45 @@ export function FocusView({ task, onTaskCompleted, onExitFocus }) {
       </div>
 
       {/* Target Task */}
-      <div className="glass-panel" style={{ padding: '24px 32px', maxWidth: 600, width: '100%' }}>
+      <div className="glass-panel" style={{ padding: '24px 32px', maxWidth: 620, width: '100%' }}>
         <span style={{ fontSize: '0.8rem', color: 'var(--accent-amber)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
           CURRENT SINGLE-TASK MISSION
         </span>
-        <h2 style={{ fontSize: '1.5rem', fontWeight: 800, margin: '8px 0 16px' }}>
+        {task && (task.execution_lane_short || task.pillar_name) && (
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+            {task.execution_lane_short && (
+              <span
+                style={{
+                  fontSize: '0.74rem',
+                  fontWeight: 700,
+                  padding: '3px 10px',
+                  borderRadius: 999,
+                  background: `${task.execution_lane_color || '#ef4444'}22`,
+                  border: `1px solid ${task.execution_lane_color || '#ef4444'}66`,
+                  color: task.execution_lane_color || '#ef4444'
+                }}
+              >
+                {task.execution_lane_emoji || '🚨'} {task.execution_lane_short}
+              </span>
+            )}
+            {task.pillar_name && (
+              <span
+                style={{
+                  fontSize: '0.74rem',
+                  fontWeight: 700,
+                  padding: '3px 10px',
+                  borderRadius: 999,
+                  background: `${task.pillar_color || '#f97316'}22`,
+                  border: `1px solid ${task.pillar_color || '#f97316'}66`,
+                  color: task.pillar_color || '#f97316'
+                }}
+              >
+                {task.pillar_emoji || '🏠'} {task.pillar_name}
+              </span>
+            )}
+          </div>
+        )}
+        <h2 style={{ fontSize: '1.5rem', fontWeight: 800, margin: '10px 0 16px' }}>
           {task ? task.title : 'Pick a task from Today to enter focus flow'}
         </h2>
         {task?.notes && (

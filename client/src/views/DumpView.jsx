@@ -117,7 +117,7 @@ export function DumpView({ onTasksCreated }) {
             className="btn-primary"
             disabled={isProcessing || !text.trim()}
           >
-            {isProcessing ? '⚡ Triage Engine Running...' : '✨ Triage into 5-Tier Tasks'}
+            {isProcessing ? '⚡ Triage Engine Running...' : '✨ Triage onto Dual-Axis Board'}
           </button>
         </div>
       </form>
@@ -127,7 +127,7 @@ export function DumpView({ onTasksCreated }) {
         <div className="glass-panel animate-fade-in" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 18 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-subtle)', paddingBottom: 12 }}>
             <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--accent-cyan)' }}>
-              🎯 Triage Extraction Complete
+              🎯 Dual-Axis Triage Complete
             </h3>
             <TierBadge tier={result.tierUsed} latencyMs={result.latencyMs} />
           </div>
@@ -153,11 +153,14 @@ export function DumpView({ onTasksCreated }) {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    padding: '12px 16px'
+                    flexWrap: 'wrap',
+                    gap: 10,
+                    padding: '12px 16px',
+                    borderLeft: `3px solid ${task.execution_lane_color || task.priority_color || '#3b82f6'}`
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ fontSize: '1.2rem' }}>{task.priority_emoji}</span>
+                    <span style={{ fontSize: '1.2rem' }}>{task.execution_lane_emoji || task.priority_emoji}</span>
                     <div>
                       <div style={{ fontWeight: 600 }}>{task.title}</div>
                       {task.notes && (
@@ -165,18 +168,34 @@ export function DumpView({ onTasksCreated }) {
                       )}
                     </div>
                   </div>
-                  <span
-                    style={{
-                      fontSize: '0.75rem',
-                      fontWeight: 700,
-                      padding: '4px 8px',
-                      borderRadius: 6,
-                      background: 'rgba(255, 255, 255, 0.08)',
-                      color: task.priority_color
-                    }}
-                  >
-                    Tier {task.tier} · {task.priority_name}
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <span
+                      style={{
+                        fontSize: '0.72rem',
+                        fontWeight: 700,
+                        padding: '3px 8px',
+                        borderRadius: 999,
+                        background: `${task.execution_lane_color || '#ef4444'}20`,
+                        border: `1px solid ${task.execution_lane_color || '#ef4444'}55`,
+                        color: task.execution_lane_color || '#ef4444'
+                      }}
+                    >
+                      {task.execution_lane_emoji || '⚡'} {task.execution_lane_short || 'High-Impact Focus'}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: '0.72rem',
+                        fontWeight: 700,
+                        padding: '3px 8px',
+                        borderRadius: 999,
+                        background: `${task.pillar_color || task.priority_color || '#3b82f6'}18`,
+                        border: `1px solid ${task.pillar_color || task.priority_color || '#3b82f6'}55`,
+                        color: task.pillar_color || task.priority_color || '#3b82f6'
+                      }}
+                    >
+                      {task.pillar_emoji || task.priority_emoji} {task.pillar_name || task.priority_name}
+                    </span>
+                  </div>
                 </div>
               ))}
             </div>

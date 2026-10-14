@@ -3,6 +3,7 @@ import TierBadge from '../components/TierBadge';
 
 const ACTION_LABELS = {
   task_created: { icon: '✅', label: "Task Added to Today's Board", color: '#2dd4bf' },
+  task_priority_updated: { icon: '🚨', label: 'Task Promoted to Must Happen Today', color: '#ef4444' },
   task_completed: { icon: '🎉', label: 'Task Marked Complete', color: '#f0c040' },
   task_deleted: { icon: '🗑️', label: 'Task Removed from Board', color: '#f87171' },
   tasks_rolled_over: { icon: '🔄', label: 'Unfinished Tasks Rolled Over', color: '#60a5fa' },
