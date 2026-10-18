@@ -1,7 +1,7 @@
 /**
  * Security containment and prompt injection sanitizer.
  */
-export function sanitizeAgentMessage(message, options = {}) {
+export function sanitizeAgentMessage(message, _options = {}) {
   const rawText = typeof message === 'string' ? message : (message?.content || JSON.stringify(message || ''));
   if (!rawText || rawText.trim().length === 0) {
     return { isSafe: true, isInfected: false, sanitizedMessage: "", detectedPatterns: [], riskLevel: 'NONE' };

@@ -15,7 +15,7 @@
   <img src="https://img.shields.io/badge/Voice--to--Text-Web%20Speech%20%2B%20Whisper%20STT-2dd4bf.svg?style=flat-square" alt="Voice-to-Text">
   <img src="https://img.shields.io/badge/Google%20AP2%20%26%20Wallet-Mandates%20%2B%20Passes-f0c040.svg?style=flat-square" alt="Google AP2 & Wallet">
   <a href="https://github.com/kruschdev/krusch-companion/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/CI-passing-brightgreen.svg?style=flat-square" alt="CI"></a>
-  <img src="https://img.shields.io/badge/tests-51%20passed-brightgreen.svg?style=flat-square" alt="Tests Passed">
+  <img src="https://img.shields.io/badge/tests-53%20passed-brightgreen.svg?style=flat-square" alt="Tests Passed">
 </p>
 
 ---
@@ -187,14 +187,17 @@ OPENROUTER_API_KEY="sk-or-v1-..." LLM_PROVIDER="openrouter" npm start     # 2. Z
 npm start                                                                 # 3. 100% Local Ollama Mode (requires `ollama pull qwen2.5-coder:7b`)
 ```
 
-Once running at **`http://localhost:3004`**, click **`🚀 Setup & Try It`** in the top header to switch runtime modes, toggle the **Confirm-Before-Act** side-effect safety gate, or launch the **1-Click Sample Thought Stream → Dual-Axis Board** tour.
+Once running at **`http://localhost:3004`**, the standalone **16-Question Initial Setup Page (`/setup`)** lets you seed your identity, partner/family CRM, home/work commute addresses, daily habits, and custom Faster-Whisper voice vocabulary in one step (or click **`Skip Setup →`** to jump straight into the app).
 
-### Run the Automated Test Suite (`51/51` Tests) & Benchmarks
+### Run the Automated Test Suite (`53/53` Tests), Linter & Benchmarks
 ```bash
-# 1. Instant Hermetic Test Suite (51/51 unit, integration, 20-tool & token-limiter tests):
+# 1. Instant Hermetic Test Suite (53/53 unit, integration, 20-tool, onboarding & token-limiter tests):
 MOCK_LLM=1 npm test
 
-# 2. Reproducible Latency, Knowledge Boundary & Temporal Superseding Benchmark Suite:
+# 2. Zero-Warning Frontend Linter (oxlint):
+npm run lint
+
+# 3. Reproducible Latency, Knowledge Boundary & Temporal Superseding Benchmark Suite:
 npm run bench
 ```
 
@@ -485,12 +488,14 @@ The server configuration is located in [`config.json`](config.json) at the proje
 | `cascade.openrouterZeroDataRetention`| `true` | `OPENROUTER_ZDR` | **Privacy Shield**: Injects `provider: { data_collection: "deny" }` to prevent model training and prompt retention. |
 | `cascade.l0HeuristicEnabled` | `true` | — | Enables sub-15µs CPU routing for math and direct memory storage (always local). |
 | `cascade.edgeModel` | `"qwen2.5-coder:7b"` | `EDGE_MODEL` | Name of local Ollama model for fast daily tasks. |
-| `cascade.swarmModel` | `"qwen2.5-coder:14b"`| `SWARM_MODEL` | Name of compute server model for deep reasoning. |
+| `cascade.swarmModel` | `"qwen3-coder-30b-moe:latest"`| `SWARM_MODEL` | Primary compute server model (`kruschdev` Dual RTX 2080 Ti NVLink) for deep reasoning. |
+| `cascade.swarmFallbackModel` | `"hermes3:latest"` | `SWARM_FALLBACK_MODEL` | Secondary compute server fallback model (`kruschserv` Dual RTX 3060). |
 | `cascade.ollamaUrl` | `"http://127.0.0.1:11434"` | `OLLAMA_HOST` | URL of local Ollama instance. |
-| `cascade.swarmUrl` | `"http://127.0.0.1:8000/v1"` | `SWARM_VLLM_URL` | URL of local network compute node or secondary vLLM server. |
+| `cascade.swarmUrl` | `"http://kruschdev:11434/v1"` | `SWARM_VLLM_URL` | URL of primary L2 Swarm compute node. |
+| `cascade.swarmFallbackUrl` | `"http://kruschserv:11434/v1"` | `SWARM_FALLBACK_URL` | URL of secondary L2 Swarm compute node. |
 | — | `"http://127.0.0.1:5446"` | `G_KRUSCH_URL` | URL of local G-Krusch Google Workspace Extension server (Drive RAG, Calendar, Gmail). |
 | — | `""` *(OSRM Fallback)* | `GOOGLE_MAPS_API_KEY` | Optional Google Maps Directions API key for live `duration_in_traffic` telemetry (automatically falls back to zero-key OpenStreetMap + OSRM routing when unset). |
-| — | `"Seattle, WA"` | `DEFAULT_ORIGIN_ADDRESS` | Default home/office departure address for `commute_departure_check` and Sentinel Watchdog Leave-By calculations. |
+| — | `"Seattle, WA"` | `DEFAULT_ORIGIN_ADDRESS` | Default home/office departure address for `commute_departure_check` and Sentinel Watchdog Leave-By calculations (auto-resolves from `home_location` memory). |
 | — | `300000` *(5 mins)* | `SENTINEL_INTERVAL_MS` | Background polling interval in milliseconds for the Multi-Channel Proactive Sentinel Watchdog Daemon (`DISABLE_SENTINEL_DAEMON="true"` to disable). |
 | — | `""` | `NTFY_TOPIC` | Optional `ntfy.sh` push notification topic (`NTFY_SERVER` defaults to `"https://ntfy.sh"`). |
 | — | `""` | `MOCK_LLM` | Set `MOCK_LLM=1` for instant hermetic zero-GPU / zero-API-key test and evaluation mode. |
@@ -510,6 +515,10 @@ The server configuration is located in [`config.json`](config.json) at the proje
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
 | `GET` | `/api/health` | Service status, connected local models, and privacy gate configuration. |
+| `GET` / `POST` | `/api/companion/onboarding` | Retrieves or saves the 16-question Initial Setup & Multi-Table Database Seeding profile (`companion_context`, `companion_contacts`, recurring `tasks`, and `data/whisper-prompt.txt`). |
+| `POST` | `/api/companion/onboarding/skip` | Marks the Initial Setup questionnaire as skipped so the app enters the main board immediately. |
+| `GET` | `/api/companion/sessions` | Lists saved multi-thread chat sessions with message counts and previews. |
+| `GET` / `DELETE` | `/api/companion/sessions/:sessionId` | Retrieves full message history for a specific conversation thread or deletes a thread. |
 | `GET` | `/api/priorities` | Retrieves the priority framework definitions, Execution Lanes, and Life Pillars. |
 | `GET` | `/api/execution-lanes` | Retrieves the Dual-Axis Execution Priority Lanes (`1–4`) and 6 Life Pillar definitions. |
 | `GET` | `/api/tasks` | Retrieves tasks for date (`?date=YYYY-MM-DD`, defaults to today), enriched with Dual-Axis lane & pillar tags, sorted by execution priority. |
@@ -614,7 +623,7 @@ docker compose ps
 
 ## 📌 Project Status, Limitations & Failure Modes
 
-* **Current Stage**: Standalone V2 (`51/51` automated unit, integration, 20-tool execution, and security hardening tests passing across all suites).
+* **Current Stage**: Standalone V3.7 (`53/53` automated unit, integration, 20-tool execution, 16-question onboarding, and security hardening tests passing across all suites; `0` lint warnings/errors).
 * **Small Local Model (7B) Constraints & Mitigations**:
   - Small 7B parameter models (`qwen2.5-coder:7b`) can occasionally omit XML tool wrappers or struggle with deeply nested multi-step tool chains.
   - **How Companion Mitigates This**:

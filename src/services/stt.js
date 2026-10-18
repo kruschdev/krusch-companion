@@ -1,6 +1,38 @@
 import http from 'http';
 import config from '../config.js';
 
+export function normalizeSpokenTranscript(rawText = '') {
+  let text = String(rawText || '').trim();
+  if (!text) return '';
+
+  // 1. Fix spoken 4-digit street numbers split by Whisper: "11.6 to 1" or "11 6 to 1" -> "1161"
+  text = text.replace(/\b(\d{1,2})[.\s]+(\d)\s+to\s+(\d)\b/gi, '$1$2$3');
+  text = text.replace(
+    /\b(\d{2})\.(\d{2})(?=\s+(?:North|South|East|West|N\b|S\b|E\b|W\b|[A-Z][a-z]+\s+(?:St|Street|Ave|Avenue|Dr|Drive|Blvd|Boulevard|Rd|Road|Way|Ln|Lane)))/g,
+    '$1$2'
+  );
+
+  // 2. Fix phonetic mishearings of local schools / places ("Waba High School" -> "La Habra High School")
+  text = text.replace(/\b(?:waba|la\s*habra|lahabra)\s+high\s+school\b/gi, 'La Habra High School');
+
+  // 3. Fix spoken / period time formatting ("at 3.30" -> "at 3:30", "at three thirty" -> "at 3:30")
+  text = text.replace(/\b(at|by|around|before|after)\s+(\d{1,2})\.(\d{2})\b/gi, '$1 $2:$3');
+  const wordHours = {
+    one: '1', two: '2', three: '3', four: '4', five: '5', six: '6',
+    seven: '7', eight: '8', nine: '9', ten: '10', eleven: '11', twelve: '12'
+  };
+  const wordMins = {
+    'fifteen': '15', 'thirty': '30', 'forty-five': '45', 'forty five': '45',
+    'ten': '10', 'twenty': '20', 'forty': '40', 'fifty': '50'
+  };
+  text = text.replace(
+    /\b(at|by|around|for)\s+(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+(fifteen|thirty|forty-five|forty five|ten|twenty|forty|fifty)\b/gi,
+    (_m, prep, hr, mn) => `${prep} ${wordHours[hr.toLowerCase()]}:${wordMins[mn.toLowerCase()]}`
+  );
+
+  return text;
+}
+
 export async function transcribeAudio(audioBuffer, filename = 'audio.webm') {
   if (!config.whisper.enabled) {
     throw new Error('Local Whisper service is disabled in config');
@@ -45,9 +77,9 @@ export async function transcribeAudio(audioBuffer, filename = 'audio.webm') {
       res.on('end', () => {
         try {
           const result = JSON.parse(data);
-          resolve(result.text || '');
+          resolve(normalizeSpokenTranscript(result.text || ''));
         } catch {
-          resolve(data.trim());
+          resolve(normalizeSpokenTranscript(data.trim()));
         }
       });
     });

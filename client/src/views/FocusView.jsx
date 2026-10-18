@@ -1,55 +1,77 @@
 import React, { useState, useEffect } from 'react';
 
-export function FocusView({ task, onTaskCompleted, onExitFocus }) {
+export function FocusView({ task, onSelectTask, onTaskCompleted }) {
   const [timeLeft, setTimeLeft] = useState(25 * 60);
   const [isRunning, setIsRunning] = useState(false);
-  const [nudge, setNudge] = useState('');
-  const [isNudgeLoading, setIsNudgeLoading] = useState(false);
+  const [pendingTasks, setPendingTasks] = useState([]);
 
-  useEffect(() => {
-    let timer = null;
-    if (isRunning && timeLeft > 0) {
-      timer = setInterval(() => setTimeLeft(prev => prev - 1), 1000);
-    } else if (timeLeft === 0) {
-      setIsRunning(false);
-    }
-    return () => clearInterval(timer);
-  }, [isRunning, timeLeft]);
-
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-      if (e.code === 'Space') {
-        e.preventDefault();
-        setIsRunning(prev => !prev);
-      } else if (e.key === 'Escape') {
-        if (onExitFocus) onExitFocus();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onExitFocus]);
-
-  const handleGetNudge = async () => {
-    setIsNudgeLoading(true);
+  const loadPendingTasks = async () => {
     try {
-      const res = await fetch('/api/coach/nudge', { method: 'POST' });
+      const res = await fetch('/api/tasks');
       if (res.ok) {
-        const data = await res.json();
-        setNudge(data.nudge);
+        const all = await res.json();
+        const incomplete = (Array.isArray(all) ? all : []).filter(t => !t.completed);
+        incomplete.sort((a, b) => {
+          const epA = a.execution_priority || 3;
+          const epB = b.execution_priority || 3;
+          if (epA !== epB) return epA - epB;
+          return (a.tier || 5) - (b.tier || 5);
+        });
+        setPendingTasks(incomplete);
+        if ((!task || task.completed) && incomplete.length > 0 && onSelectTask) {
+          onSelectTask(incomplete[0]);
+        }
       }
-    } catch (err) {
-      setNudge('Just take a deep breath and start with 3 minutes.');
-    } finally {
-      setIsNudgeLoading(false);
+    } catch {
+      // Non-fatal
     }
   };
 
+  useEffect(() => {
+    let active = true;
+    fetch('/api/tasks')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((all) => {
+        if (!active || !all) return;
+        const incomplete = (Array.isArray(all) ? all : []).filter(t => !t.completed);
+        incomplete.sort((a, b) => {
+          const epA = a.execution_priority || 3;
+          const epB = b.execution_priority || 3;
+          if (epA !== epB) return epA - epB;
+          return (a.tier || 5) - (b.tier || 5);
+        });
+        setPendingTasks(incomplete);
+        if ((!task || task.completed) && incomplete.length > 0 && onSelectTask) {
+          onSelectTask(incomplete[0]);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [task, onSelectTask]);
+
+  useEffect(() => {
+    if (!isRunning || timeLeft <= 0) return undefined;
+    const timer = setInterval(() => {
+      setTimeLeft(prev => {
+        if (prev <= 1) {
+          setIsRunning(false);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [isRunning, timeLeft]);
+
+  const activeTask = task || pendingTasks[0] || null;
+
   const handleComplete = async () => {
-    if (task && onTaskCompleted) {
-      await onTaskCompleted(task.id);
+    if (activeTask && onTaskCompleted) {
+      await onTaskCompleted(activeTask.id);
+      await loadPendingTasks();
     }
-    if (onExitFocus) onExitFocus();
   };
 
   const minutes = Math.floor(timeLeft / 60);
@@ -57,23 +79,15 @@ export function FocusView({ task, onTaskCompleted, onExitFocus }) {
   const timeFormatted = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '65vh', gap: 28, textAlign: 'center' }}>
-      {/* Return button */}
-      <div style={{ width: '100%', display: 'flex', justifyContent: 'flex-start' }}>
-        <button className="btn-secondary" onClick={onExitFocus} style={{ fontSize: '0.85rem' }}>
-          ← Back to Board
-        </button>
-      </div>
-
-      {/* Focus Ring & Timer */}
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '65vh', gap: 20, textAlign: 'center' }}>
+      {/* Focus Timer Circle */}
       <div
         style={{
-          width: 240,
-          height: 240,
+          width: 210,
+          height: 210,
           borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(0, 240, 255, 0.1) 0%, rgba(121, 40, 202, 0.05) 70%, transparent 100%)',
+          background: 'radial-gradient(circle, rgba(0, 240, 255, 0.08) 0%, transparent 70%)',
           border: '2px solid var(--accent-cyan)',
-          boxShadow: '0 0 40px rgba(0, 240, 255, 0.35)',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
@@ -81,13 +95,10 @@ export function FocusView({ task, onTaskCompleted, onExitFocus }) {
           gap: 6
         }}
       >
-        <span style={{ fontSize: '0.75rem', letterSpacing: '0.1em', color: 'var(--accent-cyan)', textTransform: 'uppercase', fontWeight: 700 }}>
-          {isRunning ? 'FOCUS FLOW ACTIVE' : 'FOCUS TIMER'}
-        </span>
-        <span style={{ fontSize: '3.2rem', fontWeight: 800, fontFamily: 'var(--font-mono)', color: '#f8fafc' }}>
+        <span style={{ fontSize: '2.9rem', fontWeight: 800, fontFamily: 'var(--font-mono)', color: '#f8fafc' }}>
           {timeFormatted}
         </span>
-        <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+        <div style={{ display: 'flex', gap: 8 }}>
           <button
             className="btn-secondary"
             onClick={() => setIsRunning(!isRunning)}
@@ -105,80 +116,58 @@ export function FocusView({ task, onTaskCompleted, onExitFocus }) {
         </div>
       </div>
 
-      {/* Target Task */}
-      <div className="glass-panel" style={{ padding: '24px 32px', maxWidth: 620, width: '100%' }}>
-        <span style={{ fontSize: '0.8rem', color: 'var(--accent-amber)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-          CURRENT SINGLE-TASK MISSION
-        </span>
-        {task && (task.execution_lane_short || task.pillar_name) && (
-          <div style={{ display: 'flex', justifyContent: 'center', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
-            {task.execution_lane_short && (
-              <span
-                style={{
-                  fontSize: '0.74rem',
-                  fontWeight: 700,
-                  padding: '3px 10px',
-                  borderRadius: 999,
-                  background: `${task.execution_lane_color || '#ef4444'}22`,
-                  border: `1px solid ${task.execution_lane_color || '#ef4444'}66`,
-                  color: task.execution_lane_color || '#ef4444'
-                }}
-              >
-                {task.execution_lane_emoji || '🚨'} {task.execution_lane_short}
-              </span>
-            )}
-            {task.pillar_name && (
-              <span
-                style={{
-                  fontSize: '0.74rem',
-                  fontWeight: 700,
-                  padding: '3px 10px',
-                  borderRadius: 999,
-                  background: `${task.pillar_color || '#f97316'}22`,
-                  border: `1px solid ${task.pillar_color || '#f97316'}66`,
-                  color: task.pillar_color || '#f97316'
-                }}
-              >
-                {task.pillar_emoji || '🏠'} {task.pillar_name}
-              </span>
-            )}
-          </div>
-        )}
-        <h2 style={{ fontSize: '1.5rem', fontWeight: 800, margin: '10px 0 16px' }}>
-          {task ? task.title : 'Pick a task from Today to enter focus flow'}
+      {/* Current Focus Task */}
+      <div className="glass-panel" style={{ padding: '22px 28px', maxWidth: 580, width: '100%' }}>
+        <h2 style={{ fontSize: '1.35rem', fontWeight: 700, marginBottom: 14 }}>
+          {activeTask ? activeTask.title : 'No open tasks right now.'}
         </h2>
-        {task?.notes && (
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: 16 }}>
-            {task.notes}
-          </p>
-        )}
 
-        <div style={{ display: 'flex', justifyContent: 'center', gap: 14 }}>
+        {activeTask && (
           <button
             id="btn-complete-focus-task"
             className="btn-primary"
             onClick={handleComplete}
-            disabled={!task}
-            style={{ padding: '14px 28px', fontSize: '1.05rem' }}
+            style={{ padding: '12px 24px', fontSize: '0.98rem' }}
           >
-            ✅ Complete Mission
+            ✅ Mark Complete
           </button>
-          <button
-            id="btn-get-nudge"
-            className="btn-secondary"
-            onClick={handleGetNudge}
-            disabled={isNudgeLoading}
-            style={{ fontSize: '0.9rem' }}
-          >
-            {isNudgeLoading ? '✨ Coaching...' : '💡 Micro-Nudge'}
-          </button>
-        </div>
+        )}
       </div>
 
-      {/* Micro-Nudge Banner */}
-      {nudge && (
-        <div className="glass-card animate-fade-in" style={{ maxWidth: 540, width: '100%', borderLeft: '3px solid var(--accent-cyan)', fontStyle: 'italic', color: '#cbd5e1' }}>
-          "{nudge}"
+      {/* Simple Up Next Switcher */}
+      {pendingTasks.length > 1 && (
+        <div className="glass-panel" style={{ padding: '14px 18px', maxWidth: 580, width: '100%', textAlign: 'left' }}>
+          <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: 8 }}>
+            Switch task:
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {pendingTasks.map((pt) => {
+              const isSelected = activeTask && pt.id === activeTask.id;
+              return (
+                <button
+                  key={pt.id}
+                  type="button"
+                  onClick={() => onSelectTask && onSelectTask(pt)}
+                  className="glass-card"
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '8px 12px',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    border: isSelected ? '1px solid var(--accent-cyan)' : '1px solid var(--border-subtle)',
+                    background: isSelected ? 'rgba(0, 240, 255, 0.10)' : 'rgba(255, 255, 255, 0.02)',
+                    color: '#f8fafc',
+                    fontSize: '0.86rem'
+                  }}
+                >
+                  <span>{pt.title}</span>
+                  {isSelected && <span style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)' }}>Active</span>}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>

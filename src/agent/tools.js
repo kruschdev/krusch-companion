@@ -5,6 +5,10 @@ import path from 'path';
 import config from '../config.js';
 import {
   createTask,
+  addListToTask,
+  toggleTaskChecklistItem,
+  deleteTask,
+  normalizeChecklistItems,
   toggleTask,
   findTaskByQuery,
   getTasksForDate,
@@ -108,10 +112,14 @@ export function resolveDefaultOrigin(explicitOrigin) {
   }
   try {
     const memories = getActiveMemories();
-    const locMem = memories.find(m => /\b(?:home address|home location|live in|lives in|based in)\b/i.test(m.content));
+    const locMem =
+      memories.find(m => m.key === 'home_location') ||
+      memories.find(m => /\b(?:home address|home location|live in|lives in|based in)\b/i.test(m.content));
     if (locMem) {
-      const m = locMem.content.match(/(?:home address|home location|live in|lives in|based in)\s*(?:is|:)?\s*([^.;\n]+)/i);
+      const m = locMem.content.match(/(?:home address|home location|live in|lives in|based in)\s*(?:is|:)?\s*([^.;(\n]+)/i);
       if (m?.[1]) return m[1].trim();
+      const cleaned = locMem.content.replace(/\s*\([^)]*\)\s*/g, '').replace(/\.$/, '').trim();
+      if (cleaned) return cleaned;
     }
   } catch {
     // Non-fatal
@@ -195,6 +203,8 @@ export async function calculateCommuteAndDeparture({
     }
   }
 
+  let turnByTurnSteps = [];
+
   // Tier 2: Zero-key OpenStreetMap Nominatim + OSRM Driving Route + Rush-Hour Traffic Curve
   if (source !== 'google_maps_live_traffic') {
     try {
@@ -207,18 +217,29 @@ export async function calculateCommuteAndDeparture({
         if (!r.ok) return null;
         const arr = await r.json();
         if (Array.isArray(arr) && arr[0]?.lat && arr[0]?.lon) {
-          return { lat: parseFloat(arr[0].lat), lon: parseFloat(arr[0].lon) };
+          return {
+            lat: parseFloat(arr[0].lat),
+            lon: parseFloat(arr[0].lon),
+            displayName: arr[0].display_name || q
+          };
         }
         return null;
       };
 
-      const [origCoords, destCoords] = await Promise.all([
+      let [origCoords, destCoords] = await Promise.all([
         geocodeOne(resolvedOrigin),
         geocodeOne(cleanDest)
       ]);
 
+      // If origin is a short street address (e.g. "1161 North Citrus") that didn't resolve alone, retry with Drive / destination city
+      if (!origCoords && /^\d+\s+[A-Za-z\s]+$/.test(resolvedOrigin)) {
+        origCoords =
+          (await geocodeOne(`${resolvedOrigin} Drive, La Habra, CA`)) ||
+          (await geocodeOne(`${resolvedOrigin}, La Habra, CA`));
+      }
+
       if (origCoords && destCoords) {
-        const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${origCoords.lon},${origCoords.lat};${destCoords.lon},${destCoords.lat}?overview=false`;
+        const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${origCoords.lon},${origCoords.lat};${destCoords.lon},${destCoords.lat}?overview=false&steps=true`;
         const osrmRes = await fetchImpl(osrmUrl, { signal: AbortSignal.timeout(5000) });
         if (osrmRes.ok) {
           const osrmData = await osrmRes.json();
@@ -227,6 +248,18 @@ export async function calculateCommuteAndDeparture({
             distanceMiles = Number(((route.distance || 13600) / 1609.34).toFixed(1));
             distanceText = `${distanceMiles} mi`;
             baseMinutes = Math.max(2, Math.round((route.duration || 1080) / 60));
+            const rawSteps = route.legs?.[0]?.steps || [];
+            turnByTurnSteps = rawSteps
+              .filter(s => s && s.name && (s.distance || 0) >= 25 && s.maneuver?.type !== 'arrive')
+              .map((s, idx) => {
+                const mi = Math.max(0.1, Number(((s.distance || 0) / 1609.34).toFixed(1)));
+                const mod = s.maneuver?.modifier ? ` ${s.maneuver.modifier}` : '';
+                const action =
+                  idx === 0 || s.maneuver?.type === 'depart'
+                    ? `Start on **${s.name}**`
+                    : `Turn${mod} onto **${s.name}**`;
+                return `${idx + 1}. ${action} *(${mi} mi)*`;
+              });
           }
         }
       }
@@ -282,6 +315,7 @@ export async function calculateCommuteAndDeparture({
     minutesUntilLeave,
     shouldLeaveEarly,
     earlyWarningText,
+    turnByTurnSteps,
     googleMapsDirectionsUrl,
     source
   };
@@ -804,18 +838,66 @@ export const COMPANION_TOOLS = [
   {
     name: 'board_action',
     category: 'board',
-    description: 'Create or complete a task on Today\'s Priority Board, or persist a fact into Sovereign Working Memory as part of a multi-step action.',
+    description: 'Create/complete a task or attach a checklist/list of items to a task on Today\'s Priority Board, or persist a fact into Sovereign Working Memory.',
     parameters: {
-      action: 'string (REQUIRED: "add_task" | "complete_task" | "remember")',
-      title: 'string (REQUIRED: Task title to add/complete, or memory content to remember)',
+      action: 'string (REQUIRED: "add_task" | "add_list_to_task" | "complete_task" | "remember")',
+      title: 'string (REQUIRED: Task title to add/update/complete, or memory content to remember)',
+      items: 'string (OPTIONAL: Comma-separated checklist items/steps to attach to the task)',
       tier: 'number (OPTIONAL: 1=Values/Faith, 2=Partner, 3=Family/Kids, 4=Health/Fitness/Walk, 5=Work; omit to auto-classify)'
     },
     required: ['action', 'title'],
     async execute(args) {
       const action = String(args?.action || 'add_task').toLowerCase().trim();
-      const title = String(args?.title || '').trim();
+      const title = String(args?.title || args?.task || '').trim();
+      const rawItems = args?.items ?? args?.list ?? args?.checklist ?? args?.notes ?? null;
+
+      if (action === 'list_tasks' || action === 'list') {
+        const tasks = getTasksForDate(today());
+        const pending = tasks.filter(t => !t.completed);
+        return {
+          ok: true,
+          tool: 'board_action',
+          actionType: 'tasks_listed',
+          summary: `📋 **Today's Priority Board (${pending.length} pending / ${tasks.length} total)**:\n${pending.map(t => `- **[#${t.id}]** ${t.title}${t.notes ? `\n  ${t.notes.split('\n').join('\n  ')}` : ''}`).join('\n') || '- All tasks completed!'}`,
+          data: { tasks }
+        };
+      }
+
       if (!title) {
         return { ok: false, tool: 'board_action', summary: 'Parameter "title" is required for board_action.' };
+      }
+
+      if (action === 'toggle_checklist_item') {
+        const target = findTaskByQuery(title, today());
+        if (!target) {
+          return { ok: false, tool: 'board_action', summary: `Could not find task matching "${title}" on Today's Board.` };
+        }
+        const updated = toggleTaskChecklistItem(target.id, args?.index ?? 0);
+        if (!updated) {
+          return { ok: false, tool: 'board_action', summary: `Could not toggle checklist item on task #[${target.id}].` };
+        }
+        return {
+          ok: true,
+          tool: 'board_action',
+          actionType: 'task_created',
+          summary: `☑️ Updated checklist on **[#${updated.id}] ${updated.title}**:\n${updated.notes}`,
+          data: { task: updated }
+        };
+      }
+
+      if (action === 'delete_task' || action === 'delete' || action === 'remove_task') {
+        const target = findTaskByQuery(title, today());
+        if (!target) {
+          return { ok: false, tool: 'board_action', summary: `Could not find task matching "${title}" on Today's Board.` };
+        }
+        deleteTask(target.id);
+        return {
+          ok: true,
+          tool: 'board_action',
+          actionType: 'task_deleted',
+          summary: `🗑️ Removed task **[#${target.id}] ${target.title}** from Today's Priority Board.`,
+          data: { task: target }
+        };
       }
 
       if (action === 'complete_task' || action === 'complete') {
@@ -844,22 +926,45 @@ export const COMPANION_TOOLS = [
         };
       }
 
-      // Default: add_task — use keyword-based tier inference first; only use args.tier if keyword inference defaulted to 5
+      if (
+        action === 'add_list_to_task' ||
+        action === 'add_checklist' ||
+        action === 'append_list' ||
+        action === 'update_task' ||
+        (rawItems && normalizeChecklistItems(rawItems).length > 0 && findTaskByQuery(title, today(), { onlyIncomplete: true }))
+      ) {
+        const existing = findTaskByQuery(title, today(), { onlyIncomplete: true }) || findTaskByQuery(title, today());
+        if (existing && rawItems) {
+          const updated = addListToTask(existing.id, { items: rawItems, append: true });
+          const itemLines = normalizeChecklistItems(rawItems);
+          return {
+            ok: true,
+            tool: 'board_action',
+            actionType: 'task_created',
+            summary: `📝 Added **${itemLines.length} checklist item(s)** to **[#${updated.id}] ${updated.title}** (*${updated.execution_lane_emoji} ${updated.execution_lane_short} • ${updated.pillar_emoji} ${updated.pillar}*):\n${updated.notes}`,
+            data: { task: updated, itemsAdded: itemLines }
+          };
+        }
+      }
+
+      // Default: add_task (creates new task, attaching checklist items if provided)
       const keywordInferred = inferPriorityTierFromText(title);
       const useExplicitTier = keywordInferred.tier === 5 && args?.tier >= 1 && args?.tier <= 5;
       const inferred = useExplicitTier ? inferPriorityTierFromText(`[Tier ${args.tier}] ${title}`) : keywordInferred;
       const created = createTask({
         title: inferred.cleanTitle,
         priority_id: inferred.priorityId,
+        items: rawItems,
         energy_level: 'medium',
         date: today()
       });
 
+      const checklistSuffix = created.notes ? `\n📋 **Checklist attached:**\n${created.notes}` : '';
       return {
         ok: true,
         tool: 'board_action',
         actionType: 'task_created',
-        summary: `✅ Added task **[#${created.id}] ${created.title}** to **Tier ${created.tier}: ${created.priority_name} ${created.priority_emoji}**.`,
+        summary: `✅ Added task **[#${created.id}] ${created.title}** to **Tier ${created.tier}: ${created.priority_name} ${created.priority_emoji}**.${checklistSuffix}`,
         data: { task: created }
       };
     }
@@ -1554,6 +1659,12 @@ export const COMPANION_TOOLS = [
         `- **Traffic-Adjusted Drive Time**: **${commute.trafficMinutes} min** *(${commute.trafficLevel} Traffic${commute.trafficDelayMinutes > 0 ? `, +${commute.trafficDelayMinutes} min delay` : ''})*`,
         `- **⏰ Recommended Leave-By Time**: **\`${commute.leaveByFormatted}\`**`,
         `- ${commute.earlyWarningText}`,
+        ...(Array.isArray(commute.turnByTurnSteps) && commute.turnByTurnSteps.length > 0
+          ? [
+              `- **🧭 Turn-by-Turn Driving Directions**:`,
+              ...commute.turnByTurnSteps.map(step => `  ${step}`)
+            ]
+          : []),
         ...(notifiedPush ? [`- 🔔 **Push Notification Sent** via ntfy (\`${ntfyTopic}\`)`] : []),
         `- 🗺️ [Open Turn-by-Turn Google Maps Directions](${commute.googleMapsDirectionsUrl})`
       ];

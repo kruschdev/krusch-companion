@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { attachSilenceDetector } from '../utils/voiceSilenceDetector';
 
 export function AudioRecorder({ onAudioReady, onLiveTranscript, isProcessing }) {
   const [isRecording, setIsRecording] = useState(false);
@@ -6,6 +7,7 @@ export function AudioRecorder({ onAudioReady, onLiveTranscript, isProcessing }) 
   const [liveTranscript, setLiveTranscript] = useState('');
   const mediaRecorderRef = useRef(null);
   const recognitionRef = useRef(null);
+  const silenceDetectorRef = useRef(null);
   const transcriptBufferRef = useRef('');
   const audioChunksRef = useRef([]);
   const canvasRef = useRef(null);
@@ -16,7 +18,24 @@ export function AudioRecorder({ onAudioReady, onLiveTranscript, isProcessing }) 
 
   useEffect(() => {
     return () => {
-      stopRecording();
+      if (silenceDetectorRef.current) {
+        silenceDetectorRef.current.stop();
+        silenceDetectorRef.current = null;
+      }
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {
+          // Ignore stop errors on unmount
+        }
+      }
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        try {
+          mediaRecorderRef.current.stop();
+        } catch {
+          // Ignore stop errors on unmount
+        }
+      }
       if (timerRef.current) clearInterval(timerRef.current);
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
       if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
@@ -31,15 +50,10 @@ export function AudioRecorder({ onAudioReady, onLiveTranscript, isProcessing }) 
       transcriptBufferRef.current = '';
       setLiveTranscript('');
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '';
-      const mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
-
-      // Start Browser-Native Web Speech API in parallel as a zero-dependency STT fallback
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (SpeechRecognition) {
-        try {
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        if (SpeechRecognition) {
           const recognition = new SpeechRecognition();
           recognition.continuous = true;
           recognition.interimResults = true;
@@ -56,6 +70,57 @@ export function AudioRecorder({ onAudioReady, onLiveTranscript, isProcessing }) 
           };
           recognition.start();
           recognitionRef.current = recognition;
+          setIsRecording(true);
+          setDuration(0);
+          timerRef.current = setInterval(() => {
+            setDuration((prev) => prev + 1);
+          }, 1000);
+          return;
+        }
+        const textarea = document.getElementById('textarea-thought-stream');
+        if (textarea) textarea.focus();
+        alert('Tip on iPhone over HTTP: Tap the microphone icon on your iOS keyboard inside the text box below to dictate directly.');
+        return;
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          noiseSuppression: true,
+          echoCancellation: true,
+          autoGainControl: true
+        }
+      });
+      const mimeType = typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported?.('audio/webm') ? 'audio/webm' : '';
+      const mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+
+      silenceDetectorRef.current = attachSilenceDetector(stream, {
+        silenceMs: 4000,
+        noSpeechTimeoutMs: 12000,
+        onSilenceStop: () => {
+          stopRecording();
+        }
+      });
+
+      if (SpeechRecognition) {
+        try {
+          const recognition = new SpeechRecognition();
+          recognition.continuous = true;
+          recognition.interimResults = true;
+          recognition.lang = 'en-US';
+          recognition.onresult = (event) => {
+            let combined = '';
+            for (let i = 0; i < event.results.length; i++) {
+              combined += event.results[i][0].transcript + ' ';
+            }
+            const clean = combined.trim();
+            transcriptBufferRef.current = clean;
+            setLiveTranscript(clean);
+            if (onLiveTranscript) onLiveTranscript(clean);
+            silenceDetectorRef.current?.markSpeechActivity();
+          };
+          recognition.start();
+          recognitionRef.current = recognition;
         } catch {
           // Non-fatal if browser blocks SpeechRecognition
         }
@@ -68,12 +133,18 @@ export function AudioRecorder({ onAudioReady, onLiveTranscript, isProcessing }) 
       };
 
       mediaRecorder.onstop = () => {
+        if (silenceDetectorRef.current) {
+          silenceDetectorRef.current.stop();
+          silenceDetectorRef.current = null;
+        }
         const audioBlob = new Blob(audioChunksRef.current, { type: mimeType || 'audio/webm' });
         stream.getTracks().forEach((track) => track.stop());
         if (recognitionRef.current) {
           try {
             recognitionRef.current.stop();
-          } catch {}
+          } catch {
+            // Non-fatal if recognition already stopped
+          }
         }
         if (onAudioReady) {
           onAudioReady(audioBlob, transcriptBufferRef.current);
@@ -99,21 +170,35 @@ export function AudioRecorder({ onAudioReady, onLiveTranscript, isProcessing }) 
 
       drawWaveform();
     } catch (err) {
-      alert(`Microphone access error: ${err.message}. Please allow microphone permissions or type directly below.`);
+      const textarea = document.getElementById('textarea-thought-stream');
+      if (textarea) textarea.focus();
+      alert(`Microphone access note (${err.message}). Focused text box — tap the mic key on your keyboard or type directly below.`);
     }
   };
 
   const stopRecording = () => {
+    if (silenceDetectorRef.current) {
+      silenceDetectorRef.current.stop();
+      silenceDetectorRef.current = null;
+    }
     if (recognitionRef.current) {
       try {
         recognitionRef.current.stop();
-      } catch {}
+      } catch {
+        // Non-fatal if recognition already stopped
+      }
     }
-    if (mediaRecorderRef.current && isRecording) {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
       if (timerRef.current) clearInterval(timerRef.current);
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+    } else if (isRecording) {
+      setIsRecording(false);
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (onAudioReady && transcriptBufferRef.current) {
+        onAudioReady(new Blob(), transcriptBufferRef.current);
+      }
     }
   };
 
@@ -188,10 +273,10 @@ export function AudioRecorder({ onAudioReady, onLiveTranscript, isProcessing }) 
 
       <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>
         {isRecording
-          ? 'Listening (Whisper STT + Browser Web Speech API fallback active)...'
+          ? 'Listening... tap to stop'
           : isProcessing
-          ? 'Processing with Cascade Router...'
-          : 'Tap the mic to speak your Thought Stream (works with local Whisper or Browser Web Speech API)'}
+          ? 'Processing...'
+          : 'Tap the mic to speak'}
       </p>
     </div>
   );

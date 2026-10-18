@@ -1,3 +1,4 @@
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { loadJsonConfig } from './toolkit/config.js';
@@ -5,6 +6,32 @@ import { loadJsonConfig } from './toolkit/config.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..');
+
+function loadEnvFile(envPath) {
+  try {
+    if (!fs.existsSync(envPath)) return;
+    const lines = fs.readFileSync(envPath, 'utf-8').split(/\r?\n/);
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line || line.startsWith('#')) continue;
+      const eqIdx = line.indexOf('=');
+      if (eqIdx === -1) continue;
+      const key = line.slice(0, eqIdx).trim();
+      const val = line.slice(eqIdx + 1).trim().replace(/^["']|["']$/g, '');
+      if (key && process.env[key] === undefined) {
+        process.env[key] = val;
+      }
+    }
+  } catch {
+    // Non-fatal
+  }
+}
+
+// Load project .env and fallback to monorepo root .env (unless running hermetic unit tests)
+if (process.env.NODE_ENV !== 'test') {
+  loadEnvFile(path.join(projectRoot, '.env'));
+  loadEnvFile(path.resolve(projectRoot, '..', '..', '.env'));
+}
 
 const fileConfig = loadJsonConfig(path.join(projectRoot, 'config.json'));
 
@@ -16,15 +43,23 @@ export const config = {
   },
   cascade: {
     provider: process.env.LLM_PROVIDER || fileConfig.cascade?.provider || 'ollama',
-    allowCloudEscalation: process.env.ALLOW_CLOUD_ESCALATION === 'true' || fileConfig.cascade?.allowCloudEscalation || false,
+    allowCloudEscalation:
+      process.env.ALLOW_CLOUD_ESCALATION === 'true' ||
+      (process.env.ALLOW_CLOUD_ESCALATION !== 'false' && Boolean(fileConfig.cascade?.allowCloudEscalation)),
     l0HeuristicEnabled: fileConfig.cascade?.l0HeuristicEnabled !== false,
     speculativeHedging: fileConfig.cascade?.speculativeHedging !== false,
-    edgeModel: process.env.EDGE_MODEL || fileConfig.cascade?.edgeModel || 'qwen2.5:7b',
-    swarmModel: process.env.SWARM_MODEL || fileConfig.cascade?.swarmModel || 'qwen2.5-coder:14b',
+    edgeModel: process.env.EDGE_MODEL || fileConfig.cascade?.edgeModel || 'qwen2.5-coder:7b',
+    swarmModel: process.env.SWARM_MODEL || fileConfig.cascade?.swarmModel || 'qwen3-coder-30b-moe:latest',
+    swarmFallbackModel:
+      process.env.SWARM_FALLBACK_MODEL || fileConfig.cascade?.swarmFallbackModel || 'hermes3:latest',
     ollamaUrl: process.env.OLLAMA_HOST || fileConfig.cascade?.ollamaUrl || 'http://127.0.0.1:11434',
-    swarmUrl: process.env.SWARM_VLLM_URL || fileConfig.cascade?.swarmUrl || 'http://127.0.0.1:8000/v1',
+    swarmUrl: process.env.SWARM_VLLM_URL || fileConfig.cascade?.swarmUrl || 'http://kruschdev:11434/v1',
+    swarmFallbackUrl:
+      process.env.SWARM_FALLBACK_URL || fileConfig.cascade?.swarmFallbackUrl || 'http://kruschserv:11434/v1',
     openrouterApiKey: process.env.OPENROUTER_API_KEY || fileConfig.cascade?.openrouterApiKey || '',
     openrouterModel: process.env.OPENROUTER_MODEL || fileConfig.cascade?.openrouterModel || 'qwen/qwen-2.5-72b-instruct',
+    frontierModel:
+      process.env.FRONTIER_MODEL || fileConfig.cascade?.frontierModel || 'z-ai/glm-5.3',
     openrouterBaseUrl: process.env.OPENROUTER_BASE_URL || fileConfig.cascade?.openrouterBaseUrl || 'https://openrouter.ai/api/v1',
     openrouterZeroDataRetention: process.env.OPENROUTER_ZDR !== 'false' && (fileConfig.cascade?.openrouterZeroDataRetention !== false)
   },

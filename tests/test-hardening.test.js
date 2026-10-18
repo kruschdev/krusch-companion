@@ -18,8 +18,9 @@ const { safeEvaluateArithmetic, evaluateL0Heuristic, breakdownTaskIntoSubtasks, 
 const { rememberMemory, supersedeMemory, getActiveMemories, getSupersededMemories, deleteMemory, getDecayCandidates, createDatabaseBackup, compileStateBriefing } = await import('../src/context/memory-store.js');
 const { evaluateCompanionContext } = await import('../src/context/boundary-gate.js');
 const { processChaosDump, classifyTranscriptSegments } = await import('../src/services/chaos-dump.js');
-const { executeCompanionTool, getAgenticToolStats, setAgenticDryRunMode, getFailedToolCallLogs } = await import('../src/agent/tools.js');
+const { executeCompanionTool, getAgenticToolStats, setAgenticDryRunMode, getFailedToolCallLogs, resolveDefaultOrigin } = await import('../src/agent/tools.js');
 const { scoreHolodataConfidence, pruneToolsForPrompt, getLastToolPruningReport, parseHolodataTags, inferFallbackToolCalls } = await import('../src/agent/agentic-proxy.js');
+const { getOnboardingState, saveOnboardingProfile, skipOnboarding } = await import('../src/services/onboarding.js');
 const { runDoctorChecks } = await import('../scripts/doctor.js');
 
 initCompanionDb(testDbPath);
@@ -372,9 +373,46 @@ test('Hardening: Google AP2 Payment Mandate (Confirm-Before-Act Gate + HMAC-SHA2
   assert.strictEqual(walletFallback[0]?.name, 'google_wallet_pass');
 });
 
+test('Hardening: Initial Setup / Database Seeding Questionnaire (16 Questions, Skip & Multi-Table Seeding)', async () => {
+  const initial = getOnboardingState();
+  assert.strictEqual(initial.completed, false);
+  assert.strictEqual(initial.sections.length, 5);
+  const totalQuestions = initial.sections.reduce((acc, s) => acc + s.questions.length, 0);
+  assert.strictEqual(totalQuestions, 16);
+
+  const skipped = skipOnboarding();
+  assert.strictEqual(skipped.completed, true);
+
+  const saved = await saveOnboardingProfile({
+    fullName: 'Kevin Rusch (Kevin)',
+    partnerName: 'Maggie',
+    partnerWorkplace: 'La Habra High School, 801 West Highlander Avenue, La Habra, CA 90631',
+    partnerPickupTime: '3:30 PM',
+    homeAddress: '1161 North Citrus Drive, La Habra, CA 90631',
+    dailyHabits: 'Morning prayer\nCheck in with Maggie',
+    customVocabulary: 'Kevin, Maggie, La Habra High School, 1161 North Citrus Drive'
+  });
+  assert.strictEqual(saved.ok, true);
+  assert.strictEqual(saved.completed, true);
+  assert.ok(saved.seededSummary.memoriesCount >= 5);
+  assert.strictEqual(resolveDefaultOrigin(null), '1161 North Citrus Drive, La Habra, CA 90631');
+});
+
 test('Hardening: Cleanup test artifacts', () => {
   if (fs.existsSync(testDbPath)) fs.unlinkSync(testDbPath);
   if (fs.existsSync(`${testDbPath}-wal`)) fs.unlinkSync(`${testDbPath}-wal`);
   if (fs.existsSync(`${testDbPath}-shm`)) fs.unlinkSync(`${testDbPath}-shm`);
   if (fs.existsSync(testBackupDir)) fs.rmSync(testBackupDir, { recursive: true, force: true });
+  const notesDir = path.resolve(__dirname, '../data/notes');
+  if (fs.existsSync(notesDir)) {
+    for (const f of fs.readdirSync(notesDir)) {
+      if (f.startsWith('ap2-mandate-seattle-city-light-') || f === 'wallet-pass-canlis-dinner-reservation.md') {
+        try {
+          fs.unlinkSync(path.join(notesDir, f));
+        } catch {
+          // ignore
+        }
+      }
+    }
+  }
 });

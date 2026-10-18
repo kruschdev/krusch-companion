@@ -1,5 +1,8 @@
+import fs from 'fs';
+import path from 'path';
 import * as db from '../db/index.js';
-import { calculateCommuteAndDeparture, parseArrivalDateTime } from '../agent/tools.js';
+import { calculateCommuteAndDeparture, parseArrivalDateTime, getNotesDirectory } from '../agent/tools.js';
+import { rememberMemory } from '../context/memory-store.js';
 import { dispatchCompanionChat, inferPriorityTierFromText } from '../router/cascade-client.js';
 
 /**
@@ -405,8 +408,64 @@ async function dispatchSentinelWakeup({
   };
 }
 
+let lastSteeringVersionHash = null;
+
+/**
+ * Synchronize Google Drive `agent.md` steering directives from G-Krusch (:5446)
+ * into Krusch Companion's local notes vault (`data/notes/agent.md`) and Working Memory (`key = 'gkrusch_agent_md'`).
+ */
+export async function syncGkruschDriveSteering({ fetchImpl = fetch, forceRefresh = false } = {}) {
+  const baseUrl = (process.env.G_KRUSCH_URL || 'http://127.0.0.1:5446').replace(/\/+$/, '');
+  try {
+    const res = await fetchImpl(
+      `${baseUrl}/api/steering${forceRefresh ? '?refresh=true' : ''}`,
+      { signal: AbortSignal.timeout(5000) }
+    );
+    if (!res.ok) {
+      return { synced: false, error: `HTTP ${res.status}` };
+    }
+    const data = await res.json();
+    const content = String(data?.content || '').trim();
+    if (!content) {
+      return { synced: false, error: 'Empty agent.md content' };
+    }
+
+    const versionHash = data.versionHash || null;
+    const notesDir = getNotesDirectory();
+    const localPath = path.join(notesDir, 'agent.md');
+    fs.writeFileSync(localPath, content + '\n', 'utf-8');
+
+    if (forceRefresh || !versionHash || versionHash !== lastSteeringVersionHash) {
+      lastSteeringVersionHash = versionHash;
+      const summaryDirective = content
+        .replace(/^#.*$/gm, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 600);
+      rememberMemory({
+        category: 'invariant',
+        key: 'gkrusch_agent_md',
+        content: `[G-Krusch Google Drive agent.md Steering]: ${summaryDirective}`,
+        confidence: 1.0
+      });
+    }
+
+    return {
+      synced: true,
+      versionHash,
+      source: data.source || 'drive',
+      webViewLink: data.webViewLink || null,
+      localPath,
+      content
+    };
+  } catch (err) {
+    return { synced: false, error: err.message };
+  }
+}
+
 /**
  * Execute a single multi-channel Sentinel Watchdog tick:
+ *   0. Syncs Google Drive `agent.md` steering from G-Krusch (when connected)
  *   1. Polls Gmail unread messages (wakes LLM only on urgent/action-required or reservation/schedule emails)
  *   2. Polls Google Calendar events (wakes LLM on double-booking conflicts or events starting <= 15m)
  *   3. Polls Route & Traffic conditions (wakes LLM on traffic spikes, accidents, or imminent departure)
@@ -427,6 +486,11 @@ export async function runSentinelTick({
   const baseUrl = (process.env.G_KRUSCH_URL || 'http://127.0.0.1:5446').replace(/\/+$/, '');
   const triggeredAlerts = [];
   let llmCallsThisTick = 0;
+
+  // ── Channel 0: G-Krusch Google Drive `agent.md` Steering Sync ───────────
+  if (!Array.isArray(customEmails) && !Array.isArray(customEvents) && !Array.isArray(customCalendarEvents)) {
+    await syncGkruschDriveSteering({ fetchImpl }).catch(() => {});
+  }
 
   // ── Channel 1: Gmail Unread Inbox Watchdog ──────────────────────────────
   let unreadEmails = Array.isArray(customEmails) ? customEmails : [];

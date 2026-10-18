@@ -108,12 +108,21 @@ export async function runDoctorChecks() {
   // 6. Optional G-Krusch Google Workspace Bridge
   const gkruschUrl = process.env.G_KRUSCH_URL || 'http://127.0.0.1:5446';
   let gkruschOnline = false;
+  let gkruschAuth = false;
+  let gkruschEmail = null;
+  let gkruschDocs = 0;
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 1500);
     const res = await fetch(`${gkruschUrl}/api/status`, { signal: controller.signal });
     clearTimeout(timer);
-    gkruschOnline = res.ok;
+    if (res.ok) {
+      gkruschOnline = true;
+      const statusData = await res.json().catch(() => ({}));
+      gkruschAuth = Boolean(statusData.authenticated || statusData.status === 'connected');
+      gkruschEmail = statusData.email || statusData.account || null;
+      gkruschDocs = Number(statusData.documentsIndexed || 0);
+    }
   } catch {
     gkruschOnline = false;
   }
@@ -121,15 +130,27 @@ export async function runDoctorChecks() {
   checks.push({
     id: 'gkrusch_workspace',
     name: `G-Krusch Google Workspace Bridge (${gkruschUrl})`,
-    status: gkruschOnline ? 'ok' : 'optional',
-    detail: gkruschOnline
-      ? 'Connected (Live Drive Hybrid RAG, Calendar, Gmail active)'
-      : 'Offline (graceful local fallback to data/notes/ & Today Board active)',
-    remediation: null
+    status: gkruschOnline ? (gkruschAuth ? 'ok' : 'warn') : 'optional',
+    authenticated: gkruschAuth,
+    email: gkruschEmail,
+    authUrl: 'http://localhost:5446/auth/google',
+    detail: !gkruschOnline
+      ? 'Offline (graceful local fallback to data/notes/ & Today Board active)'
+      : gkruschAuth
+      ? `Connected as ${gkruschEmail || 'Google User'} · Live Drive agent.md, RAG (${gkruschDocs} docs), Calendar & Gmail active`
+      : 'G-Krusch Hub online at :5446 · OAuth login required to enable Google Drive agent.md, Calendar & Gmail',
+    remediation: gkruschOnline && !gkruschAuth
+      ? 'Open http://localhost:5446/auth/google to authorize Google Drive, Docs, Calendar, and Gmail.'
+      : null
   });
+
+  for (const c of checks) {
+    if (!c.label) c.label = c.name;
+  }
 
   const hasReadyLlm = (ollamaReachable && edgeModelPresent) || openrouterReady || mockMode;
   return {
+    status: nodeMajor >= 22 && hasReadyLlm ? 'ok' : 'warn',
     ready: nodeMajor >= 22 && hasReadyLlm,
     activeMode: mockMode
       ? 'hermetic_mock'

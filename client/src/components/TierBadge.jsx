@@ -13,11 +13,11 @@ export function TierBadge({ tier, latencyMs }) {
     icon = '🚀';
   } else if (tier === 'L2_swarm') {
     badgeClass = 'tier-l2';
-    label = 'L2 Swarm (14B)';
+    label = 'L2 Swarm (14B · Dual GPU)';
     icon = '🧠';
   } else if (tier === 'L3_cloud') {
     badgeClass = 'tier-l3';
-    label = 'L3 Cloud';
+    label = 'L3 Frontier (GLM 5.3 · ZDR)';
     icon = '☁️';
   }
 

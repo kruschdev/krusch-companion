@@ -107,6 +107,16 @@ export function compactToolSchemaForPrompt(tool, prompt = '') {
       delete rawParams.triggers;
       delete rawParams.steps;
     }
+  } else if (tool.name === 'board_action') {
+    const hasChecklistIntent = /\b(list|checklist|items?|steps?|subtasks?|notes?|bullet|under|include)\b/.test(text) &&
+      !/\b(?:to|on|onto)\s+my\s+(?:task\s+|todo\s+)?list$/i.test(text.trim());
+    if (!hasChecklistIntent) {
+      delete rawParams.items;
+      rawParams.action = '"add_task" | "complete_task" | "remember"';
+    } else {
+      delete rawParams.tier;
+      rawParams.action = '"add_list_to_task" | "add_task"';
+    }
   }
 
   // Condense verbose parameter descriptions while keeping types and enum values
@@ -325,7 +335,7 @@ const INTENT_PATTERNS = [
   {
     category: 'commute',
     tools: ['commute_departure_check'],
-    regex: /\b(?:when\s+(?:do\s+i\s+need\s+to|should\s+i)\s+leave|time\s+to\s+leave|check\s+traffic|how(?:'s|\s+is)\s+traffic|drive\s+time\s+to|travel\s+time\s+to|directions\s+to|commute\s+to|leave\s+early)\b/i
+    regex: /\b(?:when\s+(?:do\s+i\s+need\s+to|should\s+i)\s+leave|time\s+to\s+leave|check\s+traffic|how(?:'s|\s+is)\s+traffic|drive\s+time\s+to|travel\s+time\s+to|(?:get\s+|give\s+me\s+|find\s+|show\s+|need\s+)?(?:driving\s+|turn[\s\-]by[\s\-]turn\s+)?directions(?:\s+(?:to|from|for|between))?|directions\s+(?:to|from|for)|commute\s+to|leave\s+early|route\s+from\s+.+\s+to)\b/i
   },
   {
     category: 'google_wallet',
@@ -360,7 +370,7 @@ const INTENT_PATTERNS = [
   {
     category: 'board',
     tools: ['board_action'],
-    regex: /\b(?:add\s+(?:a\s+|an\s+|urgent\s+)?task\s+to|create\s+(?:a\s+|an\s+|urgent\s+)?task\s+to|complete\s+task\s*[:\-]?|check\s+off\s+task|remember\s+that\s+.+\s+and\s+(?:add|create)\s+task)\b/i
+    regex: /\b(?:add\s+(?:a\s+|an\s+|urgent\s+)?task\s+to|create\s+(?:a\s+|an\s+|urgent\s+)?task\s+to|complete\s+task\s*[:\-]?|check\s+off\s+task|remember\s+that\s+.+\s+and\s+(?:add|create)\s+task|(?:add|put|attach|append)\s+(?:a\s+|this\s+)?(?:list|checklist|subtasks?|items?|steps?)\s+(?:to|on|under|for)\s+(?:(?:my|the|that|this)\s+)?(?:.+?\s+)?task|(?:add|put|attach|append)\s+(?:a\s+|this\s+)?(?:list|checklist)\s+(?:to|on|under|for)\s+|(?:i\s+would\s+like\s+to|i'd\s+like\s+to|i\s+want\s+to|i\s+need\s+to|can\s+you|could\s+you|please)\s+.+?\s+(?:to|on|onto)\s+my\s+(?:task\s+list|todo\s+list|to-do\s+list|list|board|tasks?)|(?:add|put|throw|place)\s+(?!a\s+note\b|a\s+contact\b|to\s+crm\b|a\s+pass\b).+?\s+(?:to|on|onto)\s+(?:my\s+|the\s+|today'?s?\s+)?(?:task\s+list|todo\s+list|to-do\s+list|list|board))\b/i
   }
 ];
 
@@ -393,7 +403,7 @@ export function detectAgenticIntent(prompt, options = {}) {
   }
 
   // Check if the user is chaining a board/memory action or note save alongside an external tool call
-  if (/\b(add\s+(?:a\s+)?task|create\s+(?:a\s+)?task|schedule\s+(?:a\s+)?task|complete\s+task|remember\s+that)\b/i.test(text)) {
+  if (/\b(add\s+(?:a\s+)?task|create\s+(?:a\s+)?task|schedule\s+(?:a\s+)?task|complete\s+task|remember\s+that|remind\s+me\s+to|i\s+need\s+to\s+(?:leave|pick\s+up|go\s+pick\s+up))\b/i.test(text)) {
     selectedToolNames.add('board_action');
     if (!matchedCategories.includes('board')) matchedCategories.push('board');
   }
@@ -564,10 +574,259 @@ export function parseHolodataTags(rawText) {
 }
 
 /**
+ * Parse natural spoken or written task/list commands into structured board_action arguments:
+ * - Adding a list / checklist / items to an existing or new task
+ * - Spoken "I would like to [do X] to my list" / "Put [X] on my list"
+ * - Completing a task or saving a memory
+ */
+export function extractSpokenBoardAction(rawText) {
+  const text = String(rawText || '').trim();
+  if (!text) return null;
+
+  // 1. Add a list / checklist / items to a task:
+  // e.g. "Add a list to my Put away the dishes task: unload top rack, unload bottom rack, wipe counter"
+  // e.g. "Add a checklist to task #3: item 1, item 2"
+  // e.g. "Add a list to Put away the dishes with unload top rack, unload bottom rack"
+  const listToTaskMatch =
+    text.match(/(?:add|put|attach|append)\s+(?:a\s+|this\s+)?(?:list|checklist|subtasks?|items?|steps?)\s+(?:to|on|under|for)\s+(?:my\s+|the\s+)?(?:task\s+)?(.+?)(?:\s+task)?(?:\s*[:\-]\s*|\s+(?:with|including|containing)\s+(?:items?\s*)?)(.+)$/i) ||
+    text.match(/^(?:to|on|under)\s+(?:my\s+|the\s+)?(?:task\s+)?(.+?)(?:\s+task)?,\s*(?:please\s+)?(?:add|put|attach|append)(?:\s+a\s+(?:list|checklist))?\s*[:\-]?\s*(.+)$/i);
+  if (listToTaskMatch) {
+    return {
+      action: 'add_list_to_task',
+      title: listToTaskMatch[1].trim(),
+      items: listToTaskMatch[2].trim()
+    };
+  }
+
+  // e.g. "Add items unload top rack, unload bottom rack to my dishes task"
+  const itemsFirstMatch = text.match(/(?:add|put|attach|append)\s+(?:the\s+)?(?:items?|steps?|subtasks?|checklist\s+items?)\s*[:\-]?\s*(.+?)\s+(?:to|on|under)\s+(?:my\s+|the\s+)?(?:task\s+)?(.+?)(?:\s+task)?[?.!]*$/i);
+  if (itemsFirstMatch) {
+    return {
+      action: 'add_list_to_task',
+      title: itemsFirstMatch[2].trim(),
+      items: itemsFirstMatch[1].trim()
+    };
+  }
+
+  // e.g. "Add a list: unload top rack, unload bottom rack" (defaults to latest task on board)
+  const implicitListMatch = text.match(/^(?:please\s+)?(?:add|put|attach|append)\s+(?:a\s+|this\s+)?(?:list|checklist|sublist|items?|steps?)\s*[:\-]\s*(.+)$/i);
+  if (implicitListMatch) {
+    return {
+      action: 'add_list_to_task',
+      title: 'last task',
+      items: implicitListMatch[1].trim()
+    };
+  }
+
+  // 2. Add/create a task WITH a list/checklist attached:
+  // e.g. "Add a task Put away the dishes with a list: unload top rack, unload bottom rack"
+  const taskWithListMatch = text.match(/(?:add|create|schedule)\s+(?:a\s+|an\s+|urgent\s+)?task\s+(?:to\s+|called\s+|titled\s+)?(.+?)\s+with\s+(?:a\s+)?(?:list|checklist|items?|steps?)\s*[:\-]?\s*(.+)$/i);
+  if (taskWithListMatch) {
+    return {
+      action: 'add_task',
+      title: taskWithListMatch[1].trim(),
+      items: taskWithListMatch[2].trim()
+    };
+  }
+
+  // 3. Complete / check off task
+  const completeMatch = text.match(/\b(?:complete|check\s+off)\s+task\s*[:\-]?\s*(.+?)$/i);
+  if (completeMatch) {
+    return {
+      action: 'complete_task',
+      title: completeMatch[1].trim()
+    };
+  }
+
+  // 4. Explicit "add a task to ..." (including compound prompts like "Check weather and add a task to ...")
+  const addTaskMatch = text.match(/\b(?:add|create|schedule)\s+(?:a\s+|an\s+|urgent\s+)?task\s+(?:to\s+)?(.+?)$/i);
+  if (addTaskMatch) {
+    const cleaned = addTaskMatch[1]
+      .replace(/\s+(?:on|to|onto|in)\s+(?:my\s+|the\s+|today'?s?\s+)?(?:task\s+list|todo\s+list|to-do\s+list|list|board)[?.!]*$/i, '')
+      .trim();
+    return {
+      action: 'add_task',
+      title: cleaned || addTaskMatch[1].trim()
+    };
+  }
+
+  // 5. Spoken / conversational "to my list" / "on my list" / "I would like to ... to my list":
+  // e.g. "I would like to put away the dishes here in a second to my list"
+  // e.g. "Put unload the dishwasher on my list"
+  // e.g. "Add buy groceries to my list"
+  const toMyListMatch = text.match(/^(.+?)\s+(?:to|on|onto|in|into)\s+(?:my|the|today'?s?|our)\s+(?:task\s+list|todo\s+list|to-do\s+list|daily\s+list|priority\s+board|task\s+board|list|tasks?|board)(?:\s+(?:please|thanks|thank\s+you|right\s+now|today|for\s+me))?[?.!]*$/i);
+  if (toMyListMatch) {
+    let cleanTitle = toMyListMatch[1]
+      .replace(/^(?:hey\s+|hi\s+|okay\s+|so\s+)*(?:can\s+you\s+|could\s+you\s+|would\s+you\s+|please\s+)*(?:i\s+would\s+like\s+to\s+|i'd\s+like\s+to\s+|i\s+want\s+to\s+|i\s+need\s+to\s+|let'?s\s+)*(?:(?:add|put(?!\s+(?:away|together|out|up|back|down|off)\b)|throw|place|create|schedule)\s+(?:a\s+|an\s+|urgent\s+)?(?:new\s+)?(?:task\s+(?:to\s+)?)?)?/i, '')
+      .replace(/\s+(?:here\s+in\s+a\s+(?:second|sec|minute|bit|moment)|in\s+a\s+(?:second|sec|minute|bit|little\s+bit)|real\s+quick|for\s+me|please|right\s+now)$/i, '')
+      .trim();
+    if (cleanTitle) {
+      cleanTitle = cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1);
+      return {
+        action: 'add_task',
+        title: cleanTitle
+      };
+    }
+  }
+
+  // 6. Spoken obligations ("remind me to ...", "I need to pick up ...", "I need to leave to go pick up ...")
+  // Strip leading speech fillers ("Uh, ", "Um, ", "And ", "uh no uh not a magnet...")
+  const strippedSpoken = text
+    .replace(/^(?:(?:uh+|um+|oh+|ah+|er+|well|okay|ok|so|and|hey|listen|wait|actually|no|nope)\b[,.\s]*)+/i, '')
+    .replace(/^(?:not\s+(?:a\s+|an\s+|the\s+)?[a-z0-9\s]{1,25}?[,.\s]+)?/i, '')
+    .replace(/(?:[,.\s]+(?:uh+|um+|er+|ah+)[,.\s…]*)+$/i, '')
+    .trim();
+
+  const spokenObligationMatch = strippedSpoken.match(
+    /^(?:(?:([A-Z][a-z]+)\s+(?:is\s+)?my\s+(?:wife|husband|partner)[,.\s]+)?(?:i\s+told\s+(?:her|him|you)\s+that\s+)?(?:remind\s+me\s+to|i\s+need\s+to|i\s+have\s+to|i've\s+got\s+to|we\s+need\s+to|and\s+you\s+can)\s+)(.+)$/i
+  );
+  if (spokenObligationMatch) {
+    const partnerName = spokenObligationMatch[1] ? spokenObligationMatch[1].trim() : null;
+    let obligationBody = spokenObligationMatch[2]
+      // Strip trailing directions/commute clause if chained in the same sentence
+      .replace(/\s+(?:we(?:'re|\s+are)\s+)?leaving\s+from\s+.+$/i, '')
+      .replace(/\s+and\s+(?:to\s+)?(?:get|find|check)\s+(?:driving\s+)?directions.*$/i, '')
+      .replace(/[?.!]+$/, '')
+      .trim();
+
+    if (
+      obligationBody &&
+      obligationBody.length >= 3 &&
+      !/^(?:check\s+traffic|get\s+(?:driving\s+)?directions|check\s+the\s+weather|search\s+the\s+web)\b/i.test(obligationBody)
+    ) {
+      if (partnerName && /\bpick\s+her\s+up\b/i.test(obligationBody)) {
+        obligationBody = obligationBody.replace(/\bpick\s+her\s+up\b/i, `Pick up ${partnerName}`);
+      }
+      obligationBody = obligationBody.charAt(0).toUpperCase() + obligationBody.slice(1);
+      return {
+        action: 'add_task',
+        title: obligationBody
+      };
+    }
+  }
+
+  // 7. Remember that ...
+  const rememberMatch = text.match(/\bremember\s+that\s+(.+?)(?:\s+and\s+(?:add|create)\s+task|$)/i);
+  if (rememberMatch) {
+    return {
+      action: 'remember',
+      title: rememberMatch[1].trim()
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Extract origin, destination, and arrivalTime across natural spoken commute/directions sentences
+ * and recent conversation history (e.g. "She works at La Habra High School. Get driving directions from 1161 North Citrus Drive").
+ */
+export function extractCommuteParams(rawText, history = []) {
+  let text = String(rawText || '').trim();
+  // Normalize spoken street numbers ("11.6 to 1" -> "1161") & phonetic "Waba High School" -> "La Habra High School"
+  text = text
+    .replace(/\b(\d{1,2})[.\s]+(\d)\s+to\s+(\d)\b/gi, '$1$2$3')
+    .replace(/\b(?:waba|la\s*habra|lahabra)\s+high\s+school\b/gi, 'La Habra High School')
+    .replace(/\b(at|by|around|for)\s+(\d{1,2})\.(\d{2})\b/gi, '$1 $2:$3');
+
+  let origin = null;
+  let destination = null;
+  let arrivalTime = null;
+
+  // 1. Explicit "from <Origin> to <Destination>" (where <Destination> is not a bare verb like "get directions")
+  const fromToMatch = text.match(
+    /\b(?:directions|drive|route|leaving|commute|going)?\s*from\s+([0-9]+\s+[A-Za-z0-9\s.,'-]+?|[A-Z][A-Za-z0-9\s.,'-]+?)\s+to\s+(?!get\b|go\b|pick\b|leave\b|check\b)([A-Za-z0-9\s.,'&-]+?)(?=\s+(?:by|at|around)\s+\d|[?.!]|$)/i
+  );
+  if (fromToMatch) {
+    origin = fromToMatch[1].trim();
+    destination = fromToMatch[2].trim();
+  }
+
+  // 2. Explicit origin: "leaving from 1161 North Citrus" or "directions from 1161 North Citrus Drive"
+  if (!origin) {
+    const originMatch = text.match(
+      /\b(?:leaving|starting|departing|directions|driving|drive|route)\s+from\s+([0-9]+\s+[A-Za-z0-9\s.,'-]+?|[A-Z][A-Za-z0-9\s.,'-]+?)(?=\s+(?:and\s+(?:to\s+)?(?:get|find|check)|to\s+|by\s+\d|at\s+\d)|[?.!]|$)/i
+    );
+    if (originMatch) {
+      origin = originMatch[1].replace(/[.,]+$/, '').trim();
+    }
+  }
+
+  // 3. Destination from context inside the same utterance:
+  // e.g. "She works at La Habra High School. Get driving directions from 1161 North Citrus Drive."
+  // e.g. "...pick up my wife and get her from La Habra High School we're leaving from 1161 North Citrus..."
+  if (!destination) {
+    const worksAtMatch = text.match(
+      /\b(?:she|he|my\s+wife|my\s+husband|maggie|[A-Z][a-z]+)\s+works\s+at\s+([A-Za-z0-9\s,'&-]+?)(?=[?.!]|\s+(?:get|give|find|show|check|and|we(?:'re|\s+are)|leaving)\b|$)/i
+    );
+    const pickUpPlaceMatch = text.match(
+      /\b(?:pick\s+(?:her|him|them|my\s+wife|my\s+husband|[A-Z][a-z]+)\s+up|get\s+(?:her|him|them|my\s+wife|my\s+husband|[A-Z][a-z]+))\s+(?:from|at)\s+(?!work\b)([A-Za-z0-9\s,'&-]+?)(?=\s+(?:we(?:'re|\s+are)|and\s+|at\s+\d|by\s+\d|leaving\s+from)|[?.!]|$)/i
+    );
+    const dirToMatch = text.match(
+      /\b(?:directions|drive\s+time|travel\s+time|commute|route)\s+(?:to|for)\s+([A-Za-z0-9\s,'&-]+?)(?=\s+(?:from|by|at)\s+|[?.!]|$)/i
+    );
+    const genericToForAtMatch =
+      !origin || !/\bdirections\s+from\b/i.test(text)
+        ? text.match(/\b(?:to|for|at)\s+(?!get\s+directions\b|leave\b|go\b|pick\b)([A-Za-z0-9\s,'&-]+?)(?:\s+(?:by|at)\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)|[?.!]|$)/i)
+        : null;
+
+    if (worksAtMatch) {
+      destination = worksAtMatch[1].trim();
+    } else if (pickUpPlaceMatch) {
+      destination = pickUpPlaceMatch[1].trim();
+    } else if (dirToMatch) {
+      destination = dirToMatch[1].trim();
+    } else if (genericToForAtMatch) {
+      destination = genericToForAtMatch[1].trim();
+    }
+  }
+
+  // 4. Arrival time in current text or recent conversation history
+  const parseSpokenTime = (str = '') => {
+    const norm = String(str)
+      .replace(/\b(at|by|for|around)\s+(three)\s+(thirty)\b/gi, '$1 3:30 PM')
+      .replace(/\b(at|by|for|around)\s+(\d{1,2})\.(\d{2})\b/gi, '$1 $2:$3');
+    const m =
+      norm.match(/\b(?:by|at|for|around)\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i) ||
+      norm.match(/\b(?:by|at|for|around)\s+(\d{1,2}:\d{2})\b/i);
+    if (!m) return null;
+    let raw = m[1].trim();
+    if (!/am|pm/i.test(raw)) {
+      const hr = parseInt(raw.split(':')[0], 10);
+      if (hr >= 1 && hr <= 7) raw = `${raw} PM`;
+    }
+    return raw;
+  };
+
+  arrivalTime = parseSpokenTime(text);
+
+  if ((!destination || !arrivalTime) && Array.isArray(history) && history.length > 0) {
+    for (const h of [...history].reverse()) {
+      const hContent = String(h?.content || '');
+      if (!arrivalTime) {
+        arrivalTime = parseSpokenTime(hContent);
+      }
+      if (!destination) {
+        const histPlace = hContent.match(/\b(?:works\s+at|head\s+to|pick\s+.+?\s+up\s+(?:from|at))\s+(?!work\b)([A-Z][A-Za-z0-9\s,'&-]+?)(?=\s+at\s+\d|[?.!\n*)]|$)/i);
+        if (histPlace) {
+          destination = histPlace[1].trim();
+        }
+      }
+    }
+  }
+
+  return {
+    origin: origin || null,
+    destination: destination || (origin ? 'La Habra High School' : text),
+    arrivalTime: arrivalTime || null
+  };
+}
+
+/**
  * Deterministic fallback parameter extractor if the local LLM is offline or fails to emit valid tool JSON.
  * Covers all 20 Sovereign Tools so every assistant capability executes reliably even in zero-LLM edge conditions.
  */
-export function inferFallbackToolCalls(prompt, matchedCategories = []) {
+export function inferFallbackToolCalls(prompt, matchedCategories = [], history = []) {
   const text = String(prompt || '').trim();
   const categories = matchedCategories.length > 0 ? matchedCategories : detectAgenticIntent(text).matchedCategories;
   const calls = [];
@@ -745,39 +1004,25 @@ export function inferFallbackToolCalls(prompt, matchedCategories = []) {
   }
 
   if (categories.includes('commute')) {
-    const destMatch = text.match(/\b(?:to|for|at)\s+([A-Za-z0-9\s,'&-]+?)(?:\s+(?:by|at)\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)|[?.!]|$)/i);
-    const timeMatch = text.match(/\b(?:by|at|for)\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i);
+    const commuteParams = extractCommuteParams(text, history);
     calls.push({
       name: 'commute_departure_check',
       tool: 'commute_departure_check',
       arguments: {
-        destination: destMatch ? destMatch[1].trim() : text,
-        ...(timeMatch ? { arrivalTime: timeMatch[1].trim() } : {})
+        destination: commuteParams.destination || text,
+        ...(commuteParams.origin ? { origin: commuteParams.origin } : {}),
+        ...(commuteParams.arrivalTime ? { arrivalTime: commuteParams.arrivalTime } : {})
       }
     });
   }
 
   if (categories.includes('board')) {
-    const completeMatch = text.match(/\b(?:complete|check\s+off)\s+task\s*[:\-]?\s*(.+?)$/i);
-    const rememberMatch = text.match(/\bremember\s+that\s+(.+?)(?:\s+and\s+(?:add|create)\s+task|$)/i);
-    const addTaskMatch = text.match(/\b(?:add|create|schedule)\s+(?:a\s+|an\s+|urgent\s+)?task\s+(?:to\s+)?(.+?)$/i);
-    if (completeMatch) {
+    const parsedBoard = extractSpokenBoardAction(text);
+    if (parsedBoard) {
       calls.push({
         name: 'board_action',
         tool: 'board_action',
-        arguments: { action: 'complete_task', title: completeMatch[1].trim() }
-      });
-    } else if (addTaskMatch) {
-      calls.push({
-        name: 'board_action',
-        tool: 'board_action',
-        arguments: { action: 'add_task', title: addTaskMatch[1].trim() }
-      });
-    } else if (rememberMatch) {
-      calls.push({
-        name: 'board_action',
-        tool: 'board_action',
-        arguments: { action: 'remember', title: rememberMatch[1].trim() }
+        arguments: parsedBoard
       });
     }
   }
@@ -1075,7 +1320,7 @@ export async function executeAgenticProxyTurn({
         rawSnippet: rawLlmContent
       });
     }
-    plannedCalls = inferFallbackToolCalls(prompt, intent.matchedCategories);
+    plannedCalls = inferFallbackToolCalls(prompt, intent.matchedCategories, history);
     if (!blueprint) {
       blueprint = {
         cognitive_scratchpad: `Deterministic Agentic Proxy fallback for categories: ${intent.matchedCategories.join(', ')}`,
@@ -1083,6 +1328,18 @@ export async function executeAgenticProxyTurn({
         strict_problem_constraints: 'Execute matched assistant tools safely',
         tool_plan: plannedCalls.map(c => `${c.name}(${JSON.stringify(c.arguments)})`).join(' -> ')
       };
+    }
+  } else if (
+    intent.matchedCategories.includes('board') &&
+    !plannedCalls.some(c => c.name === 'board_action')
+  ) {
+    const parsedBoard = extractSpokenBoardAction(prompt);
+    if (parsedBoard) {
+      plannedCalls.push({
+        name: 'board_action',
+        tool: 'board_action',
+        arguments: parsedBoard
+      });
     }
   }
 
@@ -1103,6 +1360,25 @@ export async function executeAgenticProxyTurn({
 
   for (const call of plannedCalls.slice(0, 4)) {
     const resolvedArgs = { ...(call.arguments || {}) };
+
+    // Enrich or repair commute_departure_check arguments if 7B LLM omitted origin/arrivalTime or swapped origin into destination
+    if (call.name === 'commute_departure_check') {
+      const extractedCommute = extractCommuteParams(prompt, history);
+      if (extractedCommute.origin && !resolvedArgs.origin) {
+        resolvedArgs.origin = extractedCommute.origin;
+      }
+      if (
+        extractedCommute.destination &&
+        (!resolvedArgs.destination ||
+          (extractedCommute.origin &&
+            String(resolvedArgs.destination).toLowerCase().includes(extractedCommute.origin.toLowerCase())))
+      ) {
+        resolvedArgs.destination = extractedCommute.destination;
+      }
+      if (extractedCommute.arrivalTime && !resolvedArgs.arrivalTime) {
+        resolvedArgs.arrivalTime = extractedCommute.arrivalTime;
+      }
+    }
 
     // If a downstream save_note, send_notification, gkrusch_drive(write), gkrusch_gmail(draft/send), or smart_home_bridge(send_channel_message)
     // follows an upstream data-fetching tool, automatically ground its content/message/body with the live upstream output.

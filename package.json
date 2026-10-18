@@ -10,6 +10,7 @@
     "build": "npm --prefix client install && npm --prefix client run build",
     "doctor": "node scripts/doctor.js",
     "bench": "node scripts/benchmark.js",
+    "lint": "npm --prefix client run lint",
     "test": "node --test tests/*.js"
   },
   "dependencies": {

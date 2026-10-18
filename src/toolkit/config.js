@@ -8,6 +8,10 @@ export function loadJsonConfig(filePath) {
     if (fs.existsSync(filePath)) {
       return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
     }
-  } catch {}
+  } catch (err) {
+    if (process.env.KRUSCH_DEBUG) {
+      console.warn(`[Config] Failed loading ${filePath}:`, err.message);
+    }
+  }
   return {};
 }

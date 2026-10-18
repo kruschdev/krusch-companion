@@ -41,3 +41,11 @@
 - [x] **Task 6.1**: Run `krusch_context_nudge({ trigger: "pre_commit" })` to audit project invariants.
 - [x] **Task 6.2**: Index repository into `krusch-git` using `scripts/sync_to_pg.js`.
 - [x] **Task 6.3**: Persist project completion in `krusch-context-mcp` working memory.
+
+## Phase 7: V3.7 Sovereign Agentic Proxy, Setup Seeding & 5-GPU Fleet Alignment
+- [x] **Task 7.1**: Expand Agentic Proxy to 20 Sovereign Tools with 3-Stage Smart Tool Token Limiter (`93%–98%` schema savings).
+- [x] **Task 7.2**: Build standalone 16-Question Initial Setup Page (`/setup`, `SetupView.jsx`, `onboarding.js`) seeding `companion_context`, `companion_contacts`, recurring `tasks`, and `data/whisper-prompt.txt`.
+- [x] **Task 7.3**: Add Faster-Whisper ASR Server (`scripts/whisper_asr_server.py`) and adaptive Voice Silence Detector (`voiceSilenceDetector.js`).
+- [x] **Task 7.4**: Add multi-thread saved chat conversations and Companion-integrated Today's Board input.
+- [x] **Task 7.5**: Align L2 Swarm routing with Multi-Family 5-GPU Fleet Residency (`qwen3-coder-30b-moe:latest` on `kruschdev` + `hermes3:latest` on `kruschserv`).
+- [x] **Task 7.6**: Resolve all 10 React Compiler / `oxlint` warnings (`0 warnings, 0 errors`) and verify all `53/53` automated tests pass.

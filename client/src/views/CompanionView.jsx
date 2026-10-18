@@ -1,81 +1,168 @@
 import React, { useState, useEffect, useRef } from 'react';
-import TierBadge from '../components/TierBadge';
+import { attachSilenceDetector } from '../utils/voiceSilenceDetector';
 
 const ACTION_LABELS = {
-  task_created: { icon: '✅', label: "Task Added to Today's Board", color: '#2dd4bf' },
-  task_priority_updated: { icon: '🚨', label: 'Task Promoted to Must Happen Today', color: '#ef4444' },
-  task_completed: { icon: '🎉', label: 'Task Marked Complete', color: '#f0c040' },
-  task_deleted: { icon: '🗑️', label: 'Task Removed from Board', color: '#f87171' },
-  tasks_rolled_over: { icon: '🔄', label: 'Unfinished Tasks Rolled Over', color: '#60a5fa' },
-  tasks_listed: { icon: '📋', label: 'Live SQLite Board Snapshot', color: '#00f0ff' },
-  task_breakdown: { icon: '🧩', label: 'Task Decomposed into Subtasks', color: '#a78bfa' },
-  memory_saved: { icon: '🧠', label: 'Committed to Working Memory', color: '#a78bfa' },
-  memory_superseded: { icon: '🔄', label: 'Working Memory Superseded', color: '#f0c040' },
-  api_weather: { icon: '🌤️', label: 'Agentic Proxy: Live Weather API', color: '#38bdf8' },
-  api_web_research: { icon: '🔎', label: 'Agentic Proxy: Web Research API', color: '#a78bfa' },
-  api_url_digest: { icon: '📄', label: 'Agentic Proxy: URL Digest', color: '#60a5fa' },
-  note_saved: { icon: '📝', label: 'Agentic Proxy: Note Saved to Vault', color: '#2dd4bf' },
-  note_read: { icon: '📂', label: 'Agentic Proxy: Sovereign Notes Vault', color: '#00f0ff' },
-  notification_sent: { icon: '🔔', label: 'Agentic Proxy: Push Notification Sent', color: '#f0c040' },
-  system_telemetry: { icon: '🖥️', label: 'Agentic Proxy: System Telemetry', color: '#2dd4bf' },
-  sovereign_gateway: { icon: '⚖️', label: 'Agentic Proxy: Sovereign Gateway', color: '#f0c040' },
-  google_drive: { icon: '☁️', label: 'G-Krusch: Google Drive & Docs', color: '#38bdf8' },
-  google_calendar: { icon: '📅', label: 'G-Krusch: Google Calendar', color: '#60a5fa' },
-  google_gmail: { icon: '✉️', label: 'G-Krusch: Gmail Extension', color: '#f87171' },
-  concierge_reservation: { icon: '🍽️', label: 'Agentic Proxy: Concierge Reservation', color: '#f0c040' },
-  commute_departure: { icon: '🚗', label: 'Agentic Proxy: Traffic & Time-to-Leave', color: '#38bdf8' },
-  google_wallet_pass: { icon: '📲', label: 'Google Wallet: Generic Pass Issued', color: '#2dd4bf' },
-  ap2_payment_mandate: { icon: '💳', label: 'Google AP2: Signed Payment Mandate', color: '#f0c040' },
-  agentic_tool: { icon: '⚡', label: 'Agentic Proxy: Tool Executed', color: '#00f0ff' }
+  task_created: { icon: '✅', label: 'Added to Today', color: '#2dd4bf' },
+  task_list_updated: { icon: '📝', label: 'Checklist Updated', color: '#2dd4bf' },
+  checklist_item_toggled: { icon: '☑️', label: 'Checklist Item Updated', color: '#2dd4bf' },
+  task_priority_updated: { icon: '🚨', label: 'Marked Must-Do', color: '#ef4444' },
+  task_prioritized: { icon: '🚨', label: 'Marked Must-Do', color: '#ef4444' },
+  task_completed: { icon: '🎉', label: 'Task Completed', color: '#f0c040' },
+  task_deleted: { icon: '🗑️', label: 'Task Removed', color: '#f87171' },
+  tasks_rolled_over: { icon: '🔄', label: 'Tasks Rolled Over', color: '#60a5fa' },
+  task_breakdown: { icon: '🧩', label: 'Steps Added', color: '#a78bfa' },
+  memory_saved: { icon: '🧠', label: 'Saved to Notes', color: '#a78bfa' },
+  memory_superseded: { icon: '🔄', label: 'Note Updated', color: '#f0c040' },
+  note_saved: { icon: '📝', label: 'Note Saved', color: '#2dd4bf' },
+  google_calendar: { icon: '📅', label: 'Calendar Updated', color: '#60a5fa' },
+  google_gmail: { icon: '✉️', label: 'Gmail Action', color: '#f87171' },
+  google_drive: { icon: '☁️', label: 'Google Drive', color: '#38bdf8' }
 };
 
-export function CompanionView({ streak, onActionExecuted }) {
-  const [messages, setMessages] = useState([
-    {
-      id: 'welcome',
-      role: 'assistant',
-      content: "Hello! I'm your sovereign personal assistant. Through the Krusch Agentic Proxy (<holodata> Dual-Engine) and G-Krusch Google Workspace Extensions, I can execute live actions for you—check the weather, research the web, make reservations, calculate live traffic & Time-to-Leave alerts, search or write Google Drive docs, manage Google Calendar events, draft or search Gmail, save local Markdown notes, or manage Today's Priority Board. What can I get done for you?",
-      tierUsed: 'L1_edge',
-      latencyMs: 12
-    }
-  ]);
+const WELCOME_MSG = {
+  id: 'welcome',
+  role: 'assistant',
+  content: "Hi! What's on your mind, or what can I add to your list today?"
+};
+
+const createSessionId = () => `chat-${Date.now()}`;
+
+function renderCleanMessage(content) {
+  const lines = String(content || '')
+    .replace(/^>\s*/gm, '')
+    .split('\n');
+
+  return lines.map((line, lineIdx) => {
+    const parts = line.split(/(\*\*[^*]+\*\*)/g);
+    return (
+      <React.Fragment key={lineIdx}>
+        {parts.map((part, partIdx) => {
+          if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
+            return <strong key={partIdx}>{part.slice(2, -2)}</strong>;
+          }
+          return <span key={partIdx}>{part}</span>;
+        })}
+        {lineIdx < lines.length - 1 && <br />}
+      </React.Fragment>
+    );
+  });
+}
+
+export function CompanionView({
+  sessionId = 'default-session',
+  onSelectSession,
+  onActionExecuted
+}) {
+  const [sessions, setSessions] = useState([]);
+  const [messages, setMessages] = useState([WELCOME_MSG]);
+  const [showSidebar, setShowSidebar] = useState(true);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [dailyFocus, setDailyFocus] = useState(null);
-  const [isFocusLoading, setIsFocusLoading] = useState(false);
-  const [departureAlerts, setDepartureAlerts] = useState([]);
-  const [sentinelAlerts, setSentinelAlerts] = useState([]);
-  const [expandedTraceIds, setExpandedTraceIds] = useState({});
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
   const [isTranscribingVoice, setIsTranscribingVoice] = useState(false);
   const [autoSendVoice, setAutoSendVoice] = useState(true);
   const [voiceStatus, setVoiceStatus] = useState(null);
+
   const chatEndRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const speechRecRef = useRef(null);
+  const silenceDetectorRef = useRef(null);
   const liveTranscriptRef = useRef('');
 
-  useEffect(() => {
-    fetchFocus();
-    fetchDepartureAlerts();
-    return () => {
-      if (speechRecRef.current) {
-        try {
-          speechRecRef.current.stop();
-        } catch {
-          // ignore
-        }
+  const stopVoiceRecording = () => {
+    setIsRecordingVoice(false);
+    if (silenceDetectorRef.current) {
+      silenceDetectorRef.current.stop();
+      silenceDetectorRef.current = null;
+    }
+    if (speechRecRef.current) {
+      try {
+        speechRecRef.current.stop();
+      } catch {
+        // ignore
       }
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch {
+        // ignore
+      }
+    }
+  };
+
+  const loadSessionsList = async () => {
+    try {
+      const res = await fetch('/api/companion/sessions');
+      if (res.ok) {
+        const data = await res.json();
+        setSessions(Array.isArray(data.sessions) ? data.sessions : []);
+      }
+    } catch {
+      // Non-fatal
+    }
+  };
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/companion/sessions')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (active && data) {
+          setSessions(Array.isArray(data.sessions) ? data.sessions : []);
+        }
+      })
+      .catch(() => {});
+
+    fetch(`/api/companion/sessions/${encodeURIComponent(sessionId)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!active) return;
+        if (data && Array.isArray(data.messages) && data.messages.length > 0) {
+          setMessages(data.messages);
+        } else {
+          setMessages([WELCOME_MSG]);
+        }
+      })
+      .catch(() => {
+        if (active) setMessages([WELCOME_MSG]);
+      });
+
+    return () => {
+      active = false;
+      stopVoiceRecording();
     };
-  }, []);
+  }, [sessionId]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
 
-  const toggleTrace = (id) => {
-    setExpandedTraceIds(prev => ({ ...prev, [id]: !prev[id] }));
+  const handleStartNewChat = () => {
+    const newId = createSessionId();
+    setMessages([WELCOME_MSG]);
+    if (onSelectSession) {
+      onSelectSession(newId);
+    }
+  };
+
+  const handleDeleteSession = async (e, targetId) => {
+    e.stopPropagation();
+    try {
+      await fetch(`/api/companion/sessions/${encodeURIComponent(targetId)}`, {
+        method: 'DELETE'
+      });
+      const updated = sessions.filter(s => s.sessionId !== targetId);
+      setSessions(updated);
+      if (targetId === sessionId) {
+        const fallbackId = updated[0]?.sessionId || createSessionId();
+        if (onSelectSession) onSelectSession(fallbackId);
+        if (!updated[0]) setMessages([WELCOME_MSG]);
+      }
+    } catch {
+      // ignore
+    }
   };
 
   const handleConfirmSideEffectTool = async (msgId, tc) => {
@@ -101,94 +188,14 @@ export function CompanionView({ streak, onActionExecuted }) {
           ).concat({
             id: `${Date.now()}-confirmed`,
             role: 'assistant',
-            content: `✅ **Confirmed & Executed \`${tc.name}\`**:\n\n${data.summary || JSON.stringify(data)}`,
-            tierUsed: 'L0_heuristic',
-            latencyMs: data.latencyMs || 5,
-            actionExecuted: { type: data.actionType || tc.name },
-            agenticTrace: {
-              confidence: 0.99,
-              toolCalls: [
-                {
-                  name: tc.name,
-                  arguments: tc.arguments || {},
-                  ok: true,
-                  dryRun: false,
-                  data: data.data || null,
-                  latencyMs: data.latencyMs || 5
-                }
-              ]
-            }
+            content: data.summary || 'Done!',
+            actionExecuted: { type: data.actionType || tc.name }
           })
         );
         if (onActionExecuted) onActionExecuted({ type: tc.name });
       }
     } catch (err) {
-      alert(`Confirmation execution failed: ${err.message}`);
-    }
-  };
-
-  const fetchDepartureAlerts = async () => {
-    try {
-      const res = await fetch('/api/companion/departure-alerts');
-      if (res.ok) {
-        const data = await res.json();
-        setDepartureAlerts(data.alerts || []);
-        setSentinelAlerts(data.sentinelAlerts || []);
-      }
-    } catch {
-      // Non-fatal
-    }
-  };
-
-  const handleAckSentinel = async (id) => {
-    try {
-      await fetch(`/api/sentinel/ack/${id}`, { method: 'POST' });
-      setSentinelAlerts(prev => prev.filter(a => a.id !== id));
-    } catch {
-      // Non-fatal
-    }
-  };
-
-  const triggerBrowserDepartureAlert = async (alertItem) => {
-    if (typeof window === 'undefined' || !('Notification' in window)) return;
-    let perm = Notification.permission;
-    if (perm === 'default') {
-      perm = await Notification.requestPermission();
-    }
-    if (perm === 'granted') {
-      const c = alertItem.commute;
-      new Notification(`🚗 Leave by ${c.leaveByFormatted} — ${alertItem.title}`, {
-        body: `${c.trafficLevel} traffic (${c.trafficMinutes}m drive${c.trafficDelayMinutes > 0 ? `, +${c.trafficDelayMinutes}m delay` : ''}). Leave by ${c.leaveByFormatted} to arrive on time.`
-      });
-    }
-  };
-
-  const fetchFocus = async () => {
-    try {
-      const res = await fetch('/api/coach/focus');
-      if (res.ok) {
-        const data = await res.json();
-        if (data.focus_text) {
-          setDailyFocus(data.focus_text);
-        }
-      }
-    } catch {
-      // Non-fatal
-    }
-  };
-
-  const handleGenerateFocus = async () => {
-    setIsFocusLoading(true);
-    try {
-      const res = await fetch('/api/coach/focus', { method: 'POST' });
-      if (res.ok) {
-        const data = await res.json();
-        setDailyFocus(data.focusText);
-      }
-    } catch (err) {
-      alert(`Error generating focus: ${err.message}`);
-    } finally {
-      setIsFocusLoading(false);
+      alert(`Confirmation failed: ${err.message}`);
     }
   };
 
@@ -202,7 +209,12 @@ export function CompanionView({ streak, onActionExecuted }) {
       content: cleanPrompt
     };
 
-    setMessages(prev => [...prev, userMsg]);
+    const priorHistory = messages
+      .filter(m => m.id !== 'welcome')
+      .slice(-8)
+      .map(m => ({ role: m.role, content: m.content }));
+
+    setMessages(prev => [...prev.filter(m => m.id !== 'welcome'), userMsg]);
     setInput('');
     setIsLoading(true);
 
@@ -212,7 +224,9 @@ export function CompanionView({ streak, onActionExecuted }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: userMsg.content,
-          history: messages.slice(-6).map(m => ({ role: m.role, content: m.content }))
+          sessionId,
+          activeView: 'companion_chat',
+          history: priorHistory
         })
       });
 
@@ -222,7 +236,6 @@ export function CompanionView({ streak, onActionExecuted }) {
       if (data.actionExecuted && onActionExecuted) {
         onActionExecuted(data.actionExecuted);
       }
-      fetchDepartureAlerts();
 
       setMessages(prev => [
         ...prev,
@@ -230,22 +243,18 @@ export function CompanionView({ streak, onActionExecuted }) {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
           content: data.reply,
-          tierUsed: data.tierUsed,
-          latencyMs: data.latencyMs,
-          reason: data.reason,
-          contextActivated: typeof data.contextActivated === 'boolean' ? data.contextActivated : null,
           actionExecuted: data.actionExecuted || null,
           agenticTrace: data.agenticTrace || null
         }
       ]);
+      loadSessionsList();
     } catch (err) {
       setMessages(prev => [
         ...prev,
         {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
-          content: `⚠️ Error contacting companion: ${err.message}. Make sure Ollama is running.`,
-          tierUsed: 'L1_edge'
+          content: `Sorry, I couldn't reach the assistant right now (${err.message}).`
         }
       ]);
     } finally {
@@ -260,25 +269,13 @@ export function CompanionView({ streak, onActionExecuted }) {
 
   const handleToggleVoiceChat = async () => {
     if (isRecordingVoice) {
-      // Stop active recording
-      setIsRecordingVoice(false);
-      if (speechRecRef.current) {
-        try {
-          speechRecRef.current.stop();
-        } catch {
-          // ignore
-        }
-      }
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        mediaRecorderRef.current.stop();
-      }
+      stopVoiceRecording();
       return;
     }
 
-    setVoiceStatus('🎙️ Listening... Speak naturally (click Stop when finished)');
+    setVoiceStatus('🎙️ Listening... (auto-stops when you finish speaking)');
     liveTranscriptRef.current = input ? `${input.trim()} ` : '';
 
-    // 1. Start Browser Web Speech API for real-time zero-latency dictation into input box
     const SpeechRecognition =
       typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
     if (SpeechRecognition) {
@@ -302,6 +299,7 @@ export function CompanionView({ streak, onActionExecuted }) {
           if (combined) {
             liveTranscriptRef.current = combined;
             setInput(combined);
+            silenceDetectorRef.current?.markSpeechActivity();
           }
         };
         rec.onerror = () => {};
@@ -312,11 +310,24 @@ export function CompanionView({ streak, onActionExecuted }) {
       }
     }
 
-    // 2. Start MediaRecorder for Local Whisper STT fallback
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          noiseSuppression: true,
+          echoCancellation: true,
+          autoGainControl: true
+        }
+      });
       const recorder = new MediaRecorder(stream);
       audioChunksRef.current = [];
+
+      silenceDetectorRef.current = attachSilenceDetector(stream, {
+        silenceMs: 3200,
+        noSpeechTimeoutMs: 12000,
+        onSilenceStop: () => {
+          stopVoiceRecording();
+        }
+      });
 
       recorder.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) {
@@ -325,20 +336,21 @@ export function CompanionView({ streak, onActionExecuted }) {
       };
 
       recorder.onstop = async () => {
+        if (silenceDetectorRef.current) {
+          silenceDetectorRef.current.stop();
+          silenceDetectorRef.current = null;
+        }
         stream.getTracks().forEach(t => t.stop());
         const browserText = liveTranscriptRef.current.trim();
 
-        // If Browser Web Speech API already captured speech cleanly, use it immediately!
         if (browserText.length > 0) {
-          setVoiceStatus(`✅ Voice captured (${browserText.split(/\s+/).length} words)`);
-          setTimeout(() => setVoiceStatus(null), 3000);
+          setVoiceStatus(null);
           if (autoSendVoice) {
             await sendPromptText(browserText);
           }
           return;
         }
 
-        // Otherwise, send recorded audio blob to Local Whisper STT (/api/companion/transcribe)
         const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
         if (blob.size < 200) {
           setVoiceStatus(null);
@@ -346,7 +358,7 @@ export function CompanionView({ streak, onActionExecuted }) {
         }
 
         setIsTranscribingVoice(true);
-        setVoiceStatus('⚡ Transcribing voice via Local Whisper STT...');
+        setVoiceStatus('Transcribing...');
         try {
           const formData = new FormData();
           formData.append('audio', blob, 'chat-voice.webm');
@@ -359,17 +371,19 @@ export function CompanionView({ streak, onActionExecuted }) {
             throw new Error(errData.error || `STT HTTP ${res.status}`);
           }
           const data = await res.json();
-          if (data.transcription) {
-            setInput(data.transcription);
-            setVoiceStatus(`✅ Whisper STT transcribed (${data.transcription.split(/\s+/).length} words)`);
-            setTimeout(() => setVoiceStatus(null), 3000);
+          const cleanTranscript = String(data.transcription || '').trim();
+          if (cleanTranscript) {
+            setInput(cleanTranscript);
+            setVoiceStatus(null);
             if (autoSendVoice) {
-              await sendPromptText(data.transcription);
+              await sendPromptText(cleanTranscript);
             }
+          } else {
+            setVoiceStatus(null);
           }
         } catch (err) {
-          setVoiceStatus(`⚠️ Voice STT unavailable (${err.message}). Use Chrome/Edge/Safari for instant Web Speech dictation.`);
-          setTimeout(() => setVoiceStatus(null), 5000);
+          setVoiceStatus(`⚠️ Voice unavailable (${err.message})`);
+          setTimeout(() => setVoiceStatus(null), 4000);
         } finally {
           setIsTranscribingVoice(false);
         }
@@ -382,571 +396,331 @@ export function CompanionView({ streak, onActionExecuted }) {
       if (speechRecRef.current) {
         setIsRecordingVoice(true);
       } else {
-        setVoiceStatus(`⚠️ Microphone permission denied or unavailable: ${err.message}`);
-        setTimeout(() => setVoiceStatus(null), 4500);
+        setVoiceStatus(`⚠️ Microphone unavailable: ${err.message}`);
+        setTimeout(() => setVoiceStatus(null), 4000);
       }
     }
   };
 
+  const activeSessionMeta = sessions.find(s => s.sessionId === sessionId);
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 16 }}>
-      {/* Daily Focus Card */}
-      <div className="glass-panel" style={{ padding: 20, borderLeft: '4px solid var(--accent-cyan)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: '1.2rem' }}>☀️</span>
-            <h3 style={{ fontSize: '1.05rem', fontWeight: 700 }}>Today's Sovereign Focus</h3>
-          </div>
+    <div style={{ display: 'flex', height: 'calc(100vh - 135px)', minHeight: 460, gap: 12 }}>
+      {/* Collapsible Saved Conversations Sidebar */}
+      {showSidebar && (
+        <aside
+          className="glass-panel"
+          style={{
+            width: 220,
+            flexShrink: 0,
+            padding: 12,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 10,
+            overflowY: 'auto'
+          }}
+        >
           <button
-            id="btn-refresh-focus"
-            className="btn-secondary"
-            onClick={handleGenerateFocus}
-            disabled={isFocusLoading}
-            style={{ fontSize: '0.8rem', padding: '6px 12px' }}
+            type="button"
+            className="btn-primary"
+            onClick={handleStartNewChat}
+            style={{
+              width: '100%',
+              justifyContent: 'center',
+              padding: '9px 12px',
+              fontSize: '0.84rem'
+            }}
           >
-            {isFocusLoading ? 'Synthesizing...' : dailyFocus ? '↻ Refresh Focus' : '✨ Generate Focus'}
+            + New Chat
           </button>
-        </div>
-        <p style={{ color: dailyFocus ? 'var(--text-main)' : 'var(--text-dim)', fontSize: '0.95rem', lineHeight: 1.5 }}>
-          {dailyFocus || 'Generate your morning focus briefing to synthesize your top tasks and align your mindset.'}
-        </p>
-      </div>
 
-      {/* Sentinel Watchdog Proactive LLM Alerts */}
-      {sentinelAlerts.length > 0 && (
-        <div
-          className="glass-panel"
-          style={{
-            padding: '12px 18px',
-            borderLeft: '4px solid #f87171',
-            background: 'rgba(248, 113, 113, 0.09)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 8
-          }}
-        >
-          {sentinelAlerts.slice(0, 2).map((alert) => (
-            <div
-              key={alert.id}
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: 12,
-                flexWrap: 'wrap',
-                fontSize: '0.86rem'
-              }}
-            >
-              <div style={{ flex: 1 }}>
-                <strong style={{ color: '#f87171' }}>🚨 Sentinel Watchdog ({alert.trigger_reason.replace(/_/g, ' ')}):</strong>{' '}
-                <span>{alert.llm_advisory}</span>
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                {alert.directions_url && (
-                  <a
-                    href={alert.directions_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="btn-secondary"
-                    style={{ fontSize: '0.75rem', padding: '4px 10px', textDecoration: 'none' }}
-                  >
-                    🗺️ Route
-                  </a>
-                )}
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => handleAckSentinel(alert.id)}
-                  style={{ fontSize: '0.75rem', padding: '4px 10px' }}
-                >
-                  ✓ Dismiss
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+          <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em', padding: '4px 4px 0' }}>
+            Conversations ({sessions.length})
+          </div>
 
-      {/* Live Time-to-Leave & Traffic Departure Alerts Banner */}
-      {departureAlerts.length > 0 && (
-        <div
-          className="glass-panel"
-          style={{
-            padding: '12px 18px',
-            borderLeft: '4px solid #f0c040',
-            background: 'rgba(240, 192, 64, 0.07)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 8
-          }}
-        >
-          {departureAlerts.slice(0, 2).map((item) => {
-            const c = item.commute;
-            return (
-              <div
-                key={item.id}
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  flexWrap: 'wrap',
-                  gap: 10,
-                  fontSize: '0.86rem'
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <span>{c.shouldLeaveEarly ? '⚠️' : '🚗'}</span>
-                  <strong>Leave by {c.leaveByFormatted}</strong>
-                  <span style={{ color: 'var(--text-dim)' }}>for</span>
-                  <span>{item.title}</span>
-                  <span
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, overflowY: 'auto' }}>
+            {sessions.length === 0 ? (
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', padding: '8px 4px' }}>
+                No saved chats yet.
+              </div>
+            ) : (
+              sessions.map((s) => {
+                const isSelected = s.sessionId === sessionId;
+                return (
+                  <div
+                    key={s.sessionId}
+                    onClick={() => onSelectSession && onSelectSession(s.sessionId)}
                     style={{
-                      fontFamily: 'var(--font-mono)',
-                      fontSize: '0.74rem',
-                      padding: '2px 8px',
-                      borderRadius: 'var(--radius-full)',
-                      background: c.shouldLeaveEarly ? 'rgba(248, 113, 113, 0.16)' : 'rgba(45, 212, 191, 0.14)',
-                      color: c.shouldLeaveEarly ? '#f87171' : '#2dd4bf',
-                      border: `1px solid ${c.shouldLeaveEarly ? '#f87171' : '#2dd4bf'}`
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 6,
+                      padding: '8px 10px',
+                      borderRadius: 10,
+                      cursor: 'pointer',
+                      background: isSelected ? 'rgba(0, 240, 255, 0.14)' : 'transparent',
+                      border: isSelected ? '1px solid rgba(0, 240, 255, 0.35)' : '1px solid transparent',
+                      color: isSelected ? '#f8fafc' : 'var(--text-muted)',
+                      fontSize: '0.82rem',
+                      transition: 'all 0.15s ease'
                     }}
                   >
-                    {c.trafficMinutes}m drive ({c.trafficLevel} traffic{c.trafficDelayMinutes > 0 ? `, +${c.trafficDelayMinutes}m delay` : ''})
-                  </span>
-                </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <a
-                    href={c.googleMapsDirectionsUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="btn-secondary"
-                    style={{ fontSize: '0.75rem', padding: '4px 10px', textDecoration: 'none' }}
-                  >
-                    🗺️ Directions
-                  </a>
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    onClick={() => triggerBrowserDepartureAlert(item)}
-                    style={{ fontSize: '0.75rem', padding: '4px 10px' }}
-                  >
-                    🔔 Notify Me
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Chat Messages */}
-      <div className="glass-panel" style={{ flex: 1, padding: 20, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {messages.map(m => {
-          const actionMeta = m.actionExecuted?.type ? ACTION_LABELS[m.actionExecuted.type] : null;
-          const hasTrace = Boolean(m.agenticTrace && m.agenticTrace.toolCalls?.length > 0);
-          const isTraceOpen = Boolean(expandedTraceIds[m.id]);
-          return (
-            <div
-              key={m.id}
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: m.role === 'user' ? 'flex-end' : 'flex-start',
-                gap: 6
-              }}
-            >
-              <div
-                style={{
-                  maxWidth: '85%',
-                  padding: '12px 18px',
-                  borderRadius: m.role === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
-                  background: m.role === 'user' ? 'linear-gradient(135deg, #0088ff, #7928ca)' : 'var(--bg-glass-card)',
-                  color: 'var(--text-main)',
-                  border: m.role === 'user' ? 'none' : '1px solid var(--border-subtle)',
-                  lineHeight: 1.5,
-                  fontSize: '0.95rem',
-                  whiteSpace: 'pre-wrap'
-                }}
-              >
-                {m.content}
-              </div>
-              {m.role === 'assistant' && (m.tierUsed || actionMeta || hasTrace) && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  {m.tierUsed && <TierBadge tier={m.tierUsed} latencyMs={m.latencyMs} />}
-                  {typeof m.contextActivated === 'boolean' && (
                     <span
                       style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 4,
-                        fontSize: '0.69rem',
-                        fontFamily: 'var(--font-mono)',
-                        padding: '2px 8px',
-                        borderRadius: 'var(--radius-full)',
-                        background: m.contextActivated ? 'rgba(167, 139, 250, 0.12)' : 'rgba(148, 163, 184, 0.12)',
-                        border: `1px solid ${m.contextActivated ? 'rgba(167, 139, 250, 0.4)' : 'rgba(148, 163, 184, 0.35)'}`,
-                        color: m.contextActivated ? '#a78bfa' : '#94a3b8'
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        fontWeight: isSelected ? 600 : 400,
+                        flex: 1
                       }}
-                      title={
-                        m.contextActivated
-                          ? 'Knowledge Boundary Gate: Open-world query — Working Memory injected'
-                          : 'Knowledge Boundary Gate: Closed-world utility query — 0 memory tokens injected'
-                      }
+                      title={s.title}
                     >
-                      {m.contextActivated ? '🧠 Context Injected' : '🛡️ Boundary Gated'}
+                      {s.title}
                     </span>
-                  )}
-                  {actionMeta && (
-                    <span
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 5,
-                        fontSize: '0.72rem',
-                        fontWeight: 700,
-                        fontFamily: 'var(--font-mono)',
-                        padding: '2px 9px',
-                        borderRadius: 'var(--radius-full)',
-                        background: 'rgba(45, 212, 191, 0.12)',
-                        border: `1px solid ${actionMeta.color}`,
-                        color: actionMeta.color
-                      }}
-                    >
-                      <span>{actionMeta.icon}</span>
-                      <span>{actionMeta.label}</span>
-                    </span>
-                  )}
-                  {hasTrace && typeof m.agenticTrace.confidence === 'number' && (
-                    <span
-                      style={{
-                        fontSize: '0.69rem',
-                        fontFamily: 'var(--font-mono)',
-                        padding: '2px 8px',
-                        borderRadius: 'var(--radius-full)',
-                        background: 'rgba(45, 212, 191, 0.10)',
-                        border: '1px solid rgba(45, 212, 191, 0.35)',
-                        color: '#2dd4bf'
-                      }}
-                      title="Agentic Proxy <holodata> Extraction Confidence"
-                    >
-                      🎯 {Math.round(m.agenticTrace.confidence * 100)}% Conf
-                    </span>
-                  )}
-                  {hasTrace && (
                     <button
                       type="button"
-                      onClick={() => toggleTrace(m.id)}
+                      onClick={(e) => handleDeleteSession(e, s.sessionId)}
                       style={{
-                        fontSize: '0.7rem',
-                        fontFamily: 'var(--font-mono)',
-                        padding: '2px 8px',
-                        borderRadius: 'var(--radius-full)',
-                        background: 'rgba(167, 139, 250, 0.12)',
-                        border: '1px solid rgba(167, 139, 250, 0.45)',
-                        color: '#a78bfa',
-                        cursor: 'pointer'
+                        background: 'transparent',
+                        border: 'none',
+                        color: 'var(--text-dim)',
+                        cursor: 'pointer',
+                        fontSize: '0.78rem',
+                        padding: '0 2px',
+                        lineHeight: 1
                       }}
+                      title="Delete conversation"
                     >
-                      {isTraceOpen ? '▾ Hide <holodata> Trace' : `▸ <holodata> Proxy (${m.agenticTrace.toolCalls.length} tool${m.agenticTrace.toolCalls.length > 1 ? 's' : ''})`}
+                      ✕
                     </button>
-                  )}
-                  {hasTrace &&
-                    m.agenticTrace.toolCalls
-                      .filter(tc => (tc.requiresConfirmation || tc.dryRun) && !m.confirmedTools?.[tc.name])
-                      .map((tc, idx) => (
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </aside>
+      )}
+
+      {/* Main Conversation Column */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
+        {/* Chat Thread Panel */}
+        <div
+          className="glass-panel"
+          style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden'
+          }}
+        >
+          {/* Minimal Chat Header */}
+          <div
+            style={{
+              padding: '10px 16px',
+              borderBottom: '1px solid var(--border-subtle)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: 10
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setShowSidebar(prev => !prev)}
+                style={{ padding: '4px 10px', fontSize: '0.78rem' }}
+                title="Toggle saved conversations sidebar"
+              >
+                {showSidebar ? '◀ Chats' : `☰ Chats (${sessions.length})`}
+              </button>
+              <span style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-main)' }}>
+                {activeSessionMeta ? activeSessionMeta.title : 'New Conversation'}
+              </span>
+            </div>
+
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={handleStartNewChat}
+              style={{ padding: '4px 10px', fontSize: '0.78rem' }}
+            >
+              + New Chat
+            </button>
+          </div>
+
+          {/* Messages Scroll Area */}
+          <div
+            style={{
+              flex: 1,
+              padding: '18px 20px',
+              overflowY: 'auto',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 14
+            }}
+          >
+            {messages.map(m => {
+              const actionMeta = m.actionExecuted?.type ? ACTION_LABELS[m.actionExecuted.type] : null;
+              const pendingConfirmations = (m.agenticTrace?.toolCalls || []).filter(
+                tc => (tc.requiresConfirmation || tc.dryRun) && !m.confirmedTools?.[tc.name]
+              );
+
+              return (
+                <div
+                  key={m.id}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: m.role === 'user' ? 'flex-end' : 'flex-start',
+                    gap: 5
+                  }}
+                >
+                  <div
+                    style={{
+                      maxWidth: '82%',
+                      padding: '12px 16px',
+                      borderRadius: m.role === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
+                      background: m.role === 'user' ? 'linear-gradient(135deg, #0088ff, #7928ca)' : 'var(--bg-glass-card)',
+                      color: 'var(--text-main)',
+                      border: m.role === 'user' ? 'none' : '1px solid var(--border-subtle)',
+                      lineHeight: 1.5,
+                      fontSize: '0.95rem'
+                    }}
+                  >
+                    {renderCleanMessage(m.content)}
+                  </div>
+
+                  {m.role === 'assistant' && (actionMeta || pendingConfirmations.length > 0) && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', paddingLeft: 4 }}>
+                      {actionMeta && (
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 5,
+                            fontSize: '0.73rem',
+                            fontWeight: 600,
+                            padding: '2px 10px',
+                            borderRadius: 'var(--radius-full)',
+                            background: 'rgba(45, 212, 191, 0.10)',
+                            border: `1px solid ${actionMeta.color}55`,
+                            color: actionMeta.color
+                          }}
+                        >
+                          <span>{actionMeta.icon}</span>
+                          <span>{actionMeta.label}</span>
+                        </span>
+                      )}
+
+                      {pendingConfirmations.map((tc, idx) => (
                         <button
                           key={`${tc.name}-${idx}`}
                           type="button"
                           className="btn-primary"
                           onClick={() => handleConfirmSideEffectTool(m.id, tc)}
                           style={{
-                            fontSize: '0.73rem',
-                            padding: '3px 10px',
+                            fontSize: '0.76rem',
+                            padding: '4px 12px',
                             borderRadius: 'var(--radius-full)'
                           }}
                         >
-                          ✅ Confirm &amp; Execute {tc.name}
+                          Confirm &amp; Run
                         </button>
                       ))}
-                  {hasTrace &&
-                    m.agenticTrace.toolCalls
-                      .filter(tc => !tc.dryRun && tc.data)
-                      .map((tc, idx) => {
-                        const walletUrl = tc.data.saveUrl || tc.data.links?.googleWalletPassUrl;
-                        const openTableUrl = tc.data.links?.openTableUrl;
-                        const resyUrl = tc.data.links?.resyUrl;
-                        const sevenRoomsUrl = tc.data.links?.sevenRoomsUrl;
-                        const mandateId = tc.data.mandateId;
-                        return (
-                          <React.Fragment key={`rich-${tc.name}-${idx}`}>
-                            {walletUrl && (
-                              <a
-                                href={walletUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                style={{
-                                  fontSize: '0.72rem',
-                                  fontFamily: 'var(--font-mono)',
-                                  padding: '3px 10px',
-                                  borderRadius: 'var(--radius-full)',
-                                  background: 'rgba(45, 212, 191, 0.14)',
-                                  border: '1px solid #2dd4bf',
-                                  color: '#2dd4bf',
-                                  textDecoration: 'none',
-                                  fontWeight: 700
-                                }}
-                              >
-                                📲 Add to Google Wallet
-                              </a>
-                            )}
-                            {openTableUrl && (
-                              <a
-                                href={openTableUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                style={{
-                                  fontSize: '0.72rem',
-                                  fontFamily: 'var(--font-mono)',
-                                  padding: '3px 10px',
-                                  borderRadius: 'var(--radius-full)',
-                                  background: 'rgba(240, 192, 64, 0.14)',
-                                  border: '1px solid #f0c040',
-                                  color: '#f0c040',
-                                  textDecoration: 'none',
-                                  fontWeight: 700
-                                }}
-                              >
-                                🍽️ OpenTable
-                              </a>
-                            )}
-                            {resyUrl && (
-                              <a
-                                href={resyUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                style={{
-                                  fontSize: '0.72rem',
-                                  fontFamily: 'var(--font-mono)',
-                                  padding: '3px 10px',
-                                  borderRadius: 'var(--radius-full)',
-                                  background: 'rgba(56, 189, 248, 0.14)',
-                                  border: '1px solid #38bdf8',
-                                  color: '#38bdf8',
-                                  textDecoration: 'none',
-                                  fontWeight: 700
-                                }}
-                              >
-                                🍽️ Resy
-                              </a>
-                            )}
-                            {sevenRoomsUrl && (
-                              <a
-                                href={sevenRoomsUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                style={{
-                                  fontSize: '0.72rem',
-                                  fontFamily: 'var(--font-mono)',
-                                  padding: '3px 10px',
-                                  borderRadius: 'var(--radius-full)',
-                                  background: 'rgba(167, 139, 250, 0.14)',
-                                  border: '1px solid #a78bfa',
-                                  color: '#a78bfa',
-                                  textDecoration: 'none',
-                                  fontWeight: 700
-                                }}
-                              >
-                                🍽️ SevenRooms
-                              </a>
-                            )}
-                            {mandateId && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  navigator.clipboard?.writeText(
-                                    JSON.stringify(
-                                      {
-                                        mandateId: tc.data.mandateId,
-                                        signature: tc.data.signature,
-                                        intentMandate: tc.data.intentMandate,
-                                        cartMandate: tc.data.cartMandate,
-                                        paymentMandate: tc.data.paymentMandate
-                                      },
-                                      null,
-                                      2
-                                    )
-                                  );
-                                }}
-                                style={{
-                                  fontSize: '0.72rem',
-                                  fontFamily: 'var(--font-mono)',
-                                  padding: '3px 10px',
-                                  borderRadius: 'var(--radius-full)',
-                                  background: 'rgba(240, 192, 64, 0.14)',
-                                  border: '1px solid #f0c040',
-                                  color: '#f0c040',
-                                  cursor: 'pointer',
-                                  fontWeight: 700
-                                }}
-                                title="Copy Signed AP2 Mandate Bundle JSON to Clipboard"
-                              >
-                                💳 Copy AP2 Mandate ({tc.data.signature?.slice(0, 10)}…)
-                              </button>
-                            )}
-                          </React.Fragment>
-                        );
-                      })}
-                </div>
-              )}
-              {hasTrace && isTraceOpen && (
-                <div
-                  style={{
-                    maxWidth: '85%',
-                    padding: '10px 14px',
-                    borderRadius: 10,
-                    background: 'rgba(10, 14, 24, 0.85)',
-                    border: '1px solid rgba(167, 139, 250, 0.35)',
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: '0.75rem',
-                    color: 'var(--text-dim)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 6
-                  }}
-                >
-                  {m.agenticTrace.blueprint && (
-                    <div>
-                      <strong style={{ color: '#a78bfa' }}>&lt;holodata&gt; Blueprint:</strong>{' '}
-                      {m.agenticTrace.blueprint.cognitive_scratchpad || m.agenticTrace.blueprint.tool_plan || JSON.stringify(m.agenticTrace.blueprint)}
                     </div>
                   )}
-                  {m.agenticTrace.pruningReport && (
-                    <div>
-                      <strong style={{ color: 'var(--accent-cyan)' }}>Tool Pruning:</strong>{' '}
-                      Selected [{m.agenticTrace.pruningReport.selectedTools?.join(', ')}] · Pruned {m.agenticTrace.pruningReport.prunedCount} tools (~{m.agenticTrace.pruningReport.schemaTokensSavedEst} tokens saved)
-                    </div>
-                  )}
-                  <div>
-                    <strong style={{ color: '#2dd4bf' }}>Executed Tool Calls:</strong>
-                    {m.agenticTrace.toolCalls.map((tc, i) => (
-                      <div key={i} style={{ marginTop: 3 }}>
-                        • <code>{tc.name}({JSON.stringify(tc.arguments)})</code> → {tc.dryRun ? '🛡️ Dry-Run Gate' : tc.ok ? '✅ OK' : '⚠️ Error'} ({tc.latencyMs}ms)
-                      </div>
-                    ))}
-                  </div>
                 </div>
-              )}
-            </div>
-          );
-        })}
-        {isLoading && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-dim)', fontSize: '0.88rem' }}>
-            <span style={{ animation: 'spin 1s infinite linear' }}>⚡</span>
-            <span>Cascade Router &amp; Agentic Proxy evaluating...</span>
+              );
+            })}
+
+            {isLoading && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-muted)', fontSize: '0.9rem', paddingLeft: 4 }}>
+                <span>Thinking...</span>
+              </div>
+            )}
+            <div ref={chatEndRef} />
+          </div>
+        </div>
+
+        {/* Voice Status Banner (only visible when listening/transcribing) */}
+        {voiceStatus && (
+          <div
+            className="glass-card"
+            style={{
+              padding: '8px 14px',
+              borderLeft: `3px solid ${isRecordingVoice ? '#f87171' : 'var(--accent-cyan)'}`,
+              fontSize: '0.84rem',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: 10
+            }}
+          >
+            <span>{voiceStatus}</span>
+            <label
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                cursor: 'pointer',
+                fontSize: '0.78rem',
+                color: 'var(--text-muted)'
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={autoSendVoice}
+                onChange={(e) => setAutoSendVoice(e.target.checked)}
+                style={{ width: 14, height: 14, accentColor: 'var(--accent-cyan)' }}
+              />
+              Auto-send
+            </label>
           </div>
         )}
-        <div ref={chatEndRef} />
-      </div>
 
-      {/* Quick Starters */}
-      <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
-        {[
-          'Authorize a $65 payment mandate for Seattle City Light',
-          'Add a Google Wallet pass for Canlis Dinner at 7pm',
-          'Book a reservation at Canlis Seattle for 2 at 7pm',
-          "What's the weather in Seattle?",
-          'Search my Google Drive for project specs',
-          "What's on my Google Calendar today?",
-          'Show my tasks for today'
-        ].map((quick, idx) => (
+        {/* Input Bar */}
+        <form onSubmit={handleSend} style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <button
-            key={idx}
-            className="btn-secondary"
-            onClick={() => setInput(quick)}
-            style={{ fontSize: '0.8rem', whiteSpace: 'nowrap', padding: '6px 12px' }}
-          >
-            {quick}
-          </button>
-        ))}
-      </div>
-
-      {/* Live Voice-to-Text Status Banner */}
-      {voiceStatus && (
-        <div
-          className="glass-card"
-          style={{
-            padding: '8px 14px',
-            borderLeft: `3px solid ${isRecordingVoice ? '#f87171' : 'var(--accent-cyan)'}`,
-            fontSize: '0.82rem',
-            fontFamily: 'var(--font-mono)',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: 10
-          }}
-        >
-          <span>{voiceStatus}</span>
-          <label
+            id="btn-companion-voice"
+            type="button"
+            onClick={handleToggleVoiceChat}
+            disabled={isLoading || isTranscribingVoice}
+            className={isRecordingVoice ? 'btn-danger' : 'btn-secondary'}
             style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              cursor: 'pointer',
-              fontSize: '0.75rem',
-              color: 'var(--text-muted)'
+              padding: '12px 16px',
+              whiteSpace: 'nowrap',
+              borderColor: isRecordingVoice ? '#ef4444' : 'var(--border-subtle)',
+              background: isRecordingVoice ? 'rgba(239, 68, 68, 0.2)' : undefined,
+              color: isRecordingVoice ? '#fca5a5' : 'var(--text-main)',
+              fontWeight: 600
             }}
-            title="Automatically send the chat message as soon as you stop speaking"
+            title="Speak your message"
           >
-            <input
-              type="checkbox"
-              checked={autoSendVoice}
-              onChange={(e) => setAutoSendVoice(e.target.checked)}
-              style={{ width: 14, height: 14, accentColor: 'var(--accent-cyan)' }}
-            />
-            Auto-Send on Stop
-          </label>
-        </div>
-      )}
+            {isTranscribingVoice ? '...' : isRecordingVoice ? '⏹️ Stop' : '🎙️ Speak'}
+          </button>
 
-      {/* Input Box + Voice-to-Text Dictation Button */}
-      <form onSubmit={handleSend} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        <button
-          id="btn-companion-voice"
-          type="button"
-          onClick={handleToggleVoiceChat}
-          disabled={isLoading || isTranscribingVoice}
-          className={isRecordingVoice ? 'btn-danger' : 'btn-secondary'}
-          style={{
-            padding: '10px 14px',
-            whiteSpace: 'nowrap',
-            borderColor: isRecordingVoice ? '#ef4444' : 'var(--accent-cyan)',
-            color: isRecordingVoice ? '#fff' : 'var(--accent-cyan)',
-            fontWeight: 700
-          }}
-          title="Speak your command or message (Web Speech live dictation + Local Whisper STT fallback)"
-        >
-          {isTranscribingVoice
-            ? '⚡ STT...'
-            : isRecordingVoice
-              ? '⏹️ Stop'
-              : '🎙️ Speak'}
-        </button>
-        <input
-          id="input-companion-chat"
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder={
-            isRecordingVoice
-              ? 'Listening... speak your request (or type here)...'
-              : 'Speak (🎙️) or type: weather, Calendar/Gmail/Drive actions, reservations, traffic, tasks...'
-          }
-          disabled={isLoading}
-          style={{ flex: 1 }}
-        />
-        <button id="btn-companion-send" type="submit" className="btn-primary" disabled={isLoading || !input.trim()}>
-          <span>Send</span>
-        </button>
-      </form>
+          <input
+            id="input-companion-chat"
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder={isRecordingVoice ? 'Listening...' : 'Message your companion or add a task...'}
+            disabled={isLoading}
+            style={{ flex: 1, padding: '12px 16px' }}
+          />
+
+          <button
+            id="btn-companion-send"
+            type="submit"
+            className="btn-primary"
+            disabled={isLoading || !input.trim()}
+            style={{ padding: '12px 22px' }}
+          >
+            Send
+          </button>
+        </form>
+      </div>
     </div>
   );
 }

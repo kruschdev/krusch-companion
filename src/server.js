@@ -20,7 +20,6 @@ import {
 import { evaluateCompanionContext } from './context/boundary-gate.js';
 import {
   dispatchCompanionChat,
-  classifyCompanionPrompt,
   breakdownTaskIntoSubtasks,
   setCascadeResourceMode,
   getCascadeResourceMode
@@ -39,7 +38,7 @@ import {
   getFullCatalogSchemaTokens,
   getLastToolPruningReport
 } from './agent/agentic-proxy.js';
-import { processThoughtStream, processChaosDump } from './services/chaos-dump.js';
+import { processThoughtStream } from './services/chaos-dump.js';
 import { generateDailyFocus, generateDailyReflection, generateNudge } from './services/coach.js';
 import { transcribeAudio } from './services/stt.js';
 import {
@@ -47,9 +46,15 @@ import {
   runSentinelTick,
   getSentinelStatus,
   getActiveSentinelAlerts,
-  acknowledgeSentinelAlert
+  acknowledgeSentinelAlert,
+  syncGkruschDriveSteering
 } from './services/sentinel-daemon.js';
 import { runDoctorChecks } from '../scripts/doctor.js';
+import {
+  getOnboardingState,
+  saveOnboardingProfile,
+  skipOnboarding
+} from './services/onboarding.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -63,6 +68,7 @@ db.initCompanionDb();
 if (String(process.env.DISABLE_SENTINEL_DAEMON || '').toLowerCase() !== 'true') {
   const intervalMs = parseInt(process.env.SENTINEL_INTERVAL_MS || '300000', 10) || 300000;
   startSentinelDaemon({ intervalMs });
+  syncGkruschDriveSteering().catch(() => {});
 }
 
 const app = express();
@@ -262,21 +268,86 @@ app.post('/api/gamify/opt-in', (req, res) => {
 });
 
 // ── Companion Conversational Chat (Cascade Router) ──────────────────────────
+app.get('/api/companion/sessions', (_req, res) => {
+  try {
+    res.json({ sessions: db.listDialogueSessions(30) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/companion/sessions/:sessionId', (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const messages = db.getDialogueHistory(sessionId, 100).map((m) => ({
+      id: String(m.id),
+      role: m.role,
+      content: m.content,
+      createdAt: m.created_at
+    }));
+    res.json({ sessionId, messages });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/companion/sessions/:sessionId', (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    db.deleteDialogueSession(sessionId);
+    res.json({ ok: true, sessionId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/companion/chat', async (req, res) => {
   try {
-    const { prompt, sessionId = 'default-session', history = [] } = req.body;
+    const {
+      prompt,
+      sessionId = 'default-session',
+      history = [],
+      boardContext = false,
+      activeView = 'companion_chat',
+      activeTask = null
+    } = req.body;
     if (!prompt || typeof prompt !== 'string') {
       return res.status(400).json({ error: 'Prompt is required' });
     }
 
+    const effectiveHistory =
+      Array.isArray(history) && history.length > 0
+        ? history
+        : db.getDialogueHistory(sessionId, 6).map(m => ({ role: m.role, content: m.content }));
+
+    const isFromBoard = Boolean(boardContext || activeView === 'today_board');
+    const trimmedPrompt = prompt.trim();
+    const isConversationalQuestionOrCommand =
+      /\?$/.test(trimmedPrompt) ||
+      /^(?:what|who|when|where|why|how|can\s+you|could\s+you|should\s+i|tell\s+me|show|list|help|hi|hello|hey|complete|finish|check\s+off|mark|delete|remove|drop|promote|pin|move|roll\s*over|break\s*down|split|add\s+(?:a\s+)?(?:task|todo|list|checklist|sublist|items?|steps?)|create\s+(?:a\s+)?(?:task|list)|put\s+.+\s+on\s+my\s+list|i\s+(?:would\s+like|want|need)\s+to\b)/i.test(
+        trimmedPrompt
+      );
+
+    const effectivePrompt =
+      isFromBoard && !isConversationalQuestionOrCommand && trimmedPrompt.length >= 2 && trimmedPrompt.length <= 160
+        ? `Add task: ${trimmedPrompt}`
+        : trimmedPrompt;
+
     // Evaluate Knowledge Boundary & prune
-    const contextEval = evaluateCompanionContext(prompt, history);
-    const contextBriefing = contextEval.shouldInjectContext ? contextEval.contextPrompt : '';
+    const contextEval = evaluateCompanionContext(effectivePrompt, effectiveHistory);
+    const viewContextHeader =
+      activeView === 'today_board'
+        ? '[ACTIVE SCREEN: Today\'s Priority Board — The user is speaking directly from the task board. Prioritize adding/updating tasks, checklists, and answering concisely about today\'s tasks.]\n'
+        : activeView === 'focus_mode' && activeTask?.title
+          ? `[ACTIVE SCREEN: Focus Mode — Currently focusing on task #${activeTask.id} "${activeTask.title}".]\n`
+          : '[ACTIVE SCREEN: Companion Chat]\n';
+    const contextBriefing =
+      viewContextHeader + (contextEval.shouldInjectContext ? contextEval.contextPrompt : '');
 
     // Dispatch via Cascade Router
     const result = await dispatchCompanionChat({
-      prompt: contextEval.cleanQuery || prompt,
-      history,
+      prompt: contextEval.cleanQuery || effectivePrompt,
+      history: effectiveHistory,
       contextBriefing
     });
 
@@ -311,6 +382,7 @@ app.post('/api/companion/chat', async (req, res) => {
     };
 
     res.json({
+      sessionId,
       reply: result.content,
       tierUsed: result.tierUsed,
       latencyMs: result.latencyMs,
@@ -664,6 +736,15 @@ app.get('/api/doctor', async (_req, res) => {
   }
 });
 
+app.post('/api/gkrusch/sync-steering', async (_req, res) => {
+  try {
+    const result = await syncGkruschDriveSteering({ forceRefresh: true });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ synced: false, error: err.message });
+  }
+});
+
 app.get('/api/debug', (_req, res) => {
   try {
     const tierRows = db
@@ -871,6 +952,32 @@ app.post('/api/crm', async (req, res) => {
   try {
     const out = await executeCompanionTool('personal_crm_profile', req.body || { action: 'list_contacts' });
     res.json(out);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Initial Setup / Database Seeding Questionnaire ──────────────────────────
+app.get('/api/companion/onboarding', (_req, res) => {
+  try {
+    res.json(getOnboardingState());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/companion/onboarding', async (req, res) => {
+  try {
+    const out = await saveOnboardingProfile(req.body?.profile || req.body || {});
+    res.json(out);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/companion/onboarding/skip', (_req, res) => {
+  try {
+    res.json(skipOnboarding());
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

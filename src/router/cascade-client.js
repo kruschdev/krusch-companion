@@ -1,13 +1,18 @@
-import { classifyPreRoute, detectKnowledgeBoundary, pruneText } from 'krusch-cascade-router';
+import { classifyPreRoute } from 'krusch-cascade-router';
 import { sanitizeAgentMessage } from '../toolkit/trajectory-guard.js';
 import { parseAIJson } from '../toolkit/json-parse.js';
 import config from '../config.js';
 import { rememberMemory, supersedeMemory, searchMemories } from '../context/memory-store.js';
-import { executeAgenticProxyTurn, detectAgenticIntent } from '../agent/agentic-proxy.js';
+import { executeAgenticProxyTurn, detectAgenticIntent, extractSpokenBoardAction } from '../agent/agentic-proxy.js';
+import { normalizeSpokenTranscript } from '../services/stt.js';
 import {
   getPriorities,
   getTasksForDate,
   createTask,
+  addListToTask,
+  toggleTaskChecklistItem,
+  findTaskChecklistItemByQuery,
+  normalizeChecklistItems,
   updateTaskPriority,
   inferExecutionPriorityAndPillar,
   toggleTask,
@@ -204,7 +209,7 @@ export function safeEvaluateArithmetic(expr) {
  */
 export function evaluateL0Heuristic(rawText) {
   if (!rawText || typeof rawText !== 'string') return null;
-  const text = rawText.trim();
+  const text = normalizeSpokenTranscript(rawText.trim());
 
   // 1. Safe AST arithmetic: e.g. "what is 25 * 4", "calculate 120 / 4", "500 + 42", "2 ^ 8"
   const mathMatch = text.match(/^(?:what is|calculate|compute|solve)?\s*([0-9\s.+\-*/%^()]+)\??$/i);
@@ -297,31 +302,116 @@ export function evaluateL0Heuristic(rawText) {
     }
   }
 
-  // 4. Add / Create Task on Today's Board (with Dual-Axis Execution Priority + Life Pillar)
-  const addTierMatch = text.match(/^(?:add|create|schedule)\s+(?:urgent\s+)?(?:task\s+)?(?:to|in|for)\s+tier\s*([1-5])\s*[:\-]?\s+(.+)$/i);
-  const addGeneralMatch = text.match(/^(?:add\s+(?:urgent\s+)?task|create\s+(?:urgent\s+)?task|new\s+task|urgent\s+task|must\s+do|todo|remind\s+me\s+to)\s*[:\-]?\s+(.+)$/i);
-  if (addTierMatch || addGeneralMatch) {
-    const isExplicitUrgent = /\b(urgent|must\s+do)\b/i.test(text.split(':')[0] || '');
-    const rawTitle = addTierMatch
-      ? `[Tier ${addTierMatch[1]}] ${addTierMatch[2].trim()}`
-      : addGeneralMatch[1].trim();
-    if (rawTitle.length > 0) {
-      try {
-        const inferred = inferPriorityTierFromText(rawTitle);
+  // 3b. Add a List / Checklist of items to an existing (or new) task on Today's Board
+  const isCompoundExternal = /\b(weather|temperature|forecast|gmail|email|calendar|google\s+drive|search\s+the\s+web|reservation|traffic|directions|leaving\s+from|commute|route\s+from)\b/i.test(text);
+  const spokenBoard = !isCompoundExternal ? extractSpokenBoardAction(text) : null;
+  if (spokenBoard && spokenBoard.action === 'add_list_to_task' && spokenBoard.title && spokenBoard.items) {
+    try {
+      const existing = findTaskByQuery(spokenBoard.title, today(), { onlyIncomplete: true }) || findTaskByQuery(spokenBoard.title, today());
+      const itemLines = normalizeChecklistItems(spokenBoard.items);
+      if (existing) {
+        const updated = addListToTask(existing.id, { items: spokenBoard.items, append: true });
+        return {
+          handled: true,
+          tier: TIERS.L0_HEURISTIC,
+          content: `📝 Added **${itemLines.length} checklist item(s)** to **[#${updated.id}] ${updated.title}** (*${updated.execution_lane_emoji} ${updated.execution_lane_short} • ${updated.pillar_emoji} ${updated.pillar}*):\n${updated.notes}`,
+          reason: 'L0 Heuristic: attached checklist to existing task',
+          actionExecuted: { type: 'task_created', task: updated, itemsAdded: itemLines }
+        };
+      } else {
+        const inferred = inferPriorityTierFromText(spokenBoard.title);
         const created = createTask({
           title: inferred.cleanTitle,
           priority_id: inferred.priorityId,
-          execution_priority: isExplicitUrgent ? 1 : inferred.executionPriority,
+          execution_priority: inferred.executionPriority,
           pillar: inferred.pillar,
+          items: spokenBoard.items,
           energy_level: 'medium',
           date: today()
         });
         return {
           handled: true,
           tier: TIERS.L0_HEURISTIC,
-          content: `✅ Added to **${created.execution_lane_emoji} ${created.execution_lane_short}** *(Life Pillar: ${created.pillar_emoji} ${created.pillar})*:\n> **[#${created.id}]** ${created.title}`,
+          content: `✅ Created task **[#${created.id}] ${created.title}** (*${created.execution_lane_emoji} ${created.execution_lane_short} • ${created.pillar_emoji} ${created.pillar}*) with **${itemLines.length} checklist item(s)**:\n${created.notes}`,
+          reason: 'L0 Heuristic: created task with checklist',
+          actionExecuted: { type: 'task_created', task: created, itemsAdded: itemLines }
+        };
+      }
+    } catch {
+      // Fall through
+    }
+  }
+
+  // 4. Add / Create Task on Today's Board (with Dual-Axis Execution Priority + Life Pillar + Spoken "to my list" & correction support)
+  const addTierMatch = text.match(/^(?:add|create|schedule)\s+(?:urgent\s+)?(?:task\s+)?(?:to|in|for)\s+tier\s*([1-5])\s*[:\-]?\s+(.+)$/i);
+  const addGeneralMatch = text.match(/^(?:add\s+(?:urgent\s+)?task|create\s+(?:urgent\s+)?task|new\s+task|urgent\s+task|must\s+do|todo|remind\s+me\s+to)\s*[:\-]?\s+(.+)$/i);
+  const isSpokenAddTask = spokenBoard && spokenBoard.action === 'add_task' && spokenBoard.title;
+  if (addTierMatch || addGeneralMatch || isSpokenAddTask) {
+    const isExplicitUrgent = /\b(urgent|must\s+do)\b/i.test(text.split(':')[0] || '');
+    const rawTitle = addTierMatch
+      ? `[Tier ${addTierMatch[1]}] ${addTierMatch[2].trim()}`
+      : isSpokenAddTask
+        ? spokenBoard.title
+        : addGeneralMatch[1].trim();
+    if (rawTitle.length > 0) {
+      try {
+        // Check if this is a spoken correction ("uh no uh not a magnet maggie my wife i need to...")
+        const correctionWrongMatch = text.match(/^(?:(?:uh+|um+|oh+|ah+|well|no|nope|nah|wait|actually|sorry)\b[,.\s]*)*not\s+(?:a\s+|an\s+|the\s+)?([a-z0-9\s]{2,20}?)(?=[,.\s]+(?:[A-Z]|[a-z]+\s+my\s+(?:wife|husband|partner)|i\s+need\b|i\s+meant\b))/i);
+        let replacedTask = null;
+        if (correctionWrongMatch) {
+          const wrongTerm = correctionWrongMatch[1].trim();
+          const candidateWrong = findTaskByQuery(wrongTerm, today(), { onlyIncomplete: true });
+          if (candidateWrong && candidateWrong.title.toLowerCase().includes(wrongTerm.toLowerCase())) {
+            deleteTask(candidateWrong.id);
+            replacedTask = candidateWrong;
+          }
+        }
+
+        // Persist inline family/partner fact if mentioned ("Maggie my wife")
+        const partnerFact = text.match(/\b([A-Z][a-z]+)\s+(?:is\s+)?my\s+(wife|husband|partner)\b/i);
+        if (partnerFact) {
+          try {
+            rememberMemory({
+              category: 'invariant',
+              key: `partner_${partnerFact[2].toLowerCase()}`,
+              content: `User's ${partnerFact[2].toLowerCase()} is ${partnerFact[1]}.`
+            });
+          } catch {
+            // Non-fatal
+          }
+        }
+
+        let taskTitleInput = rawTitle;
+        let inlineItems = spokenBoard?.items || null;
+        if (!inlineItems && rawTitle.includes(':')) {
+          const colonIdx = rawTitle.indexOf(':');
+          const beforeColon = rawTitle.slice(0, colonIdx).trim();
+          const afterColon = rawTitle.slice(colonIdx + 1).trim();
+          if (beforeColon.length >= 2 && afterColon.includes(',')) {
+            taskTitleInput = beforeColon;
+            inlineItems = afterColon;
+          }
+        }
+        const inferred = inferPriorityTierFromText(taskTitleInput);
+        const created = createTask({
+          title: inferred.cleanTitle,
+          priority_id: inferred.priorityId,
+          execution_priority: isExplicitUrgent ? 1 : inferred.executionPriority,
+          pillar: inferred.pillar,
+          items: inlineItems,
+          energy_level: 'medium',
+          date: today()
+        });
+        const checklistNote = created.notes ? `\n📋 **Checklist:**\n${created.notes}` : '';
+        const replacedPrefix = replacedTask
+          ? `🔄 Replaced misheard task (*"${replacedTask.title}"*) — `
+          : '✅ ';
+        return {
+          handled: true,
+          tier: TIERS.L0_HEURISTIC,
+          content: `${replacedPrefix}Added to **${created.execution_lane_emoji} ${created.execution_lane_short}** *(Life Pillar: ${created.pillar_emoji} ${created.pillar})*:\n> **[#${created.id}]** ${created.title}${checklistNote}`,
           reason: 'L0 Heuristic: deterministic dual-axis task creation',
-          actionExecuted: { type: 'task_created', task: created }
+          actionExecuted: { type: 'task_created', task: created, replacedTask }
         };
       } catch {
         // Fall through
@@ -352,14 +442,30 @@ export function evaluateL0Heuristic(rawText) {
     }
   }
 
-  // 5. Complete / Check Off Task on Today's Board
+  // 5. Complete / Check Off Task (or Checklist Item) on Today's Board
   const completeMatch =
-    text.match(/^(?:complete|finish|check\s+off|done\s+with)\s+(?:task\s+)?(.+)$/i) ||
-    text.match(/^mark\s+(?:task\s+)?(.+?)\s+(?:as\s+)?(?:done|complete|completed|finished)$/i);
+    text.match(/^(?:complete|finish|check\s+off|done\s+with)\s+(?:task\s+|item\s+)?(.+)$/i) ||
+    text.match(/^mark\s+(?:task\s+|item\s+)?(.+?)\s+(?:as\s+)?(?:done|complete|completed|finished)$/i);
   if (completeMatch) {
     const query = completeMatch[1].trim();
+    const isExplicitItem = /\b(?:item|step)\b/i.test(text.split(query)[0] || '');
     try {
-      const target = findTaskByQuery(query, today(), { onlyIncomplete: true }) || findTaskByQuery(query, today());
+      const checklistHit = findTaskChecklistItemByQuery(query, today());
+      const target = !isExplicitItem
+        ? (findTaskByQuery(query, today(), { onlyIncomplete: true }) || findTaskByQuery(query, today()))
+        : null;
+
+      if (checklistHit && (!target || target.title.toLowerCase().trim() !== query.toLowerCase())) {
+        const updatedTask = toggleTaskChecklistItem(checklistHit.task.id, checklistHit.item.index);
+        return {
+          handled: true,
+          tier: TIERS.L0_HEURISTIC,
+          content: `☑️ Checked off **"${checklistHit.item.text}"** on task **[#${updatedTask.id}] ${updatedTask.title}**:\n${updatedTask.notes}`,
+          reason: 'L0 Heuristic: deterministic checklist item completion',
+          actionExecuted: { type: 'task_created', task: updatedTask }
+        };
+      }
+
       if (target) {
         const updated = target.completed ? target : toggleTask(target.id);
         const dateStr = updated.date || today();
@@ -445,6 +551,11 @@ export function evaluateL0Heuristic(rawText) {
         lines.push('\n**⏳ Pending (Ordered by Execution Priority):**');
         for (const t of pending) {
           lines.push(`- **[#${t.id}] [${t.execution_lane_emoji} ${t.execution_lane_short} • ${t.pillar_emoji} ${t.pillar}]** ${t.title}`);
+          if (t.notes) {
+            for (const nl of t.notes.split('\n').map(l => l.trim()).filter(Boolean)) {
+              lines.push(`  ${nl}`);
+            }
+          }
         }
       } else {
         lines.push('\n🎉 **All tasks completed for today!**');
@@ -509,14 +620,27 @@ export function classifyCompanionPrompt(prompt) {
     lengthThreshold: activeResourceMode === 'minimal' ? 800 : 1500
   });
 
+  // Explicit frontier escalation trigger: e.g. "[frontier] ...", "/frontier ...", "[glm] ...", "/glm ...", "use glm ..."
+  const explicitFrontier = /^(?:\[frontier\]|\/frontier\b|\[glm\]|\/glm\b|escalate\s+to\s+frontier\b|use\s+frontier\b|use\s+glm\b)/i.test(
+    String(prompt || '').trim()
+  );
+
   let tier = TIERS.L1_EDGE;
 
-  if (activeResourceMode === 'minimal') {
+  if (explicitFrontier && config.cascade.allowCloudEscalation && config.cascade.openrouterApiKey) {
+    tier = TIERS.L3_CLOUD;
+  } else if (activeResourceMode === 'minimal') {
     // Minimal CPU/Edge mode: strictly keep all inference on L0 or L1 Edge
     tier = TIERS.L1_EDGE;
   } else if (activeResourceMode === 'quality') {
-    // Quality mode: lower complexity threshold for deep reasoning escalation
+    // Quality mode: escalate deep reasoning to L3 Frontier Cloud (if OpenRouter key & cloud escalation enabled), otherwise L2 Swarm
     if (
+      (preRoute.complexityScore >= 0.35 || preRoute.role === 'reasoning_deep') &&
+      config.cascade.allowCloudEscalation &&
+      Boolean(config.cascade.openrouterApiKey)
+    ) {
+      tier = TIERS.L3_CLOUD;
+    } else if (
       preRoute.complexityScore >= 0.20 ||
       String(prompt || '').length >= 120 ||
       preRoute.role === 'reasoning_deep' ||
@@ -525,9 +649,9 @@ export function classifyCompanionPrompt(prompt) {
       tier = TIERS.L2_SWARM;
     }
   } else {
-    // Balanced mode (default): escalate to L2 if prompt has high complexity score or deep reasoning role
+    // Balanced mode (default): escalate to L2 Swarm (kruschdev Dual 2080 Ti / kruschserv Dual 3060) on complex reasoning
     if (
-      preRoute.complexityScore >= 0.40 ||
+      preRoute.complexityScore >= 0.35 ||
       preRoute.role === 'reasoning_deep' ||
       preRoute.role === 'comprehension_rc'
     ) {
@@ -537,6 +661,7 @@ export function classifyCompanionPrompt(prompt) {
 
   return {
     tier,
+    explicitFrontier,
     isFastPath: preRoute.isFastPath,
     role: preRoute.role,
     confidence: preRoute.confidence,
@@ -600,7 +725,8 @@ async function callOllama({ prompt, history = [], systemPrompt = '', model = nul
 export const OPENROUTER_SPECIALISTS = {
   TOOL_AND_CODE: 'qwen/qwen-2.5-coder-32b-instruct',
   GENERAL_COACH: 'qwen/qwen-2.5-72b-instruct',
-  DEEP_REASONING: 'deepseek/deepseek-chat-v3-0324'
+  DEEP_REASONING: 'z-ai/glm-5.3',
+  FRONTIER_PRO: 'z-ai/glm-5.3'
 };
 
 /**
@@ -618,6 +744,11 @@ export function selectOpenRouterSpecialistModel({ classification = null, systemP
     return configured;
   }
 
+  // 0. Explicit frontier request -> Claude Sonnet 4.5 (or configured frontierModel)
+  if (classification?.explicitFrontier) {
+    return config.cascade.frontierModel || OPENROUTER_SPECIALISTS.FRONTIER_PRO;
+  }
+
   // 1. Agentic Proxy (<holodata> tool calling) or code/structured task -> 32B Coder (~400ms, 100% tool accuracy)
   if (
     (systemPrompt && systemPrompt.includes('<holodata>')) ||
@@ -631,7 +762,7 @@ export function selectOpenRouterSpecialistModel({ classification = null, systemP
   if (
     classification?.role === 'reasoning_deep' ||
     classification?.role === 'comprehension_rc' ||
-    (classification?.complexityScore ?? 0) >= 0.45
+    (classification?.complexityScore ?? 0) >= 0.35
   ) {
     return OPENROUTER_SPECIALISTS.DEEP_REASONING;
   }
@@ -794,6 +925,17 @@ Respond with valid JSON ONLY in this format:
 }
 
 /**
+ * Strip any hallucinated "### Updated Today's Live Priority Board" markdown dump
+ * that a small model might imitate from the state briefing or older chat turns.
+ */
+export function stripHallucinatedBoardDump(rawContent = '') {
+  if (!rawContent || typeof rawContent !== 'string') return '';
+  return rawContent
+    .replace(/\n*###?\s+Updated Today's Live Priority Board[\s\S]*$/i, '')
+    .trim();
+}
+
+/**
  * Dispatch conversational turn through the cascade router hierarchy.
  */
 export async function dispatchCompanionChat({ prompt, history = [], contextBriefing = '', systemPrompt = null }) {
@@ -801,10 +943,23 @@ export async function dispatchCompanionChat({ prompt, history = [], contextBrief
 
   // 1. Sanitize incoming prompt for security & injection containment (arXiv: 2608.10218)
   const sanitized = sanitizeAgentMessage(prompt);
-  const cleanPrompt = sanitized.sanitizedMessage || prompt;
+  const rawSanitized = sanitized.sanitizedMessage || prompt;
+  const cleanPrompt = systemPrompt ? rawSanitized : normalizeSpokenTranscript(rawSanitized);
+
+  // Strip any historical hallucinated board dumps from conversation history so 7B models don't few-shot imitate them
+  const cleanHistory = Array.isArray(history)
+    ? history.map(h => ({
+        ...h,
+        content: h?.role === 'assistant' ? stripHallucinatedBoardDump(h.content) : h?.content
+      }))
+    : [];
 
   // 2. Check L0 heuristic (only when not invoked with a custom systemPrompt like coach/dump/breakdown)
-  if (!systemPrompt) {
+  const isExplicitFrontier = /^(?:\[frontier\]|\/frontier\b|\[glm\]|\/glm\b|escalate\s+to\s+frontier\b|use\s+frontier\b|use\s+glm\b)/i.test(
+    String(cleanPrompt || '').trim()
+  );
+
+  if (!systemPrompt && !isExplicitFrontier) {
     const l0 = evaluateL0Heuristic(cleanPrompt);
     if (l0 && l0.handled) {
       return {
@@ -830,7 +985,7 @@ export async function dispatchCompanionChat({ prompt, history = [], contextBrief
     if (detectAgenticIntent(cleanPrompt).shouldUseAgenticProxy) {
       const agenticRes = await executeAgenticProxyTurn({
         prompt: cleanPrompt,
-        history,
+        history: cleanHistory,
         contextBriefing,
         callLlm: async ({ prompt: subPrompt, systemPrompt: subSystem, history: subHistory }) => {
           return await dispatchCompanionChat({
@@ -844,96 +999,136 @@ export async function dispatchCompanionChat({ prompt, history = [], contextBrief
         return agenticRes;
       }
     }
+
+    // 2d. Conversational follow-up recovery: e.g. "Do you not have the ability to add these tasks?", "Can you add that to my list?", "Can you add a list to a task?"
+    if (/\b(?:do\s+you\s+(?:not\s+)?have\s+the\s+ability\s+to\s+add|can\s+you\s+(?:not\s+)?(?:add|update|modify)\s+(?:these\s+|those\s+|my\s+|a\s+)?(?:tasks?|lists?|checklists?)|add\s+(?:that|it|those)\s+to\s+my\s+list)\b/i.test(cleanPrompt)) {
+      const recentUserTurns = [...(cleanHistory || [])].reverse().filter(h => h?.role === 'user' && h?.content);
+      for (const prev of recentUserTurns) {
+        const recoveredL0 = evaluateL0Heuristic(prev.content);
+        if (recoveredL0 && recoveredL0.handled) {
+          return {
+            content: `Yes — I have direct access to your **Today's Priority Board** and **Task Checklists**! I just added that for you now:\n\n${recoveredL0.content}`,
+            tierUsed: TIERS.L0_HEURISTIC,
+            latencyMs: Date.now() - startTime,
+            reason: 'L0 Heuristic: conversational follow-up task recovery',
+            actionExecuted: recoveredL0.actionExecuted || null
+          };
+        }
+      }
+    }
   }
 
   // 3. Classify tier
   const classification = classifyCompanionPrompt(cleanPrompt);
 
-  const baseSystemPrompt = systemPrompt || `You are Krusch Companion, a sovereign, empathetic, and exceptionally capable personal AI assistant and daily companion.
-You speak clearly, warmly, and constructively. You help the user manage their daily focus, priorities, goals, and tasks.
-All personal data is private and sovereign. When referencing the user's Today's Live Priority Board or Working Memory, cite specific tasks or priorities naturally and help them take concrete action.`;
+  const baseSystemPrompt = systemPrompt || `You are Krusch Companion, a sovereign, empathetic, and action-taking personal AI assistant and daily companion.
+You speak clearly, warmly, and constructively. You help the user manage their daily focus, priorities, goals, tasks, and checklists.
+CRITICAL CAPABILITY INVARIANT: You DO have direct, live execution access to modify Krusch Companion's Today's Priority Board (adding tasks, attaching a list/checklist of items to any task, completing tasks, breaking down tasks into steps), Sovereign Working Memory, local Markdown Notes Vault, and G-Krusch Google Workspace Extensions (Google Drive & Docs, Google Calendar, and Gmail) via the Krusch Agentic Proxy (<holodata> Dual-Engine).
+NEVER claim or apologize that you lack access to modify task lists, checklists, Krusch Companion's UI, or Google Drive.
+STRICT ANTI-HALLUCINATION RULE: Never output a fake "### Updated Today's Live Priority Board" markdown dump and never invent fake [#ID] task numbers that are not in Today's Live Priority Board. Keep conversational answers concise and grounded.`;
 
   const fullSystemPrompt = contextBriefing
     ? `${baseSystemPrompt}\n\n${contextBriefing}`
     : baseSystemPrompt;
 
-  // Mode: Direct OpenRouter Provider (Zero-GPU Cloud Mode)
-  if (config.cascade.provider === 'openrouter') {
-    const selectedCloudModel = selectOpenRouterSpecialistModel({
-      classification,
-      systemPrompt: fullSystemPrompt
-    });
+  // Mode: Direct OpenRouter Provider OR L3 Frontier Cloud Escalation
+  if (
+    config.cascade.provider === 'openrouter' ||
+    (classification.tier === TIERS.L3_CLOUD && config.cascade.allowCloudEscalation && config.cascade.openrouterApiKey)
+  ) {
+    const selectedCloudModel = classification.explicitFrontier
+      ? config.cascade.frontierModel || OPENROUTER_SPECIALISTS.FRONTIER_PRO
+      : selectOpenRouterSpecialistModel({
+          classification,
+          systemPrompt: fullSystemPrompt
+        });
     try {
       const cloudContent = await callOpenRouter({
-        prompt: cleanPrompt,
-        history,
+        prompt: cleanPrompt.replace(/^(?:\[frontier\]|\/frontier|\[glm\]|\/glm|use\s+glm:?|use\s+frontier:?|escalate\s+to\s+frontier:?)\s*/i, ''),
+        history: cleanHistory,
         systemPrompt: fullSystemPrompt,
         model: selectedCloudModel
       });
 
       return {
-        content: cloudContent,
+        content: systemPrompt ? cloudContent : stripHallucinatedBoardDump(cloudContent),
         tierUsed: TIERS.L3_CLOUD,
         latencyMs: Date.now() - startTime,
-        reason: `L3 OpenRouter (${selectedCloudModel})`
+        reason: `L3 OpenRouter Frontier (${selectedCloudModel})`
       };
     } catch (err) {
-      throw new Error(`OpenRouter dispatch failed: ${err.message}`);
+      if (config.cascade.provider === 'openrouter') {
+        throw new Error(`OpenRouter dispatch failed: ${err.message}`);
+      }
+      console.warn(`⚡ L3 OpenRouter escalation failed (${err.message}); falling back to L2 Swarm`);
     }
   }
 
-  // 4. Execution with resilient hedging for Local/Swarm
-  if (classification.tier === TIERS.L2_SWARM) {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3500);
-
-      const res = await fetch(`${config.cascade.swarmUrl}/chat/completions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: controller.signal,
-        body: JSON.stringify({
-          model: config.cascade.swarmModel,
-          messages: [
-            { role: 'system', content: fullSystemPrompt },
-            ...history,
-            { role: 'user', content: cleanPrompt }
-          ],
-          temperature: 0.6
-        })
-      });
-      clearTimeout(timeoutId);
-
-      if (res.ok) {
-        const data = await res.json();
-        const content = data?.choices?.[0]?.message?.content;
-        if (content) {
-          return {
-            content,
-            tierUsed: TIERS.L2_SWARM,
-            latencyMs: Date.now() - startTime,
-            reason: `L2 Swarm (${config.cascade.swarmModel})`
-          };
-        }
+  // 4. Execution with resilient multi-node hedging for L2 Swarm (kruschdev Dual 2080 Ti -> kruschserv Dual 3060)
+  if (classification.tier === TIERS.L2_SWARM || classification.tier === TIERS.L3_CLOUD) {
+    const swarmTargets = [
+      {
+        endpoint: config.cascade.swarmUrl,
+        model: config.cascade.swarmModel || 'qwen3-coder-30b-moe:latest'
+      },
+      {
+        endpoint: config.cascade.swarmFallbackUrl,
+        model: config.cascade.swarmFallbackModel || 'hermes3:latest'
       }
-    } catch {
-      // Fallback to local L1 edge
-      console.log('⚡ L2 Swarm unreachable; gracefully falling back to local L1 Edge');
+    ].filter(t => Boolean(t.endpoint));
+
+    for (const { endpoint, model: targetSwarmModel } of swarmTargets) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 18000);
+
+        const res = await fetch(`${endpoint.replace(/\/+$/, '')}/chat/completions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify({
+            model: targetSwarmModel,
+            messages: [
+              { role: 'system', content: fullSystemPrompt },
+              ...cleanHistory,
+              { role: 'user', content: cleanPrompt }
+            ],
+            temperature: 0.6
+          })
+        });
+        clearTimeout(timeoutId);
+
+        if (res.ok) {
+          const data = await res.json();
+          const content = data?.choices?.[0]?.message?.content;
+          if (content) {
+            return {
+              content: systemPrompt ? content : stripHallucinatedBoardDump(content),
+              tierUsed: TIERS.L2_SWARM,
+              latencyMs: Date.now() - startTime,
+              reason: `L2 Swarm (${targetSwarmModel} @ ${endpoint})`
+            };
+          }
+        }
+      } catch {
+        // Try next swarm node or fall back to L1 edge
+      }
     }
+    console.log('⚡ L2 Swarm unreachable; gracefully falling back to local L1 Edge');
   }
 
   // L1 Local Edge (Ollama)
   try {
     const edgeContent = await callOllama({
       prompt: cleanPrompt,
-      history,
+      history: cleanHistory,
       systemPrompt: fullSystemPrompt,
       model: config.cascade.edgeModel,
       timeoutMs: 25000
     });
 
     return {
-      content: edgeContent,
+      content: systemPrompt ? edgeContent : stripHallucinatedBoardDump(edgeContent),
       tierUsed: TIERS.L1_EDGE,
       latencyMs: Date.now() - startTime,
       reason: `L1 Local Edge (${config.cascade.edgeModel})`
@@ -944,13 +1139,13 @@ All personal data is private and sovereign. When referencing the user's Today's 
       try {
         const fallbackContent = await callOllama({
           prompt: cleanPrompt,
-          history,
+          history: cleanHistory,
           systemPrompt: fullSystemPrompt,
           model: 'hermes3:latest',
           timeoutMs: 25000
         });
         return {
-          content: fallbackContent,
+          content: systemPrompt ? fallbackContent : stripHallucinatedBoardDump(fallbackContent),
           tierUsed: TIERS.L1_EDGE,
           latencyMs: Date.now() - startTime,
           reason: 'L1 Local Edge (hermes3:latest fallback)'

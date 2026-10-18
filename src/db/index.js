@@ -93,7 +93,7 @@ export function inferExecutionPriorityAndPillar({
   // 1. Determine Life Pillar tag
   let resolvedPillar = pillar;
   if (!resolvedPillar) {
-    if (/\b(bill|invoice|mortgage|rent|tax|taxes|insurance|paycheck|budget|bank|payment|utility|electric|water heater|plumb|car repair|lease|contract)\b/.test(combined)) {
+    if (/\b(bill|invoice|mortgage|rent|tax|taxes|insurance|paycheck|budget|bank|payment|utility|electric|water heater|plumb|car repair|lease|contract|dishes|dishwasher|laundry|grocery|groceries|trash|garbage|clean|vacuum|sweep|mop|kitchen|yard|errands?)\b/.test(combined)) {
       resolvedPillar = 'Provision & Finance';
     } else if (priority_id === 1 || /\b(pray|prayer|gratitude|meditat|faith|church|scripture|devotional|worship)\b/.test(combined)) {
       resolvedPillar = 'Core Values & Faith';
@@ -137,6 +137,64 @@ export function inferExecutionPriorityAndPillar({
   };
 }
 
+export function normalizeChecklistItems(itemsOrText) {
+  if (!itemsOrText) return [];
+  let rawList = [];
+  if (Array.isArray(itemsOrText)) {
+    rawList = itemsOrText.map(x => String(x || '').trim()).filter(Boolean);
+  } else if (typeof itemsOrText === 'string') {
+    const trimmed = itemsOrText.trim();
+    if (!trimmed) return [];
+    if (/[\n;]/.test(trimmed)) {
+      rawList = trimmed.split(/[\n;]+/).map(s => s.trim()).filter(Boolean);
+    } else if (trimmed.includes(',')) {
+      rawList = trimmed.split(/\s*,\s*(?:and\s+)?/i).map(s => s.trim()).filter(Boolean);
+    } else if (/\s+and\s+/i.test(trimmed) && trimmed.split(/\s+/).length >= 4) {
+      rawList = trimmed.split(/\s+and\s+/i).map(s => s.trim()).filter(Boolean);
+    } else {
+      rawList = [trimmed];
+    }
+  }
+
+  return rawList
+    .map(line => {
+      const checkedMatch = line.match(/^[-*•]?\s*\[([xX])\]\s*(.+)$/);
+      const isChecked = Boolean(checkedMatch);
+      const clean = (checkedMatch ? checkedMatch[2] : line)
+        .replace(/^[-*•]\s*(?:\[\s*\]\s*)?/, '')
+        .replace(/^\d+[.)]\s*/, '')
+        .replace(/^["']|["']$/g, '')
+        .trim();
+      if (!clean) return null;
+      const capitalized = clean.charAt(0).toUpperCase() + clean.slice(1);
+      return `- [${isChecked ? 'x' : ' '}] ${capitalized}`;
+    })
+    .filter(Boolean);
+}
+
+export function parseTaskChecklist(notes) {
+  if (!notes || typeof notes !== 'string') return [];
+  const lines = notes.split('\n').map(l => l.trim()).filter(Boolean);
+  const items = [];
+  lines.forEach((line, idx) => {
+    const boxMatch = line.match(/^[-*•]?\s*\[([ xX])\]\s+(.+)$/);
+    if (boxMatch) {
+      items.push({
+        index: idx,
+        text: boxMatch[2].trim(),
+        checked: boxMatch[1].toLowerCase() === 'x'
+      });
+    } else if (/^[-*•]\s+(.+)$/.test(line)) {
+      items.push({
+        index: idx,
+        text: line.replace(/^[-*•]\s+/, '').trim(),
+        checked: false
+      });
+    }
+  });
+  return items;
+}
+
 export function enrichTaskWithDualAxis(row) {
   if (!row) return null;
   const inferred = inferExecutionPriorityAndPillar(row);
@@ -172,7 +230,8 @@ export function enrichTaskWithDualAxis(row) {
     lane_reason: laneReason,
     pillar: pillarMeta.name,
     pillar_emoji: pillarMeta.emoji,
-    pillar_color: pillarMeta.color
+    pillar_color: pillarMeta.color,
+    checklist: parseTaskChecklist(row.notes)
   };
 }
 
@@ -395,18 +454,35 @@ export function findTaskByQuery(query, date = null, { onlyIncomplete = false } =
   const norm = raw.toLowerCase().replace(/^["']|["']$/g, '').trim();
   if (!norm) return null;
 
+  // 0. Conversational pronoun / recent task reference ("that task", "my task", "the task", "it", "last task")
+  if (/^(?:that|this|my|the|last|latest|recent|new)\s*task$|^it$/i.test(norm)) {
+    const nonRecurring = candidates.filter(t => !t.recurring);
+    const pool = nonRecurring.length > 0 ? nonRecurring : candidates;
+    return [...pool].sort((a, b) => b.id - a.id)[0] || null;
+  }
+
+  const strippedNorm = norm
+    .replace(/^(?:my|the|a|an|task)\s+/i, '')
+    .replace(/\s+(?:task|on\s+my\s+list|in\s+my\s+list|on\s+the\s+board)$/i, '')
+    .trim() || norm;
+
   // 1. Exact title match
-  const exact = candidates.find(t => t.title.toLowerCase().trim() === norm);
+  const exact = candidates.find(
+    t => t.title.toLowerCase().trim() === norm || t.title.toLowerCase().trim() === strippedNorm
+  );
   if (exact) return exact;
 
   // 2. Substring match (task title contains query or query contains task title)
   const sub = candidates.find(
-    t => t.title.toLowerCase().includes(norm) || (norm.length >= 4 && norm.includes(t.title.toLowerCase()))
+    t =>
+      t.title.toLowerCase().includes(strippedNorm) ||
+      (strippedNorm.length >= 4 && strippedNorm.includes(t.title.toLowerCase()))
   );
   if (sub) return sub;
 
   // 3. Token overlap match
-  const queryWords = norm.split(/\s+/).filter(w => w.length >= 3);
+  const stopWords = new Set(['task', 'list', 'the', 'and', 'for', 'with', 'from', 'that', 'this']);
+  const queryWords = strippedNorm.split(/\s+/).filter(w => w.length >= 3 && !stopWords.has(w));
   if (queryWords.length > 0) {
     let bestTask = null;
     let bestScore = 0;
@@ -430,15 +506,18 @@ export function createTask({
   execution_priority = null,
   pillar = null,
   notes = null,
+  items = null,
   recurring = 0,
   energy_level = 'medium',
   date = null
 }) {
   const targetDate = date || today();
   ensureRecurringTasksForDate(targetDate);
+  const formattedItems = items ? normalizeChecklistItems(items).join('\n') : null;
+  const finalNotes = [notes, formattedItems].filter(Boolean).join('\n') || null;
   const inferred = inferExecutionPriorityAndPillar({
     title,
-    notes,
+    notes: finalNotes,
     recurring,
     priority_id,
     execution_priority,
@@ -453,7 +532,7 @@ export function createTask({
     inferred.execution_priority,
     inferred.pillar,
     title,
-    notes,
+    finalNotes,
     recurring ? 1 : 0,
     energy_level,
     targetDate
@@ -465,6 +544,90 @@ export function createTask({
     WHERE t.id = ?
   `).get(info.lastInsertRowid);
   return enrichTaskWithDualAxis(row);
+}
+
+export function addListToTask(id, { items = null, notes = null, append = true } = {}) {
+  const database = getDb();
+  const existing = database.prepare('SELECT * FROM tasks WHERE id = ?').get(id);
+  if (!existing) return null;
+
+  const newChecklistLines = normalizeChecklistItems(items ?? notes);
+  let nextNotes = existing.notes || '';
+
+  if (newChecklistLines.length > 0) {
+    if (append && nextNotes.trim()) {
+      const existingLines = nextNotes.split('\n').map(l => l.trim()).filter(Boolean);
+      const existingNormSet = new Set(
+        existingLines.map(l => l.replace(/^[-*•]?\s*\[[ xX]\]\s*/, '').toLowerCase().trim())
+      );
+      for (const line of newChecklistLines) {
+        const cleanItem = line.replace(/^[-*•]?\s*\[[ xX]\]\s*/, '').toLowerCase().trim();
+        if (!existingNormSet.has(cleanItem)) {
+          existingLines.push(line);
+          existingNormSet.add(cleanItem);
+        }
+      }
+      nextNotes = existingLines.join('\n');
+    } else {
+      nextNotes = newChecklistLines.join('\n');
+    }
+  } else if (notes !== null) {
+    nextNotes = append && nextNotes.trim() ? `${nextNotes.trim()}\n${String(notes).trim()}` : String(notes).trim();
+  }
+
+  database.prepare('UPDATE tasks SET notes = ? WHERE id = ?').run(nextNotes || null, id);
+
+  const row = database.prepare(`
+    SELECT t.*, p.name as priority_name, p.emoji as priority_emoji, p.color as priority_color, p.tier
+    FROM tasks t
+    JOIN priorities p ON t.priority_id = p.id
+    WHERE t.id = ?
+  `).get(id);
+  return enrichTaskWithDualAxis(row);
+}
+
+export function toggleTaskChecklistItem(id, itemIndex = 0) {
+  const database = getDb();
+  const existing = database.prepare('SELECT * FROM tasks WHERE id = ?').get(id);
+  if (!existing || !existing.notes) return null;
+
+  const lines = existing.notes.split('\n').map(l => l.trim()).filter(Boolean);
+  const idx = Number(itemIndex);
+  if (isNaN(idx) || idx < 0 || idx >= lines.length) return null;
+
+  const line = lines[idx];
+  const boxMatch = line.match(/^([-*•]?\s*)\[([ xX])\]\s+(.+)$/);
+  if (boxMatch) {
+    const nextCheck = boxMatch[2].toLowerCase() === 'x' ? ' ' : 'x';
+    lines[idx] = `- [${nextCheck}] ${boxMatch[3]}`;
+  } else {
+    lines[idx] = `- [x] ${line.replace(/^[-*•]\s+/, '')}`;
+  }
+
+  database.prepare('UPDATE tasks SET notes = ? WHERE id = ?').run(lines.join('\n'), id);
+
+  const row = database.prepare(`
+    SELECT t.*, p.name as priority_name, p.emoji as priority_emoji, p.color as priority_color, p.tier
+    FROM tasks t
+    JOIN priorities p ON t.priority_id = p.id
+    WHERE t.id = ?
+  `).get(id);
+  return enrichTaskWithDualAxis(row);
+}
+
+export function findTaskChecklistItemByQuery(query, date = null) {
+  const norm = String(query || '').toLowerCase().replace(/^["']|["']$/g, '').trim();
+  if (!norm) return null;
+  const tasks = getTasksForDate(date || today()).filter(t => !t.completed && Array.isArray(t.checklist) && t.checklist.length > 0);
+  for (const t of tasks) {
+    const match = t.checklist.find(
+      item => !item.checked && (item.text.toLowerCase().includes(norm) || norm.includes(item.text.toLowerCase()))
+    );
+    if (match) {
+      return { task: t, item: match };
+    }
+  }
+  return null;
 }
 
 export function updateTaskPriority(id, { execution_priority = null, priority_id = null, pillar = null } = {}) {
@@ -603,10 +766,61 @@ export function saveDialogueMessage({ sessionId, role, content, tierUsed = 'L1_e
   return getDb().prepare('SELECT * FROM companion_dialogue WHERE id = ?').get(info.lastInsertRowid);
 }
 
-export function getDialogueHistory(sessionId, limit = 20) {
+export function getDialogueHistory(sessionId, limit = 100) {
   return getDb().prepare(`
-    SELECT * FROM companion_dialogue WHERE session_id = ? ORDER BY id ASC LIMIT ?
+    SELECT * FROM (
+      SELECT * FROM companion_dialogue
+      WHERE session_id = ?
+      ORDER BY id DESC
+      LIMIT ?
+    )
+    ORDER BY id ASC
   `).all(sessionId, limit);
+}
+
+export function listDialogueSessions(limit = 30) {
+  const database = getDb();
+  const rows = database.prepare(`
+    SELECT
+      session_id as sessionId,
+      COUNT(*) as messageCount,
+      MIN(created_at) as createdAt,
+      MAX(created_at) as updatedAt,
+      (
+        SELECT content FROM companion_dialogue d2
+        WHERE d2.session_id = companion_dialogue.session_id AND d2.role = 'user'
+        ORDER BY d2.id DESC LIMIT 1
+      ) as firstUserMessage,
+      (
+        SELECT content FROM companion_dialogue d3
+        WHERE d3.session_id = companion_dialogue.session_id
+        ORDER BY d3.id DESC LIMIT 1
+      ) as lastMessage
+    FROM companion_dialogue
+    GROUP BY session_id
+    ORDER BY MAX(id) DESC
+    LIMIT ?
+  `).all(limit);
+
+  return rows.map((r) => {
+    const rawTitle = String(r.firstUserMessage || r.lastMessage || 'Conversation')
+      .replace(/^Add task:\s*/i, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const title = rawTitle.length > 38 ? `${rawTitle.slice(0, 38)}…` : (rawTitle || 'New Chat');
+    return {
+      sessionId: r.sessionId,
+      title,
+      messageCount: r.messageCount,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+      lastPreview: String(r.lastMessage || '').replace(/\*\*|\`/g, '').slice(0, 60)
+    };
+  });
+}
+
+export function deleteDialogueSession(sessionId) {
+  return getDb().prepare('DELETE FROM companion_dialogue WHERE session_id = ?').run(sessionId);
 }
 
 // ── Weekly Review & Bulk Actions ───────────────────────────────────────────
