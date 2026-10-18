@@ -2483,10 +2483,11 @@ export const SKYLIGHT_CALENDAR_TOOL = {
     "Opt-in Skylight Calendar 2 Connector: sync Today's Priority Board tasks with Skylight Chores, push grocery/checklist items to Skylight Lists, schedule or pull Skylight Calendar events, manage Meal Plans, or send a Magic Import digest.",
   parameters: {
     action:
-      'string (REQUIRED: "status" | "sync_tasks" | "pull_chores" | "push_list_items" | "list_events" | "create_event" | "magic_import")',
+      'string (REQUIRED: "status" | "sync_tasks" | "pull_chores" | "push_list_items" | "plan_meal" | "list_meals" | "list_events" | "create_event" | "magic_import")',
     title: 'string (OPTIONAL: Event, chore, meal, or list item title)',
     items: 'array|string (OPTIONAL: Array or comma-separated list of grocery/checklist items for push_list_items)',
     listId: 'string (OPTIONAL: Skylight list ID or name, default: "grocery")',
+    mealType: 'string (OPTIONAL: "breakfast" | "lunch" | "dinner" | "snack")',
     startTime: 'string (OPTIONAL: ISO-8601 start timestamp for create_event)',
     location: 'string (OPTIONAL: Event location for create_event)',
     date: 'string (OPTIONAL: Target YYYY-MM-DD date, defaults to today)',

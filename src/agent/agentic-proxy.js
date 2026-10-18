@@ -120,14 +120,23 @@ export function compactToolSchemaForPrompt(tool, prompt = '') {
   } else if (tool.name === 'skylight_calendar') {
     const isList = /\b(grocery|list|items?)\b/.test(text);
     const isEvent = /\b(event|schedule|book)\b/.test(text);
+    const isMeal = /\b(meal|dinner|lunch|breakfast|recipe)\b/.test(text);
     if (isList) {
       delete rawParams.startTime;
       delete rawParams.location;
+      delete rawParams.mealType;
       rawParams.action = '"push_list_items"';
+    } else if (isMeal) {
+      delete rawParams.startTime;
+      delete rawParams.location;
+      delete rawParams.listId;
+      delete rawParams.items;
+      rawParams.action = '"plan_meal" | "list_meals"';
     } else if (!isEvent) {
       delete rawParams.startTime;
       delete rawParams.location;
       delete rawParams.listId;
+      delete rawParams.mealType;
       rawParams.action = '"status" | "sync_tasks" | "pull_chores"';
     }
   }
