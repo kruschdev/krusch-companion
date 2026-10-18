@@ -1,3 +1,10 @@
+import { logClientBoundaryWarning } from './companionClient';
+
+export function resolveAudioContextConstructor() {
+  if (typeof window === 'undefined') return null;
+  return window.AudioContext || window.webkitAudioContext || null;
+}
+
 /**
  * Attaches an Adaptive Web Audio API Voice Activity & Silence Detector (VAD) to a MediaStream.
  * Uses percentile noise-floor tracking + gentle continuation hysteresis so natural mid-sentence
@@ -40,7 +47,9 @@ export function attachSilenceDetector(
       intervalId = null;
     }
     if (audioCtx && audioCtx.state !== 'closed') {
-      audioCtx.close().catch(() => {});
+      audioCtx.close().catch((err) => {
+        logClientBoundaryWarning('voiceSilenceDetector.close', err);
+      });
     }
   };
 
@@ -53,14 +62,16 @@ export function attachSilenceDetector(
   };
 
   try {
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    const AudioContextClass = resolveAudioContextConstructor();
     if (!AudioContextClass) {
       return { markSpeechActivity: () => {}, stop: cleanup };
     }
 
     audioCtx = new AudioContextClass();
     if (audioCtx.state === 'suspended') {
-      audioCtx.resume().catch(() => {});
+      audioCtx.resume().catch((err) => {
+        logClientBoundaryWarning('voiceSilenceDetector.resume', err);
+      });
     }
 
     const source = audioCtx.createMediaStreamSource(stream);
@@ -120,8 +131,8 @@ export function attachSilenceDetector(
         triggerStop();
       }
     }, 100);
-  } catch {
-    // Fallback if AudioContext fails
+  } catch (err) {
+    logClientBoundaryWarning('voiceSilenceDetector.init', err);
   }
 
   return {

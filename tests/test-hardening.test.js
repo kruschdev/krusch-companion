@@ -398,7 +398,13 @@ test('Hardening: Initial Setup / Database Seeding Questionnaire (16 Questions, S
   assert.strictEqual(resolveDefaultOrigin(null), '1161 North Citrus Drive, La Habra, CA 90631');
 });
 
-test('Hardening: Opt-In Skylight Calendar 2 Connector executes status & dry-run task sync while preserving 20-tool default catalog', async () => {
+test('Hardening: Opt-In Skylight Calendar 2 Connector & Programmatic SDK Entrypoint (src/index.js) execute cleanly', async () => {
+  const sdk = await import('../src/index.js');
+  const cfgCheck = sdk.validateCompanionConfig();
+  assert.strictEqual(cfgCheck.ok, true);
+  assert.strictEqual(cfgCheck.issues.length, 0);
+  assert.strictEqual(sdk.COMPANION_TOOLS.length, 20);
+
   const statusRes = await executeCompanionTool('skylight_calendar', { action: 'status' });
   assert.strictEqual(statusRes.ok, true);
   assert.strictEqual(statusRes.tool, 'skylight_calendar');

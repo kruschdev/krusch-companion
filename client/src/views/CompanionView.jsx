@@ -172,7 +172,7 @@ export function CompanionView({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           tool: tc.name,
-          arguments: { ...(tc.arguments || {}), dryRun: false }
+          arguments: { ...tc.arguments, dryRun: false }
         })
       });
       if (res.ok) {
@@ -182,7 +182,7 @@ export function CompanionView({
             m.id === msgId
               ? {
                   ...m,
-                  confirmedTools: { ...(m.confirmedTools || {}), [tc.name]: true }
+                  confirmedTools: { ...m.confirmedTools, [tc.name]: true }
                 }
               : m
           ).concat({

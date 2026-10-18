@@ -1,0 +1,7 @@
+{
+  "$schema": "./client/node_modules/oxlint/configuration_schema.json",
+  "categories": {
+    "correctness": "error"
+  },
+  "ignorePatterns": ["dist/**", "node_modules/**", "data/**", ".venv/**"]
+}

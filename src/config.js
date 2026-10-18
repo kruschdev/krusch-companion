@@ -79,4 +79,27 @@ export const config = {
   }
 };
 
+/**
+ * Validate resolved runtime configuration and return structured diagnostics.
+ */
+export function validateCompanionConfig(cfg = config) {
+  const issues = [];
+  if (!cfg?.app?.port || Number.isNaN(Number(cfg.app.port)) || cfg.app.port < 1 || cfg.app.port > 65535) {
+    issues.push('Invalid app.port: must be an integer between 1 and 65535');
+  }
+  if (!cfg?.cascade?.ollamaUrl || !/^https?:\/\//i.test(cfg.cascade.ollamaUrl)) {
+    issues.push('Invalid cascade.ollamaUrl: must be an HTTP(S) URL');
+  }
+  if (!cfg?.cascade?.swarmUrl || !/^https?:\/\//i.test(cfg.cascade.swarmUrl)) {
+    issues.push('Invalid cascade.swarmUrl: must be an HTTP(S) URL');
+  }
+  if (!cfg?.db?.path || typeof cfg.db.path !== 'string') {
+    issues.push('Invalid db.path: must be a non-empty file path string');
+  }
+  return {
+    ok: issues.length === 0,
+    issues
+  };
+}
+
 export default config;

@@ -3,7 +3,13 @@
   "version": "1.0.0",
   "type": "module",
   "description": "Sovereign, privacy-first personal AI assistant and daily companion integrating KruschContext working memory with Krusch Cascade Router",
-  "main": "src/server.js",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./server": "./src/server.js",
+    "./tools": "./src/agent/tools.js",
+    "./proxy": "./src/agent/agentic-proxy.js"
+  },
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
