@@ -581,7 +581,7 @@ export function evaluateL0Heuristic(rawText) {
   return null;
 }
 
-let activeResourceMode = process.env.RESOURCE_MODE || 'balanced'; // 'minimal' | 'balanced' | 'quality'
+let activeResourceMode = config.cascade?.resourceMode || 'balanced'; // 'minimal' | 'balanced' | 'quality'
 
 export function setCascadeResourceMode(mode) {
   if (['minimal', 'balanced', 'quality'].includes(mode)) {
