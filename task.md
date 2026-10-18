@@ -48,4 +48,6 @@
 - [x] **Task 7.3**: Add Faster-Whisper ASR Server (`scripts/whisper_asr_server.py`) and adaptive Voice Silence Detector (`voiceSilenceDetector.js`).
 - [x] **Task 7.4**: Add multi-thread saved chat conversations and Companion-integrated Today's Board input.
 - [x] **Task 7.5**: Align L2 Swarm routing with Multi-Family 5-GPU Fleet Residency (`qwen3-coder-30b-moe:latest` on `kruschdev` + `hermes3:latest` on `kruschserv`).
-- [x] **Task 7.6**: Resolve all 10 React Compiler / `oxlint` warnings (`0 warnings, 0 errors`) and verify all `53/53` automated tests pass.
+- [x] **Task 7.6**: Resolve all 10 React Compiler / `oxlint` warnings (`0 warnings, 0 errors`) and verify automated tests pass.
+- [x] **Task 7.7**: Integrate Opt-In Skylight Calendar 2 Connector (`@krusch/companion-skylight-connector`, `SKYLIGHT_CALENDAR_TOOL`, `GET/POST /api/skylight`) while preserving the 20-tool default catalog token invariant.
+- [x] **Task 7.8**: Remediate Jean SRE Phase 1 Audit Findings (`client/src/utils/companionClient.js` boundary wrapper, `KRUSCH_DEBUG` error observability, `KRUSCH_NO_LISTEN` server export guard) and verify `54/54` tests pass.

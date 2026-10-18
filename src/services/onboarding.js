@@ -313,8 +313,10 @@ export async function saveOnboardingProfile(inputProfile = {}) {
           .join(' | ')
       });
       if (crmRes?.data?.contact) seededContacts.push(crmRes.data.contact);
-    } catch {
-      // Non-fatal
+    } catch (err) {
+      if (process.env.KRUSCH_DEBUG === '1') {
+        console.debug(`[Onboarding:partnerCrm] ${err.message}`);
+      }
     }
   }
 
@@ -345,8 +347,10 @@ export async function saveOnboardingProfile(inputProfile = {}) {
             notes
           });
           if (cRes?.data?.contact) seededContacts.push(cRes.data.contact);
-        } catch {
-          // Non-fatal
+        } catch (err) {
+          if (process.env.KRUSCH_DEBUG === '1') {
+            console.debug(`[Onboarding:householdCrm] ${err.message}`);
+          }
         }
       }
     }
@@ -474,8 +478,10 @@ export async function saveOnboardingProfile(inputProfile = {}) {
       const dataDir = path.join(projectRoot, 'data');
       fs.mkdirSync(dataDir, { recursive: true });
       fs.writeFileSync(path.join(dataDir, 'whisper-prompt.txt'), `${vocabParts}.`, 'utf-8');
-    } catch {
-      // Non-fatal
+    } catch (err) {
+      if (process.env.KRUSCH_DEBUG === '1') {
+        console.debug(`[Onboarding:whisperPrompt] ${err.message}`);
+      }
     }
   }
 

@@ -5,50 +5,30 @@ import TodayView from './views/TodayView';
 import FocusView from './views/FocusView';
 import SystemMemoryView from './views/SystemMemoryView';
 import SetupView from './views/SetupView';
+import {
+  readInitialSetupRoute,
+  readInitialActiveTab,
+  readStoredSessionId,
+  writeStoredSessionId,
+  navigateToSetupRoute,
+  clearSetupRouteInHistory,
+  fetchStreakCount,
+  fetchIncompleteTasksSorted,
+  fetchOnboardingStatus,
+  markTaskComplete
+} from './utils/companionClient';
 
 export function App() {
-  const [showSetupPage, setShowSetupPage] = useState(() => {
-    try {
-      const path = window.location.pathname || '';
-      const params = new URLSearchParams(window.location.search);
-      if (path === '/setup' || params.get('setup') === '1') {
-        return true;
-      }
-    } catch {
-      // ignore
-    }
-    return false;
-  });
+  const [showSetupPage, setShowSetupPage] = useState(readInitialSetupRoute);
   const [onboardingData, setOnboardingData] = useState(null);
-  const [activeTab, setActiveTab] = useState(() => {
-    try {
-      const params = new URLSearchParams(window.location.search);
-      const tab = params.get('tab');
-      if (['companion', 'stream', 'dump', 'today', 'focus', 'memory'].includes(tab)) {
-        return tab === 'dump' ? 'stream' : tab;
-      }
-    } catch {
-      // fallback
-    }
-    return 'companion';
-  });
+  const [activeTab, setActiveTab] = useState(readInitialActiveTab);
   const [streak, setStreak] = useState(0);
   const [focusTask, setFocusTask] = useState(null);
-  const [activeSessionId, setActiveSessionId] = useState(() => {
-    try {
-      return localStorage.getItem('krusch_active_session_id') || 'default-session';
-    } catch {
-      return 'default-session';
-    }
-  });
+  const [activeSessionId, setActiveSessionId] = useState(() => readStoredSessionId('default-session'));
 
   const handleSelectSession = (nextId) => {
     setActiveSessionId(nextId);
-    try {
-      localStorage.setItem('krusch_active_session_id', nextId);
-    } catch {
-      // ignore
-    }
+    writeStoredSessionId(nextId);
   };
 
   const syncTopFocusTask = async (preferredTask = null) => {
@@ -56,75 +36,43 @@ export function App() {
       setFocusTask(preferredTask);
       return;
     }
-    try {
-      const res = await fetch('/api/tasks');
-      if (res.ok) {
-        const tasks = await res.json();
-        const incomplete = (Array.isArray(tasks) ? tasks : []).filter(t => !t.completed);
-        incomplete.sort((a, b) => {
-          const epA = a.execution_priority || 3;
-          const epB = b.execution_priority || 3;
-          if (epA !== epB) return epA - epB;
-          return (a.tier || 5) - (b.tier || 5);
-        });
-        setFocusTask(prev => {
-          if (prev && incomplete.some(t => t.id === prev.id)) {
-            return incomplete.find(t => t.id === prev.id);
-          }
-          return incomplete[0] || null;
-        });
-      }
-    } catch {
-      // Non-fatal
+    const incomplete = await fetchIncompleteTasksSorted();
+    if (incomplete) {
+      setFocusTask(prev => {
+        if (prev && incomplete.some(t => t.id === prev.id)) {
+          return incomplete.find(t => t.id === prev.id);
+        }
+        return incomplete[0] || null;
+      });
     }
   };
 
   const fetchStreak = async () => {
-    try {
-      const res = await fetch('/api/streak');
-      if (res.ok) {
-        const data = await res.json();
-        setStreak(data.streak || 0);
-      }
-    } catch {
-      // Non-fatal
+    const nextStreak = await fetchStreakCount();
+    if (nextStreak !== null) {
+      setStreak(nextStreak);
     }
   };
 
   useEffect(() => {
     let active = true;
-    fetch('/api/streak')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (active && data) setStreak(data.streak || 0);
-      })
-      .catch(() => {});
+    fetchStreakCount().then((nextStreak) => {
+      if (active && nextStreak !== null) setStreak(nextStreak);
+    });
 
-    fetch('/api/tasks')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((tasks) => {
-        if (!active || !tasks) return;
-        const incomplete = (Array.isArray(tasks) ? tasks : []).filter(t => !t.completed);
-        incomplete.sort((a, b) => {
-          const epA = a.execution_priority || 3;
-          const epB = b.execution_priority || 3;
-          if (epA !== epB) return epA - epB;
-          return (a.tier || 5) - (b.tier || 5);
-        });
+    fetchIncompleteTasksSorted().then((incomplete) => {
+      if (active && incomplete) {
         setFocusTask(incomplete[0] || null);
-      })
-      .catch(() => {});
+      }
+    });
 
-    fetch('/api/companion/onboarding')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (!active || !data) return;
-        setOnboardingData(data);
-        if (!data.completed) {
-          setShowSetupPage(true);
-        }
-      })
-      .catch(() => {});
+    fetchOnboardingStatus().then((data) => {
+      if (!active || !data) return;
+      setOnboardingData(data);
+      if (!data.completed) {
+        setShowSetupPage(true);
+      }
+    });
 
     return () => {
       active = false;
@@ -138,7 +86,7 @@ export function App() {
 
   const handleTaskCompleted = async (id) => {
     try {
-      await fetch(`/api/tasks/${id}/complete`, { method: 'PATCH' });
+      await markTaskComplete(id);
       await fetchStreak();
       setFocusTask(null);
       await syncTopFocusTask();
@@ -149,13 +97,7 @@ export function App() {
 
   const exitSetupPage = () => {
     setShowSetupPage(false);
-    try {
-      if (window.location.pathname === '/setup' || window.location.search.includes('setup=')) {
-        window.history.replaceState({}, '', '/');
-      }
-    } catch {
-      // ignore
-    }
+    clearSetupRouteInHistory();
     fetchStreak();
     syncTopFocusTask();
   };
@@ -206,11 +148,7 @@ export function App() {
           <button
             type="button"
             onClick={() => {
-              try {
-                window.history.pushState({}, '', '/setup');
-              } catch {
-                // ignore
-              }
+              navigateToSetupRoute();
               setShowSetupPage(true);
             }}
             title="Open Initial Setup / Database Seeding Page (/setup)"

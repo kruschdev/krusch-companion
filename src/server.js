@@ -957,6 +957,25 @@ app.post('/api/crm', async (req, res) => {
   }
 });
 
+// ── Opt-In Skylight Calendar 2 Connector API (@krusch/companion-skylight-connector) ──
+app.get('/api/skylight', async (_req, res) => {
+  try {
+    const out = await executeCompanionTool('skylight_calendar', { action: 'status' });
+    res.json(out);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/skylight', async (req, res) => {
+  try {
+    const out = await executeCompanionTool('skylight_calendar', req.body || { action: 'status' });
+    res.json(out);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Initial Setup / Database Seeding Questionnaire ──────────────────────────
 app.get('/api/companion/onboarding', (_req, res) => {
   try {
@@ -1029,10 +1048,13 @@ app.get('*', (_req, res) => {
 });
 
 const PORT = config.app.port;
-const server = app.listen(PORT, config.app.host, () => {
-  console.log(`🚀 Krusch Companion running at http://${config.app.host}:${PORT}`);
-  console.log(`🛡️ Privacy: allowCloudEscalation = ${config.cascade.allowCloudEscalation}`);
-  console.log(`🧠 Local Edge Model: ${config.cascade.edgeModel} (Ollama @ ${config.cascade.ollamaUrl})`);
-});
+let server = null;
+if (process.env.KRUSCH_NO_LISTEN !== '1') {
+  server = app.listen(PORT, config.app.host, () => {
+    console.log(`🚀 Krusch Companion running at http://${config.app.host}:${PORT}`);
+    console.log(`🛡️ Privacy: allowCloudEscalation = ${config.cascade.allowCloudEscalation}`);
+    console.log(`🧠 Local Edge Model: ${config.cascade.edgeModel} (Ollama @ ${config.cascade.ollamaUrl})`);
+  });
+}
 
 export { app, server };

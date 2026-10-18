@@ -1,6 +1,6 @@
 # In-Flight Work Tracker: Krusch Companion
 
-> **Current Phase**: V3.7 Release Ready & Verified ✅ (`53/53` Tests Passing, `0` Lint Warnings)
+> **Current Phase**: V3.7.1 Release Ready & Verified ✅ (`54/54` Tests Passing, `0` Lint Warnings)
 
 ## Summary
 Krusch Companion (`krusch-companion`) is fully implemented, verified, and indexed into the homelab fleet. It provides a sovereign, privacy-first personal assistant alternative to Meta Muse, xAI Grok Companion, and OpenAI Dot.
@@ -16,6 +16,8 @@ Krusch Companion (`krusch-companion`) is fully implemented, verified, and indexe
 - [x] Implemented Standalone 16-Question Initial Setup & Multi-Table Database Seeding Page (`/setup`, `src/services/onboarding.js`, `client/src/views/SetupView.jsx`)
 - [x] Implemented Local Faster-Whisper ASR Server (`scripts/whisper_asr_server.py`) & Adaptive Voice Silence Detector (`client/src/utils/voiceSilenceDetector.js`) with custom vocabulary biasing (`data/whisper-prompt.txt`)
 - [x] Implemented Multi-Thread Saved Chat Conversations & Companion-Integrated Today's Board (`client/src/views/CompanionView.jsx`, `client/src/views/TodayView.jsx`)
-- [x] All 53 unit/integration tests passing cleanly (`npm test`) and `npm run lint` (`oxlint`) 0 warnings / 0 errors
+- [x] Wired Opt-In Skylight Calendar 2 Connector (`@krusch/companion-skylight-connector`, `SKYLIGHT_CALENDAR_TOOL`, `/api/skylight`) while preserving the 20-tool default catalog token invariant (`ENABLE_SKYLIGHT_CONNECTOR=1`)
+- [x] Remediated Jean SRE Phase 1 Audit Findings (`client/src/utils/companionClient.js` I/O boundary wrapper, `KRUSCH_DEBUG` error observability, and `KRUSCH_NO_LISTEN` server export guard)
+- [x] All 54 unit/integration tests passing cleanly (`npm test`) and `npm run lint` (`oxlint`) 0 warnings / 0 errors
 - [x] Pre-commit invariant audit passed (`NO_NUDGES_REQUIRED`)
 - [x] Re-indexed into `krusch-git` (Repo ID 154)

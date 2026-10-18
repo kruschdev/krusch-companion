@@ -2471,6 +2471,55 @@ export const COMPANION_TOOLS = [
 ];
 
 /**
+ * Opt-in Skylight Calendar 2 Connector Tool Plugin (`@krusch/companion-skylight-connector`).
+ * Appended to COMPANION_TOOLS only when `ENABLE_SKYLIGHT_CONNECTOR=1` (preserving the default
+ * 20-tool catalog token invariant), and always callable on demand via `executeCompanionTool('skylight_calendar', args)`
+ * or `/api/skylight`.
+ */
+export const SKYLIGHT_CALENDAR_TOOL = {
+  name: 'skylight_calendar',
+  category: 'skylight_calendar',
+  description:
+    "Opt-in Skylight Calendar 2 Connector: sync Today's Priority Board tasks with Skylight Chores, push grocery/checklist items to Skylight Lists, schedule or pull Skylight Calendar events, manage Meal Plans, or send a Magic Import digest.",
+  parameters: {
+    action:
+      'string (REQUIRED: "status" | "sync_tasks" | "pull_chores" | "push_list_items" | "list_events" | "create_event" | "magic_import")',
+    title: 'string (OPTIONAL: Event, chore, meal, or list item title)',
+    items: 'array|string (OPTIONAL: Array or comma-separated list of grocery/checklist items for push_list_items)',
+    listId: 'string (OPTIONAL: Skylight list ID or name, default: "grocery")',
+    startTime: 'string (OPTIONAL: ISO-8601 start timestamp for create_event)',
+    location: 'string (OPTIONAL: Event location for create_event)',
+    date: 'string (OPTIONAL: Target YYYY-MM-DD date, defaults to today)',
+    dryRun: 'boolean (OPTIONAL: Simulate sync without mutating remote Skylight cloud)'
+  },
+  required: ['action'],
+  async execute(args = {}, context = {}) {
+    try {
+      const connectorModuleUrl = new URL(
+        '../../../krusch-companion-skylight-connector/src/index.js',
+        import.meta.url
+      );
+      const { createCompanionToolPlugin } = await import(connectorModuleUrl.href);
+      const plugin = createCompanionToolPlugin({
+        companionDbPath: config.db.path
+      });
+      return await plugin.execute(args, context);
+    } catch (err) {
+      return {
+        ok: false,
+        tool: 'skylight_calendar',
+        summary: `Skylight Calendar 2 Connector unavailable: ${err.message}`
+      };
+    }
+  }
+};
+
+if (process.env.ENABLE_SKYLIGHT_CONNECTOR === '1') {
+  COMPANION_TOOLS.push(SKYLIGHT_CALENDAR_TOOL);
+}
+
+
+/**
  * Resolve the sandboxed skills directory (`data/skills/`) inside the companion data folder.
  */
 export function getSkillsDirectory(customBaseDir = null) {
@@ -3146,6 +3195,9 @@ function recordToolStat(name, { ok, dryRun = false, cached = false, latencyMs = 
  * Look up a tool definition by name.
  */
 export function getToolByName(name) {
+  if (name === 'skylight_calendar') {
+    return COMPANION_TOOLS.find(t => t.name === 'skylight_calendar') || SKYLIGHT_CALENDAR_TOOL;
+  }
   return COMPANION_TOOLS.find(t => t.name === name) || null;
 }
 

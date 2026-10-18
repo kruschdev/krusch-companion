@@ -22,8 +22,10 @@ function loadEnvFile(envPath) {
         process.env[key] = val;
       }
     }
-  } catch {
-    // Non-fatal
+  } catch (err) {
+    if (process.env.KRUSCH_DEBUG === '1') {
+      console.debug(`[KruschConfig:loadEnvFile] ${envPath}: ${err.message}`);
+    }
   }
 }
 

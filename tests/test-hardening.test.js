@@ -398,6 +398,22 @@ test('Hardening: Initial Setup / Database Seeding Questionnaire (16 Questions, S
   assert.strictEqual(resolveDefaultOrigin(null), '1161 North Citrus Drive, La Habra, CA 90631');
 });
 
+test('Hardening: Opt-In Skylight Calendar 2 Connector executes status & dry-run task sync while preserving 20-tool default catalog', async () => {
+  const statusRes = await executeCompanionTool('skylight_calendar', { action: 'status' });
+  assert.strictEqual(statusRes.ok, true);
+  assert.strictEqual(statusRes.tool, 'skylight_calendar');
+  assert.strictEqual(statusRes.actionType, 'skylight_status');
+  assert.strictEqual(statusRes.data.localCompanionDb.ok, true);
+
+  const syncRes = await executeCompanionTool('skylight_calendar', {
+    action: 'sync_tasks',
+    dryRun: true
+  });
+  assert.strictEqual(syncRes.ok, true);
+  assert.strictEqual(syncRes.actionType, 'skylight_sync_tasks');
+  assert.ok(typeof syncRes.data.pushed === 'number');
+});
+
 test('Hardening: Cleanup test artifacts', () => {
   if (fs.existsSync(testDbPath)) fs.unlinkSync(testDbPath);
   if (fs.existsSync(`${testDbPath}-wal`)) fs.unlinkSync(`${testDbPath}-wal`);

@@ -117,6 +117,19 @@ export function compactToolSchemaForPrompt(tool, prompt = '') {
       delete rawParams.tier;
       rawParams.action = '"add_list_to_task" | "add_task"';
     }
+  } else if (tool.name === 'skylight_calendar') {
+    const isList = /\b(grocery|list|items?)\b/.test(text);
+    const isEvent = /\b(event|schedule|book)\b/.test(text);
+    if (isList) {
+      delete rawParams.startTime;
+      delete rawParams.location;
+      rawParams.action = '"push_list_items"';
+    } else if (!isEvent) {
+      delete rawParams.startTime;
+      delete rawParams.location;
+      delete rawParams.listId;
+      rawParams.action = '"status" | "sync_tasks" | "pull_chores"';
+    }
   }
 
   // Condense verbose parameter descriptions while keeping types and enum values
