@@ -31,7 +31,8 @@ import {
   getAgenticToolStats,
   getFailedToolCallLogs,
   setAgenticDryRunMode,
-  getAgenticDryRunMode
+  getAgenticDryRunMode,
+  getGkruschHeaders
 } from './agent/tools.js';
 import {
   detectAgenticIntent,
@@ -74,8 +75,58 @@ if (String(process.env.DISABLE_SENTINEL_DAEMON || '').toLowerCase() !== 'true') 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 
-app.use(cors());
-app.use(express.json());
+function isTrustedCompanionOrigin(origin) {
+  if (!origin) return true;
+  try {
+    const parsed = new URL(origin);
+    const host = parsed.hostname.toLowerCase();
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]') {
+      return true;
+    }
+    if (
+      /^192\.168\.\d{1,3}\.\d{1,3}$/.test(host) ||
+      /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host) ||
+      /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}$/.test(host) ||
+      host.endsWith('.ts.net') ||
+      host.endsWith('.local')
+    ) {
+      return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (isTrustedCompanionOrigin(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error(`Origin "${origin}" is not permitted by Krusch Companion CORS policy.`));
+    }
+  })
+);
+app.use(express.json({ limit: '5mb' }));
+
+app.use('/api', (req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && !isTrustedCompanionOrigin(origin)) {
+    return res.status(403).json({ error: 'Forbidden: Untrusted cross-origin request.' });
+  }
+  const companionApiKey = process.env.COMPANION_API_KEY;
+  if (companionApiKey && req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS') {
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ')
+      ? authHeader.slice(7).trim()
+      : String(req.headers['x-api-key'] || '').trim();
+    if (token !== companionApiKey) {
+      return res.status(401).json({ error: 'Unauthorized: Valid COMPANION_API_KEY required.' });
+    }
+  }
+  next();
+});
 
 // Serve static frontend assets if built (with no-cache on index.html and sw.js so UI updates apply immediately)
 const clientDist = path.join(projectRoot, 'client', 'dist');
@@ -451,6 +502,7 @@ app.get('/api/companion/departure-alerts', async (_req, res) => {
     // 1. Check upcoming Google Calendar events that have a location
     try {
       const calRes = await fetch(`${baseUrl}/api/calendar/events?limit=5`, {
+        headers: getGkruschHeaders(),
         signal: AbortSignal.timeout(4000)
       });
       if (calRes.ok) {

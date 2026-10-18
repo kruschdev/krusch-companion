@@ -101,6 +101,17 @@ export function toSafeNoteFilename(titleOrSlug) {
 }
 
 /**
+ * Build request headers for G-Krusch API calls, automatically attaching
+ * `x-api-key` when `G_KRUSCH_API_KEY`, `GCRUSH_SECRET`, or `API_KEY` is configured.
+ */
+export function getGkruschHeaders(extraHeaders = {}) {
+  const apiKey = String(
+    process.env.G_KRUSCH_API_KEY || process.env.GCRUSH_SECRET || process.env.API_KEY || ''
+  ).trim();
+  return apiKey ? { ...extraHeaders, 'x-api-key': apiKey } : { ...extraHeaders };
+}
+
+/**
  * Resolve the user's default starting location from env or Working Memory.
  */
 export function resolveDefaultOrigin(explicitOrigin) {
@@ -993,6 +1004,7 @@ export const COMPANION_TOOLS = [
             return { ok: false, tool: 'gkrusch_drive', summary: 'Parameter "query" is required for gkrusch_drive search.' };
           }
           const res = await fetchImpl(`${baseUrl}/api/rag/search?q=${encodeURIComponent(query)}&limit=5`, {
+            headers: getGkruschHeaders(),
             signal: AbortSignal.timeout(8000)
           });
           const data = await res.json();
@@ -1023,6 +1035,7 @@ export const COMPANION_TOOLS = [
             return { ok: false, tool: 'gkrusch_drive', summary: 'Parameter "path" is required for gkrusch_drive read.' };
           }
           const res = await fetchImpl(`${baseUrl}/api/drive/read?path=${encodeURIComponent(targetPath)}`, {
+            headers: getGkruschHeaders(),
             signal: AbortSignal.timeout(8000)
           });
           const data = await res.json();
@@ -1050,7 +1063,7 @@ export const COMPANION_TOOLS = [
 
           const res = await fetchImpl(`${baseUrl}/api/drive/write`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getGkruschHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ path: targetPath, content, mimeType: 'text/markdown' }),
             signal: AbortSignal.timeout(10000)
           });
@@ -1066,7 +1079,10 @@ export const COMPANION_TOOLS = [
         }
 
         if (action === 'steering') {
-          const res = await fetchImpl(`${baseUrl}/api/steering`, { signal: AbortSignal.timeout(8000) });
+          const res = await fetchImpl(`${baseUrl}/api/steering`, {
+            headers: getGkruschHeaders(),
+            signal: AbortSignal.timeout(8000)
+          });
           const data = await res.json();
           if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
           return {
@@ -1079,7 +1095,10 @@ export const COMPANION_TOOLS = [
         }
 
         // Default: list workspace tree
-        const res = await fetchImpl(`${baseUrl}/api/workspace/tree`, { signal: AbortSignal.timeout(8000) });
+        const res = await fetchImpl(`${baseUrl}/api/workspace/tree`, {
+          headers: getGkruschHeaders(),
+          signal: AbortSignal.timeout(8000)
+        });
         const data = await res.json();
         if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
         return {
@@ -1186,7 +1205,7 @@ export const COMPANION_TOOLS = [
           const startTime = args?.startTime || new Date(Date.now() + 3600 * 1000).toISOString();
           const res = await fetchImpl(`${baseUrl}/api/calendar/events`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getGkruschHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({
               summary,
               startTime,
@@ -1217,7 +1236,10 @@ export const COMPANION_TOOLS = [
         // Default: list_events
         const q = String(args?.summary || args?.query || '').trim();
         const url = `${baseUrl}/api/calendar/events?limit=8${q ? `&q=${encodeURIComponent(q)}` : ''}`;
-        const res = await fetchImpl(url, { signal: AbortSignal.timeout(8000) });
+        const res = await fetchImpl(url, {
+          headers: getGkruschHeaders(),
+          signal: AbortSignal.timeout(8000)
+        });
         const data = await res.json();
         if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
         const events = data.events || [];
@@ -1321,7 +1343,7 @@ export const COMPANION_TOOLS = [
 
           const res = await fetchImpl(`${baseUrl}/api/gmail/drafts`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getGkruschHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ to, subject, body, sendImmediately }),
             signal: AbortSignal.timeout(8000)
           });
@@ -1339,6 +1361,7 @@ export const COMPANION_TOOLS = [
         // Default: search_emails
         const query = String(args?.query || 'is:inbox').trim();
         const res = await fetchImpl(`${baseUrl}/api/gmail/messages?q=${encodeURIComponent(query)}&limit=5`, {
+          headers: getGkruschHeaders(),
           signal: AbortSignal.timeout(8000)
         });
         const data = await res.json();
@@ -1491,7 +1514,7 @@ export const COMPANION_TOOLS = [
       try {
         const gmailRes = await fetchImpl(`${baseUrl}/api/gmail/drafts`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getGkruschHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({
             to: targetEmail,
             subject: emailSubject,
@@ -1522,7 +1545,7 @@ export const COMPANION_TOOLS = [
       try {
         const calRes = await fetchImpl(`${baseUrl}/api/calendar/events`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getGkruschHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({
             summary: `[Reservation] ${venue} (Party of ${partySize})`,
             startTime: isoDateTime,

@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import * as db from '../db/index.js';
-import { calculateCommuteAndDeparture, parseArrivalDateTime, getNotesDirectory } from '../agent/tools.js';
+import { calculateCommuteAndDeparture, parseArrivalDateTime, getNotesDirectory, getGkruschHeaders } from '../agent/tools.js';
 import { rememberMemory } from '../context/memory-store.js';
 import { dispatchCompanionChat, inferPriorityTierFromText } from '../router/cascade-client.js';
 
@@ -419,7 +419,10 @@ export async function syncGkruschDriveSteering({ fetchImpl = fetch, forceRefresh
   try {
     const res = await fetchImpl(
       `${baseUrl}/api/steering${forceRefresh ? '?refresh=true' : ''}`,
-      { signal: AbortSignal.timeout(5000) }
+      {
+        headers: getGkruschHeaders(),
+        signal: AbortSignal.timeout(5000)
+      }
     );
     if (!res.ok) {
       return { synced: false, error: `HTTP ${res.status}` };
@@ -497,6 +500,7 @@ export async function runSentinelTick({
   if (!Array.isArray(customEmails) && !Array.isArray(customEvents)) {
     try {
       const mailRes = await fetchImpl(`${baseUrl}/api/gmail/messages?q=${encodeURIComponent('is:unread')}&limit=8`, {
+        headers: getGkruschHeaders(),
         signal: AbortSignal.timeout(4000)
       });
       if (mailRes.ok) {
@@ -556,6 +560,7 @@ export async function runSentinelTick({
   if (!Array.isArray(customCalendarEvents) && !Array.isArray(customEvents)) {
     try {
       const calRes = await fetchImpl(`${baseUrl}/api/calendar/events?limit=8`, {
+        headers: getGkruschHeaders(),
         signal: AbortSignal.timeout(4000)
       });
       if (calRes.ok) {
