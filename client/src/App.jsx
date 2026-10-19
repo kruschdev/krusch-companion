@@ -5,6 +5,7 @@ import TodayView from './views/TodayView';
 import FocusView from './views/FocusView';
 import SystemMemoryView from './views/SystemMemoryView';
 import SetupView from './views/SetupView';
+import ExtensionsView from './views/ExtensionsView';
 import {
   readInitialSetupRoute,
   readInitialActiveTab,
@@ -172,7 +173,8 @@ export function App() {
             { id: 'today', label: "📋 Today's Board" },
             { id: 'stream', label: '🌊 Thought Stream' },
             { id: 'focus', label: '🎯 Focus' },
-            { id: 'memory', label: '🧠 Notes' }
+            { id: 'memory', label: '🧠 Notes' },
+            { id: 'extensions', label: '🧩 Extensions' }
           ].map((tab) => {
             const isActive = activeTab === tab.id;
             return (
@@ -239,6 +241,14 @@ export function App() {
           />
         )}
         {activeTab === 'memory' && <SystemMemoryView />}
+        {activeTab === 'extensions' && (
+          <ExtensionsView
+            onBoardUpdated={() => {
+              fetchStreak();
+              syncTopFocusTask();
+            }}
+          />
+        )}
       </main>
     </div>
   );

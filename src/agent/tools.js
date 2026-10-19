@@ -45,8 +45,8 @@ const WMO_CODES = {
 };
 
 /**
- * Security: Block SSRF attempts against private, loopback, or link-local IP ranges
- * when fetching arbitrary external URLs.
+ * Security: Block SSRF attempts against private, loopback, link-local, IPv6 loopback/mapped,
+ * or Tailscale CGNAT (100.64.0.0/10) IP ranges when fetching arbitrary external URLs.
  */
 export function isSafePublicUrl(rawUrl) {
   try {
@@ -54,18 +54,29 @@ export function isSafePublicUrl(rawUrl) {
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
       return false;
     }
-    const host = parsed.hostname.toLowerCase();
+    const host = parsed.hostname.toLowerCase().replace(/^\[+|\]+$/g, '');
     if (
+      !host ||
       host === 'localhost' ||
       host === '0.0.0.0' ||
       host === '::1' ||
+      host === '::' ||
+      host === '0:0:0:0:0:0:0:1' ||
+      host === '0:0:0:0:0:0:0:0' ||
+      host.startsWith('::ffff:') ||
+      host.startsWith('0:0:0:0:0:ffff:') ||
+      host.startsWith('fe80:') ||
+      host.startsWith('fc') ||
+      host.startsWith('fd') ||
       host.endsWith('.local') ||
       host.endsWith('.internal') ||
+      host.endsWith('.ts.net') ||
       /^127\./.test(host) ||
       /^10\./.test(host) ||
       /^192\.168\./.test(host) ||
       /^169\.254\./.test(host) ||
-      /^172\.(1[6-9]|2\d|3[0-1])\./.test(host)
+      /^172\.(1[6-9]|2\d|3[0-1])\./.test(host) ||
+      /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(host)
     ) {
       return false;
     }
@@ -3215,6 +3226,19 @@ function recordToolStat(name, { ok, dryRun = false, cached = false, latencyMs = 
   }
 }
 
+let externalToolResolver = null;
+
+/**
+ * Register an opt-in extension tool resolver so `getToolByName` and `executeCompanionTool`
+ * can resolve extension tools (`krusch_fs_explorer`, `vision_capture`, `finance_subscription_ledger`,
+ * `health_energy_sync`, `media_controller`, `skylight_calendar`) while keeping `COMPANION_TOOLS.length === 20`.
+ */
+export function registerExternalToolResolver(resolverFn) {
+  if (typeof resolverFn === 'function') {
+    externalToolResolver = resolverFn;
+  }
+}
+
 /**
  * Look up a tool definition by name.
  */
@@ -3222,7 +3246,13 @@ export function getToolByName(name) {
   if (name === 'skylight_calendar') {
     return COMPANION_TOOLS.find(t => t.name === 'skylight_calendar') || SKYLIGHT_CALENDAR_TOOL;
   }
-  return COMPANION_TOOLS.find(t => t.name === name) || null;
+  const coreMatch = COMPANION_TOOLS.find(t => t.name === name);
+  if (coreMatch) return coreMatch;
+  if (typeof externalToolResolver === 'function') {
+    const extMatch = externalToolResolver(name);
+    if (extMatch) return extMatch;
+  }
+  return null;
 }
 
 /**
@@ -3231,7 +3261,16 @@ export function getToolByName(name) {
  */
 export async function executeCompanionTool(name, args = {}, options = {}) {
   const start = Date.now();
-  const tool = getToolByName(name);
+  let tool = getToolByName(name);
+  if (!tool) {
+    try {
+      const { getExtensionToolByName } = await import('../extensions/extension-registry.js');
+      registerExternalToolResolver(getExtensionToolByName);
+      tool = getExtensionToolByName(name);
+    } catch {
+      // Non-fatal if extension registry is unavailable
+    }
+  }
   if (!tool) {
     const latencyMs = Date.now() - start;
     recordToolStat(name, { ok: false, latencyMs, error: 'Unknown tool', args });

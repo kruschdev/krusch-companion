@@ -1,4 +1,5 @@
 import { COMPANION_TOOLS, executeCompanionTool, recordLowConfidenceOrFailedParse, recordLearnedTrajectorySkill } from './tools.js';
+import { getEnabledExtensionTools } from '../extensions/extension-registry.js';
 import { parseAIJson } from '../toolkit/json-parse.js';
 
 let lastToolPruningReport = null;
@@ -397,6 +398,43 @@ const INTENT_PATTERNS = [
 ];
 
 /**
+ * Opt-in V3.8 Extension Intent Patterns (INV-EXT-01):
+ * Evaluated only when the corresponding extension tool is enabled in `getEnabledExtensionTools()`.
+ */
+const EXTENSION_INTENT_PATTERNS = [
+  {
+    category: 'filesystem_bridge',
+    tools: ['krusch_fs_explorer', 'krusch_fs_extension'],
+    regex: /\b(?:krusch[\s_-]*fs|search\s+(?:my\s+)?(?:local\s+)?(?:pdfs?|documents?|downloads?|files?|manuals?|warrant(?:y|ies)|lease)|locate\s+(?:local\s+)?(?:files?|pdfs?|documents?)|page\s+tree|read\s+page\s+\d+|pin\s+(?:a\s+)?page\s+memory|remember\s+on\s+page|~\s*\/(?:documents|downloads))\b/i
+  },
+  {
+    category: 'multimodal_vision',
+    tools: ['vision_capture'],
+    regex: /\b(?:vision\s+capture|scan\s+(?:this\s+|a\s+|my\s+)?(?:receipt|bill|flyer|whiteboard|photo|image)|analyze\s+(?:this\s+|a\s+|my\s+)?(?:receipt|bill|flyer|whiteboard|photo|image)|triage\s+(?:this\s+|a\s+|my\s+)?(?:receipt|bill|flyer|whiteboard)|camera\s+triage|gemma4?\s+vision)\b/i
+  },
+  {
+    category: 'finance_ledger',
+    tools: ['finance_subscription_ledger'],
+    regex: /\b(?:subscriptions?|recurring\s+bills?|monthly\s+(?:burn|spend|finance|subscriptions?)|cancel\s+(?:my\s+)?subscription|track\s+(?:a\s+)?subscription|add\s+(?:a\s+)?subscription|log\s+(?:a\s+)?receipt|upcoming\s+renewals?|auto[\s_-]*renewals?|finance\s+ledger)\b/i
+  },
+  {
+    category: 'health_biometrics',
+    tools: ['health_energy_sync'],
+    regex: /\b(?:biometrics?|sleep\s+(?:hours|score|readiness)|readiness\s+score|hrv|energy\s+(?:band|readiness|sync)|adapt\s+(?:today'?s?\s+|my\s+)?board\s+to\s+(?:my\s+)?energy|log\s+(?:my\s+)?(?:sleep|biometrics|recovery|readiness)|oura|whoop|apple\s+health|low\s+recovery)\b/i
+  },
+  {
+    category: 'media_controller',
+    tools: ['media_controller'],
+    regex: /\b(?:jellyfin|kruschmedia|brown\s+noise|rain\s+ambient|lo[\s_-]*fi\s+(?:beats|study)|focus\s+(?:audio|soundscape|noise|music)|(?:play|pause|stop)\s+(?:the\s+)?(?:brown\s+noise|rain(?:\s+ambient)?|lofi|lo-fi|soundscape|jellyfin|media|music)|media\s+controller)\b/i
+  },
+  {
+    category: 'skylight_calendar',
+    tools: ['skylight_calendar', 'skylight_calendar_hub'],
+    regex: /\b(?:skylight\s+calendar|skylight\s+(?:frame|chores?|meals?|grocery)|family\s+chore\s+chart|push\s+to\s+skylight|sync\s+(?:with\s+)?skylight)\b/i
+  }
+];
+
+/**
  * Detect whether a user prompt is requesting an Agentic Action / API tool call,
  * and return the DPP-pruned, token-bounded list of relevant tool schemas (1-3 tools).
  */
@@ -409,12 +447,32 @@ export function detectAgenticIntent(prompt, options = {}) {
   const matchedCategories = [];
   const selectedToolNames = new Set();
 
+  let enabledExtensionTools = [];
+  try {
+    enabledExtensionTools = getEnabledExtensionTools() || [];
+  } catch {
+    enabledExtensionTools = [];
+  }
+  const enabledExtNames = new Set(enabledExtensionTools.map(t => t.name));
+
   for (const rule of INTENT_PATTERNS) {
     if (rule.regex.test(text)) {
       if (!matchedCategories.includes(rule.category)) {
         matchedCategories.push(rule.category);
       }
       for (const t of rule.tools) {
+        selectedToolNames.add(t);
+      }
+    }
+  }
+
+  for (const extRule of EXTENSION_INTENT_PATTERNS) {
+    const activeRuleTools = extRule.tools.filter(tName => enabledExtNames.has(tName));
+    if (activeRuleTools.length > 0 && extRule.regex.test(text)) {
+      if (!matchedCategories.includes(extRule.category)) {
+        matchedCategories.push(extRule.category);
+      }
+      for (const t of activeRuleTools) {
         selectedToolNames.add(t);
       }
     }
@@ -437,7 +495,11 @@ export function detectAgenticIntent(prompt, options = {}) {
   // Stage 1: Apply DPP Query-Residual Diverse Tool Routing to cap listed tools to <= maxTools (default 3)
   const maxTools = options.maxTools || 3;
   const maxTokenBudget = options.maxTokenBudget || 260;
-  const matchedCandidates = COMPANION_TOOLS.filter(t => selectedToolNames.has(t.name));
+  const allAvailableTools = [
+    ...COMPANION_TOOLS,
+    ...enabledExtensionTools.filter(et => !COMPANION_TOOLS.some(ct => ct.name === et.name))
+  ];
+  const matchedCandidates = allAvailableTools.filter(t => selectedToolNames.has(t.name));
   const dppRouted = routeDiverseTools(text, matchedCandidates, {
     maxTools,
     maxTokenBudget,
@@ -1248,6 +1310,118 @@ export function inferFallbackToolCalls(prompt, matchedCategories = [], history =
     }
   }
 
+  if (categories.includes('filesystem_bridge')) {
+    if (/\b(?:locate|find)\s+(?:files|documents|notes|pdfs)\b/i.test(text)) {
+      calls.push({
+        name: 'krusch_fs_explorer',
+        tool: 'krusch_fs_explorer',
+        arguments: { action: 'locate', pattern: '*' }
+      });
+    } else {
+      calls.push({
+        name: 'krusch_fs_explorer',
+        tool: 'krusch_fs_explorer',
+        arguments: { action: 'search', query: text }
+      });
+    }
+  }
+
+  if (categories.includes('multimodal_vision')) {
+    calls.push({
+      name: 'vision_capture',
+      tool: 'vision_capture',
+      arguments: { mode: 'auto', prompt: text, autoStageActionItems: true }
+    });
+  }
+
+  if (categories.includes('finance_ledger')) {
+    if (/\b(?:scan|upcoming|check)\s+renewals?\b/i.test(text)) {
+      calls.push({
+        name: 'finance_subscription_ledger',
+        tool: 'finance_subscription_ledger',
+        arguments: { action: 'scan_upcoming_renewals', daysAhead: 3 }
+      });
+    } else if (/\blist\s+subscriptions?\b/i.test(text)) {
+      calls.push({
+        name: 'finance_subscription_ledger',
+        tool: 'finance_subscription_ledger',
+        arguments: { action: 'list' }
+      });
+    } else {
+      calls.push({
+        name: 'finance_subscription_ledger',
+        tool: 'finance_subscription_ledger',
+        arguments: { action: 'summary' }
+      });
+    }
+  }
+
+  if (categories.includes('health_biometrics')) {
+    if (/\badapt\s+(?:the\s+|my\s+)?board\b/i.test(text)) {
+      calls.push({
+        name: 'health_energy_sync',
+        tool: 'health_energy_sync',
+        arguments: { action: 'adapt_board' }
+      });
+    } else {
+      calls.push({
+        name: 'health_energy_sync',
+        tool: 'health_energy_sync',
+        arguments: { action: 'status' }
+      });
+    }
+  }
+
+  if (categories.includes('media_controller')) {
+    if (/\bpause\s+media\b/i.test(text)) {
+      calls.push({
+        name: 'media_controller',
+        tool: 'media_controller',
+        arguments: { action: 'pause' }
+      });
+    } else if (/\bresume\s+media\b/i.test(text)) {
+      calls.push({
+        name: 'media_controller',
+        tool: 'media_controller',
+        arguments: { action: 'resume' }
+      });
+    } else if (/\brecommend\b/i.test(text)) {
+      calls.push({
+        name: 'media_controller',
+        tool: 'media_controller',
+        arguments: { action: 'recommend', query: text }
+      });
+    } else {
+      calls.push({
+        name: 'media_controller',
+        tool: 'media_controller',
+        arguments: { action: 'status' }
+      });
+    }
+  }
+
+  if (categories.includes('skylight_calendar')) {
+    if (/\b(?:assign|add)\s+(?:chore|star)\b/i.test(text)) {
+      calls.push({
+        name: 'skylight_calendar',
+        tool: 'skylight_calendar',
+        arguments: { action: 'assign_chore', title: text }
+      });
+    } else if (/\bplan\s+meal\b/i.test(text)) {
+      calls.push({
+        name: 'skylight_calendar',
+        tool: 'skylight_calendar',
+        arguments: { action: 'plan_meal', meal: text }
+      });
+    } else {
+      calls.push({
+        name: 'skylight_calendar',
+        tool: 'skylight_calendar',
+        arguments: { action: 'status' }
+      });
+    }
+  }
+
   return calls;
 }
 
@@ -1264,7 +1438,8 @@ export function scoreHolodataConfidence({ blueprint, toolCalls = [], usedFallbac
   if (/<holodata>[\s\S]*?<\/holodata>/i.test(rawText)) {
     score += 0.06;
   }
-  const allHaveValidNames = toolCalls.every(tc => COMPANION_TOOLS.some(t => t.name === tc.name));
+  const availableTools = [...COMPANION_TOOLS, ...getEnabledExtensionTools()];
+  const allHaveValidNames = toolCalls.every(tc => availableTools.some(t => t.name === tc.name));
   if (allHaveValidNames) {
     score += 0.06;
   } else {
@@ -1437,7 +1612,7 @@ export async function executeAgenticProxyTurn({
     if (
       res.ok &&
       (
-        ['get_weather', 'web_research', 'fetch_url_digest', 'system_status', 'sovereign_gateway_query', 'commute_departure_check', 'list_notes', 'personal_crm_profile', 'schedule_automation', 'skill_manager'].includes(call.name) ||
+        ['get_weather', 'web_research', 'fetch_url_digest', 'system_status', 'sovereign_gateway_query', 'commute_departure_check', 'list_notes', 'personal_crm_profile', 'schedule_automation', 'skill_manager', 'krusch_fs_explorer', 'krusch_fs_extension', 'vision_capture', 'finance_subscription_ledger', 'health_energy_sync', 'media_controller', 'skylight_calendar', 'skylight_calendar_hub'].includes(call.name) ||
         (call.name === 'gkrusch_drive' && ['search', 'read', 'steering', 'list'].includes(String(resolvedArgs.action || 'search'))) ||
         (call.name === 'gkrusch_calendar' && String(resolvedArgs.action || 'list_events') === 'list_events') ||
         (call.name === 'gkrusch_gmail' && String(resolvedArgs.action || 'search_emails') === 'search_emails') ||

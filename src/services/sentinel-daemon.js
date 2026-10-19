@@ -480,7 +480,8 @@ export async function runSentinelTick({
   customEvents = null,
   customEmails = null,
   customCalendarEvents = null,
-  checkAutomations = null
+  checkAutomations = null,
+  checkSubscriptions = null
 } = {}) {
   ensureSentinelTable();
   totalTicks++;
@@ -754,6 +755,38 @@ export async function runSentinelTick({
         });
         triggeredAlerts.push(alertObj);
       }
+    }
+  }
+
+  // ── Channel 5: Subscription & Recurring Bill Auto-Renewal Watchdog (INV-EXT-06) ──
+  const shouldCheckSubscriptions =
+    checkSubscriptions !== null
+      ? Boolean(checkSubscriptions)
+      : process.env.ENABLE_FINANCE_EXTENSION === '1';
+
+  if (shouldCheckSubscriptions) {
+    try {
+      const { evaluateSubscriptionRenewalAnomalies } = await import('../extensions/finance-ledger-extension.js');
+      const renewalAnomalies = evaluateSubscriptionRenewalAnomalies({ daysAhead: 3 });
+      for (const ren of renewalAnomalies) {
+        llmCallsThisTick++;
+        totalLlmWakeups++;
+        const alertObj = await dispatchSentinelWakeup({
+          eventId: `sub-renewal-${ren.subscriptionId}-${ren.nextRenewalDate}`,
+          triggerReason: 'subscription_renewal_imminent',
+          headline: ren.headline,
+          eventTitle: ren.name,
+          destination: 'Provision & Finance',
+          leaveByFormatted: `${ren.daysUntilRenewal}d (${ren.nextRenewalDate})`,
+          wakePrompt: `[SENTINEL PROACTIVE WAKEUP — SUBSCRIPTION_RENEWAL_IMMINENT]\nTrigger: ${ren.headline}\nAdded Board Task: #${ren.stagedTaskId}\nWrite a concise 1-sentence alert letting the user know this subscription auto-renews in ${ren.daysUntilRenewal} day(s) and was added to Lane 1 on Today's Board.`,
+          fallbackAdvisory: `💳 **${ren.headline}** -> Staged Priority 1 Task **#${ren.stagedTaskId}** on Today's Board.`,
+          callLlm,
+          fetchImpl
+        });
+        triggeredAlerts.push(alertObj);
+      }
+    } catch {
+      // Non-fatal
     }
   }
 

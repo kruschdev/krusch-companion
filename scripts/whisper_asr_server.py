@@ -141,8 +141,12 @@ class WhisperHandler(BaseHTTPRequestHandler):
         try:
             content_type = self.headers.get("Content-Type", "")
             content_length = int(self.headers.get("Content-Length", "0"))
+            max_upload_bytes = int(os.environ.get("WHISPER_MAX_UPLOAD_BYTES", str(25 * 1024 * 1024)))
             if content_length <= 0:
                 self._send_json(400, {"error": "Empty request body"})
+                return
+            if content_length > max_upload_bytes:
+                self._send_json(413, {"error": f"Payload too large (max {max_upload_bytes} bytes)"})
                 return
 
             raw_body = self.rfile.read(content_length)

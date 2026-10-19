@@ -56,6 +56,24 @@ import {
   saveOnboardingProfile,
   skipOnboarding
 } from './services/onboarding.js';
+import {
+  ensureAllExtensionsLoaded,
+  listExtensions,
+  setExtensionEnabled
+} from './extensions/extension-registry.js';
+import { analyzeCompanionImage } from './services/vision.js';
+import { synthesizeSpeech } from './services/tts.js';
+import {
+  handleInboundChannelBotTurn,
+  handleBotCallbackAction,
+  getBotMessageHistory,
+  generateMobileShortcutManifest
+} from './services/channel-bot.js';
+import {
+  getMonthlyFinanceSummary,
+  listSubscriptionsAndBills
+} from './extensions/finance-ledger-extension.js';
+import { getHealthMetrics } from './extensions/health-media-extension.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -66,6 +84,7 @@ let lastRoutingDecision = null;
 
 // Initialize database & start background Proactive Sentinel Watchdog Daemon
 db.initCompanionDb();
+ensureAllExtensionsLoaded().catch(() => {});
 if (String(process.env.DISABLE_SENTINEL_DAEMON || '').toLowerCase() !== 'true') {
   const intervalMs = parseInt(process.env.SENTINEL_INTERVAL_MS || '300000', 10) || 300000;
   startSentinelDaemon({ intervalMs });
@@ -483,11 +502,18 @@ app.get('/api/companion/tools', (req, res) => {
 
 app.post('/api/companion/action', async (req, res) => {
   try {
-    const { tool, arguments: toolArgs = {} } = req.body || {};
+    const body = req.body || {};
+    const { tool } = body;
     if (!tool || typeof tool !== 'string') {
       return res.status(400).json({ error: 'Tool name is required' });
     }
-    const result = await executeCompanionTool(tool, toolArgs);
+    const resolvedArgs =
+      body.arguments && typeof body.arguments === 'object'
+        ? body.arguments
+        : body.args && typeof body.args === 'object'
+          ? { ...body, ...body.args }
+          : body;
+    const result = await executeCompanionTool(tool, resolvedArgs);
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -581,7 +607,14 @@ app.post('/api/sentinel/tick', async (req, res) => {
     const customEvents = Array.isArray(req.body?.events) ? req.body.events : null;
     const customEmails = Array.isArray(req.body?.emails) ? req.body.emails : null;
     const customCalendarEvents = Array.isArray(req.body?.calendarEvents) ? req.body.calendarEvents : null;
-    const result = await runSentinelTick({ customEvents, customEmails, customCalendarEvents });
+    const checkSubscriptions =
+      typeof req.body?.checkSubscriptions === 'boolean' ? req.body.checkSubscriptions : null;
+    const result = await runSentinelTick({
+      customEvents,
+      customEmails,
+      customCalendarEvents,
+      checkSubscriptions
+    });
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1088,6 +1121,208 @@ app.post('/api/gateway/webhook', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// ── V3.8 Personal AI Ecosystem & Opt-In Extension Pack Endpoints ────────────
+app.get('/api/extensions', async (_req, res) => {
+  try {
+    await ensureAllExtensionsLoaded();
+    res.json({
+      ok: true,
+      extensions: listExtensions()
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/extensions/toggle', async (req, res) => {
+  try {
+    await ensureAllExtensionsLoaded();
+    const { extensionId, id, enabled } = req.body || {};
+    const targetId = extensionId || id;
+    if (!targetId) {
+      return res.status(400).json({ error: 'extensionId is required' });
+    }
+    const updatedExt = setExtensionEnabled(targetId, Boolean(enabled));
+    res.json({
+      ok: Boolean(updatedExt),
+      extension: updatedExt,
+      ...(updatedExt || {}),
+      extensions: listExtensions()
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/companion/vision', upload.single('image'), async (req, res) => {
+  try {
+    const body = req.body || {};
+    const prompt = String(body.prompt || body.question || '').trim();
+    const mode = String(body.mode || 'auto').trim();
+    const filename = req.file?.originalname || body.filename || body.fileName || 'capture.png';
+    const mimeType = req.file?.mimetype || body.mimeType || 'image/png';
+    const autoStageBoard = body.autoStageBoard !== false && body.autoStageBoard !== 'false';
+
+    let imageBuffer = req.file?.buffer || null;
+    let base64Image = body.base64Image || body.imageBase64 || null;
+
+    // Allow UI quick-test with prompt when no file/base64 is attached
+    if (!imageBuffer && !base64Image && prompt) {
+      base64Image =
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    }
+
+    const result = await analyzeCompanionImage({
+      imageBuffer,
+      base64Image,
+      mimeType,
+      filename,
+      prompt: prompt || 'Analyze this captured image and extract tasks or bill details.',
+      mode,
+      autoStageBoard
+    });
+
+    if (!result.ok) {
+      return res.status(400).json(result);
+    }
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/companion/tts', async (req, res) => {
+  try {
+    const { text, voice = 'af_heart', speed = 1.0 } = req.body || {};
+    const result = await synthesizeSpeech({ text, voice, speed });
+    if (!result.ok) {
+      return res.status(400).json(result);
+    }
+    res.json({
+      ok: true,
+      provider: result.provider,
+      voice: result.voice,
+      speed: result.speed,
+      cleanSpokenText: result.cleanSpokenText,
+      audioBase64: result.audioBase64,
+      mimeType: result.mimeType,
+      useBrowserSpeechSynthesis: result.useBrowserSpeechSynthesis,
+      estimatedDurationMs: result.estimatedDurationMs
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/finance', (_req, res) => {
+  try {
+    const summary = getMonthlyFinanceSummary();
+    const items = listSubscriptionsAndBills({ status: 'all' });
+    res.json({
+      ok: true,
+      summary,
+      ...summary,
+      monthlyRecurringTotal: summary.monthlyRecurringTotal,
+      monthlyTotal: summary.monthlyRecurringTotal,
+      items
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/finance', async (req, res) => {
+  try {
+    const out = await executeCompanionTool(
+      'finance_subscription_ledger',
+      req.body || { action: 'summary' }
+    );
+    res.json(out);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/health-sync', (_req, res) => {
+  try {
+    const metrics = getHealthMetrics();
+    res.json({
+      ok: true,
+      metrics,
+      current: metrics.current,
+      latest: metrics.current,
+      history: metrics.history
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/health-sync', async (req, res) => {
+  try {
+    const out = await executeCompanionTool(
+      'health_energy_sync',
+      req.body || { action: 'status' }
+    );
+    res.json(out);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/media', async (_req, res) => {
+  try {
+    const out = await executeCompanionTool('media_controller', { action: 'status' });
+    res.json(out);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/media', async (req, res) => {
+  try {
+    const out = await executeCompanionTool('media_controller', req.body || { action: 'status' });
+    res.json(out);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/companion/shortcut', (_req, res) => {
+  try {
+    const baseUrl = `http://${config.app.host === '0.0.0.0' ? 'localhost' : config.app.host}:${config.app.port}`;
+    res.json({
+      ok: true,
+      manifest: generateMobileShortcutManifest({ baseUrl }),
+      history: getBotMessageHistory(20)
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+const handleBotEndpoint = async (req, res) => {
+  try {
+    const body = req.body || {};
+    if (body.callbackId && (body.action === 'confirm_callback' || body.confirm === true || req.path === '/api/companion/bot/callback')) {
+      const cbOut = await handleBotCallbackAction({ callbackId: body.callbackId });
+      return res.json(cbOut);
+    }
+    const out = await handleInboundChannelBotTurn({
+      platform: body.platform || body.channel || null,
+      payload: body
+    });
+    res.json(out);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+app.post('/api/companion/shortcut', handleBotEndpoint);
+app.post('/api/companion/bot', handleBotEndpoint);
+app.post('/api/companion/bot/webhook', handleBotEndpoint);
+app.post('/api/companion/bot/callback', handleBotEndpoint);
 
 // Client-side fallback routing (SPA)
 app.get('*', (_req, res) => {

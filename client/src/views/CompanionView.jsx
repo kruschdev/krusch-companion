@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { attachSilenceDetector } from '../utils/voiceSilenceDetector';
+import { speakReplyText, stopSpeaking } from '../utils/liveVoiceLoop';
 
 const ACTION_LABELS = {
   task_created: { icon: '✅', label: 'Added to Today', color: '#2dd4bf' },
@@ -16,7 +17,12 @@ const ACTION_LABELS = {
   note_saved: { icon: '📝', label: 'Note Saved', color: '#2dd4bf' },
   google_calendar: { icon: '📅', label: 'Calendar Updated', color: '#60a5fa' },
   google_gmail: { icon: '✉️', label: 'Gmail Action', color: '#f87171' },
-  google_drive: { icon: '☁️', label: 'Google Drive', color: '#38bdf8' }
+  google_drive: { icon: '☁️', label: 'Google Drive', color: '#38bdf8' },
+  vision_capture: { icon: '📷', label: 'Vision Triage', color: '#38bdf8' },
+  krusch_fs_search: { icon: '🗂️', label: 'KruschFS Search', color: '#2dd4bf' },
+  finance_subscription_ledger: { icon: '💳', label: 'Finance Ledger', color: '#f0c040' },
+  health_energy_sync: { icon: '⌚', label: 'Energy Synced', color: '#a78bfa' },
+  media_controller: { icon: '🎧', label: 'Media Updated', color: '#60a5fa' }
 };
 
 const WELCOME_MSG = {
@@ -62,6 +68,8 @@ export function CompanionView({
   const [isTranscribingVoice, setIsTranscribingVoice] = useState(false);
   const [autoSendVoice, setAutoSendVoice] = useState(true);
   const [voiceStatus, setVoiceStatus] = useState(null);
+  const [speakReplies, setSpeakReplies] = useState(false);
+  const [isSpeakingReply, setIsSpeakingReply] = useState(false);
 
   const chatEndRef = useRef(null);
   const mediaRecorderRef = useRef(null);
@@ -69,6 +77,7 @@ export function CompanionView({
   const speechRecRef = useRef(null);
   const silenceDetectorRef = useRef(null);
   const liveTranscriptRef = useRef('');
+  const visionInputRef = useRef(null);
 
   const stopVoiceRecording = () => {
     setIsRecordingVoice(false);
@@ -132,6 +141,7 @@ export function CompanionView({
     return () => {
       active = false;
       stopVoiceRecording();
+      stopSpeaking();
     };
   }, [sessionId]);
 
@@ -247,6 +257,13 @@ export function CompanionView({
           agenticTrace: data.agenticTrace || null
         }
       ]);
+      if (speakReplies && data.reply) {
+        speakReplyText(data.reply, {
+          onStart: () => setIsSpeakingReply(true),
+          onEnd: () => setIsSpeakingReply(false),
+          onError: () => setIsSpeakingReply(false)
+        });
+      }
       loadSessionsList();
     } catch (err) {
       setMessages(prev => [
@@ -255,6 +272,61 @@ export function CompanionView({
           id: (Date.now() + 1).toString(),
           role: 'assistant',
           content: `Sorry, I couldn't reach the assistant right now (${err.message}).`
+        }
+      ]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleVisionFileSelected = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+
+    const promptText = input.trim() || `Analyze ${file.name} and stage any tasks, bills, or schedule events.`;
+    setMessages(prev => [
+      ...prev.filter(m => m.id !== 'welcome'),
+      {
+        id: Date.now().toString(),
+        role: 'user',
+        content: `📷 [${file.name}] ${promptText}`
+      }
+    ]);
+    setInput('');
+    setIsLoading(true);
+
+    try {
+      const formData = new FormData();
+      formData.append('image', file, file.name);
+      formData.append('prompt', promptText);
+      formData.append('mode', 'auto');
+
+      const res = await fetch('/api/companion/vision', {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        throw new Error(data.summary || data.error || `HTTP ${res.status}`);
+      }
+      setMessages(prev => [
+        ...prev,
+        {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: data.summary || 'Image analyzed and staged onto Today Board.',
+          actionExecuted: { type: 'vision_capture' }
+        }
+      ]);
+      if (onActionExecuted) onActionExecuted({ type: 'vision_capture' });
+    } catch (err) {
+      setMessages(prev => [
+        ...prev,
+        {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: `⚠️ Vision analysis failed: ${err.message}`
         }
       ]);
     } finally {
@@ -539,14 +611,39 @@ export function CompanionView({
               </span>
             </div>
 
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={handleStartNewChat}
-              style={{ padding: '4px 10px', fontSize: '0.78rem' }}
-            >
-              + New Chat
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => {
+                  const next = !speakReplies;
+                  setSpeakReplies(next);
+                  if (!next) {
+                    stopSpeaking();
+                    setIsSpeakingReply(false);
+                  }
+                }}
+                style={{
+                  padding: '4px 10px',
+                  fontSize: '0.78rem',
+                  borderColor: speakReplies ? 'var(--accent-cyan)' : 'var(--border-subtle)',
+                  background: speakReplies ? 'rgba(0, 240, 255, 0.14)' : undefined,
+                  color: speakReplies ? '#f8fafc' : 'var(--text-muted)'
+                }}
+                title="Toggle 2-Way Spoken Voice Mode (speaks assistant replies aloud)"
+              >
+                {isSpeakingReply ? '🔊 Speaking...' : speakReplies ? '🔊 Voice Reply: ON' : '🔇 Voice Reply'}
+              </button>
+
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={handleStartNewChat}
+                style={{ padding: '4px 10px', fontSize: '0.78rem' }}
+              >
+                + New Chat
+              </button>
+            </div>
           </div>
 
           {/* Messages Scroll Area */}
@@ -681,6 +778,29 @@ export function CompanionView({
 
         {/* Input Bar */}
         <form onSubmit={handleSend} style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <input
+            ref={visionInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            onChange={handleVisionFileSelected}
+            style={{ display: 'none' }}
+          />
+          <button
+            id="btn-companion-vision"
+            type="button"
+            onClick={() => visionInputRef.current?.click()}
+            disabled={isLoading}
+            className="btn-secondary"
+            style={{
+              padding: '12px 14px',
+              whiteSpace: 'nowrap',
+              fontWeight: 600
+            }}
+            title="Capture or upload receipt, bill, school flyer, or whiteboard image (gemma4:e4b Vision)"
+          >
+            📷 Vision
+          </button>
+
           <button
             id="btn-companion-voice"
             type="button"
