@@ -53,6 +53,10 @@ export function ExtensionsView({ onBoardUpdated } = {}) {
   const [fsQuery, setFsQuery] = useState('warranty');
   const [fsResult, setFsResult] = useState(null);
   const [fsLoading, setFsLoading] = useState(false);
+  const [skillTitle, setSkillTitle] = useState('Client Proposal Playbook');
+  const [skillCorrections, setSkillCorrections] = useState(
+    'Lead Page 1 with 3-sentence problem statement + fixed-scope table; Replace hourly estimates with milestone-gated deliverables'
+  );
 
   // 2. Multimodal Vision state
   const [visionPrompt, setVisionPrompt] = useState('Extract action items, deadlines, and total amount from this receipt or flyer.');
@@ -218,6 +222,27 @@ export function ExtensionsView({ onBoardUpdated } = {}) {
       setFsResult(data);
     } catch (err) {
       setFsResult({ ok: false, summary: `Search failed: ${err.message}` });
+    } finally {
+      setFsLoading(false);
+    }
+  };
+
+  const handleDistillSkill = async () => {
+    setFsLoading(true);
+    try {
+      const res = await fetch('/api/companion/distill-skill', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: skillTitle.trim() || 'Proposal Playbook',
+          corrections: skillCorrections,
+          referenceFilePath: fsQuery.trim()
+        })
+      });
+      const data = await res.json();
+      setFsResult(data);
+    } catch (err) {
+      setFsResult({ ok: false, summary: `Skill distillation failed: ${err.message}` });
     } finally {
       setFsLoading(false);
     }
@@ -583,6 +608,36 @@ export function ExtensionsView({ onBoardUpdated } = {}) {
               {fsLoading ? 'Searching...' : '🔎 Search'}
             </button>
           </form>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4, paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+            <div style={{ fontSize: '0.76rem', fontWeight: 700, color: '#93c5fd' }}>
+              📐 Proposal Corrections → Reference-Backed Skill (Starting Point, Not a Substitute for Judgment)
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <input
+                type="text"
+                value={skillTitle}
+                onChange={(e) => setSkillTitle(e.target.value)}
+                placeholder="Skill title (e.g., Enterprise SOW Playbook)"
+                style={{ flex: '1 1 160px', padding: '7px 10px', fontSize: '0.8rem' }}
+              />
+              <input
+                type="text"
+                value={skillCorrections}
+                onChange={(e) => setSkillCorrections(e.target.value)}
+                placeholder="Redlines (; separated)"
+                style={{ flex: '2 1 220px', padding: '7px 10px', fontSize: '0.8rem' }}
+              />
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={fsLoading}
+                onClick={handleDistillSkill}
+                style={{ padding: '7px 12px', fontSize: '0.8rem', whiteSpace: 'nowrap' }}
+              >
+                📐 Save as Skill
+              </button>
+            </div>
+          </div>
           {fsResult && (
             <div
               style={{

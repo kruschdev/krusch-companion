@@ -73,6 +73,10 @@ import {
   getMonthlyFinanceSummary,
   listSubscriptionsAndBills
 } from './extensions/finance-ledger-extension.js';
+import {
+  distillProposalToSkill,
+  listDistilledPlaybooks
+} from './extensions/krusch-fs-extension.js';
 import { getHealthMetrics } from './extensions/health-media-extension.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -1323,6 +1327,36 @@ app.post('/api/companion/shortcut', handleBotEndpoint);
 app.post('/api/companion/bot', handleBotEndpoint);
 app.post('/api/companion/bot/webhook', handleBotEndpoint);
 app.post('/api/companion/bot/callback', handleBotEndpoint);
+
+// Proposal Redlines -> Reference-Backed Skill Distiller
+app.get('/api/companion/distill-skill', (_req, res) => {
+  try {
+    const playbooks = listDistilledPlaybooks();
+    res.json({ ok: true, count: playbooks.length, playbooks });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/companion/distill-skill', (req, res) => {
+  try {
+    const body = req.body || {};
+    const out = distillProposalToSkill({
+      skillName: body.skillName || body.name || body.title || 'proposal-playbook',
+      title: body.title || body.skillName || body.name || 'Proposal Drafting Playbook',
+      corrections: body.corrections || body.redlines || '',
+      referenceFilePath: body.referenceFilePath || body.filePath || '',
+      finalContent: body.finalContent || body.content || '',
+      judgmentCheckpoints: body.judgmentCheckpoints || body.checkpoints || []
+    });
+    if (!out.ok && out.blocked) {
+      return res.status(403).json(out);
+    }
+    res.json(out);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // Client-side fallback routing (SPA)
 app.get('*', (_req, res) => {

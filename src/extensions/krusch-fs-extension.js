@@ -3,7 +3,8 @@ import path from 'path';
 import os from 'os';
 import crypto from 'crypto';
 import { getDb } from '../db/index.js';
-import { getNotesDirectory } from '../agent/tools.js';
+import { getNotesDirectory, toSafeNoteFilename } from '../agent/tools.js';
+import { rememberMemory } from '../context/memory-store.js';
 
 const LINES_PER_PAGE = 60;
 export const MAX_FILE_BYTES = 2 * 1024 * 1024; // 2 MB
@@ -923,11 +924,244 @@ export const KRUSCH_FS_EXTENSION_TOOL = {
       };
     }
 
+    // 6. DISTILL_SKILL (Turn proposal/document redlines + finished reference PDF/doc into a reusable skill playbook)
+    if (action === 'distill_skill' || action === 'distill') {
+      return distillProposalToSkill({
+        skillName: args?.skillName || args?.name || args?.title || args?.query || 'proposal-playbook',
+        title: args?.title || args?.skillName || args?.name || args?.query || 'Proposal Drafting Playbook',
+        corrections: args?.corrections || args?.redlines || args?.note || '',
+        referenceFilePath: args?.referenceFilePath || args?.filePath || '',
+        finalContent: args?.finalContent || args?.content || '',
+        judgmentCheckpoints: args?.judgmentCheckpoints || args?.checkpoints || [],
+        notesDir,
+        searchDirs
+      });
+    }
+
     return {
       ok: false,
       tool: 'krusch_fs_explorer',
       actionType: `krusch_fs_${action}`,
-      summary: `Unsupported krusch_fs_explorer action "${action}". Valid actions: search, locate, page_tree, read_page, remember_on_page.`
+      summary: `Unsupported krusch_fs_explorer action "${action}". Valid actions: search, locate, page_tree, read_page, remember_on_page, distill_skill.`
     };
   }
 };
+
+function normalizeBulletItems(rawInput, fallbackItems = []) {
+  if (Array.isArray(rawInput)) {
+    const cleaned = rawInput
+      .map(item => {
+        if (!item) return '';
+        if (typeof item === 'string') return redactEnvSecrets(item.trim());
+        if (typeof item === 'object') {
+          const before = item.before ? `Avoid: ${item.before} -> ` : '';
+          const after = item.after || item.rule || item.correction || item.text || '';
+          const why = item.why ? ` (${item.why})` : '';
+          return redactEnvSecrets(`${before}${after}${why}`.trim());
+        }
+        return '';
+      })
+      .filter(Boolean);
+    if (cleaned.length > 0) return cleaned;
+  }
+
+  if (typeof rawInput === 'string' && rawInput.trim()) {
+    const parts = rawInput
+      .split(/\r?\n|;/)
+      .map(line => redactEnvSecrets(line.replace(/^\s*[-*•\d.)]+\s*/, '').trim()))
+      .filter(Boolean);
+    if (parts.length > 0) return parts;
+  }
+
+  return fallbackItems;
+}
+
+/**
+ * Turns iterative proposal/document redlines and a finished reference PDF/document
+ * into a reusable skill playbook (`playbook-<slug>.md`), anchors a page memory onto the
+ * reference artifact in `companion_fs_page_memories`, and records a Working Memory decision.
+ */
+export function distillProposalToSkill({
+  skillName = 'proposal-playbook',
+  title = '',
+  corrections = [],
+  referenceFilePath = '',
+  finalContent = '',
+  judgmentCheckpoints = [],
+  notesDir = null,
+  searchDirs = null
+} = {}) {
+  ensureKruschFsTables();
+  const database = getDb();
+  const targetNotesDir = notesDir || getNotesDirectory();
+  if (!fs.existsSync(targetNotesDir)) {
+    fs.mkdirSync(targetNotesDir, { recursive: true });
+  }
+
+  if (referenceFilePath) {
+    const shield = isPathProtectedOrTraversed(String(referenceFilePath));
+    if (shield.blocked) {
+      return {
+        ok: false,
+        blocked: true,
+        reason: shield.reason,
+        tool: 'krusch_fs_explorer',
+        actionType: 'krusch_fs_distill_skill',
+        summary: `🛡️ **3-Zone Privacy Shield Blocked (${shield.reason})**: Cannot use protected path \`${referenceFilePath}\` as a skill reference.`
+      };
+    }
+  }
+
+  const rawSlug = String(skillName || title || 'proposal-playbook')
+    .toLowerCase()
+    .replace(/[^a-z0-9-_]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64) || 'proposal-playbook';
+  const displayTitle = redactEnvSecrets(
+    String(title || skillName || 'Proposal Drafting Playbook').trim()
+  );
+
+  const normalizedCorrections = normalizeBulletItems(corrections, [
+    'Lead Page 1 with a 3-sentence problem statement and fixed-scope deliverable table before methodology details.',
+    'Replace open-ended hourly estimates with milestone-gated deliverables and explicit out-of-scope boundaries.',
+    'Cut generic capability filler; anchor every section to the client or project constraints.'
+  ]);
+
+  const normalizedCheckpoints = normalizeBulletItems(judgmentCheckpoints, [
+    'Scope & Pricing Model: Confirm whether fixed-fee milestone pricing from the reference artifact applies to this recipient or requires a phased discovery option.',
+    'Risk & Timeline Assumptions: Verify whether delivery dates and dependency assumptions carried over from the exemplar match current bandwidth.',
+    'Tone & Technical Depth: Decide whether the primary reader is an executive buyer (keep summary-first) or a technical evaluator (expand architecture appendix).'
+  ]);
+
+  const candidateDirs = resolveCandidateDirectories({ notesDir: targetNotesDir, searchDirs });
+  const candidateFiles = collectCandidateFiles(candidateDirs);
+
+  let resolvedRefPath = referenceFilePath
+    ? resolveTargetFile(referenceFilePath, candidateDirs, candidateFiles)
+    : null;
+
+  // If finalContent was provided without an existing file on disk, persist it as the reference exemplar
+  if (!resolvedRefPath && typeof finalContent === 'string' && finalContent.trim()) {
+    const refFileName = toSafeNoteFilename(`reference-${rawSlug}.md`);
+    const candidateRefPath = path.join(targetNotesDir, refFileName);
+    fs.writeFileSync(candidateRefPath, redactEnvSecrets(finalContent.trim()) + '\n', 'utf8');
+    resolvedRefPath = candidateRefPath;
+  }
+
+  let referencePageCount = 1;
+  let referencePageHash = computePageHash(displayTitle);
+  let referenceTocSummary = '- **Page 1**: Executive Framing, Scope Matrix & Deliverables';
+
+  if (resolvedRefPath && fs.existsSync(resolvedRefPath)) {
+    try {
+      const refText = readFileTextSafely(resolvedRefPath, candidateDirs);
+      const paged = paginateFileContent(refText);
+      referencePageCount = paged.totalPages;
+      referencePageHash = paged.pages[0]?.pageHash || referencePageHash;
+      referenceTocSummary = paged.pages
+        .slice(0, 5)
+        .map(
+          p =>
+            `- **Page ${p.pageNumber}** (\`L${p.startLine}-L${p.endLine}\` • hash \`${p.pageHash}\`): ${p.sectionTitle}`
+        )
+        .join('\n');
+    } catch {
+      // keep default summary
+    }
+  }
+
+  const playbookFilename = toSafeNoteFilename(`playbook-${rawSlug}.md`);
+  const playbookPath = path.join(targetNotesDir, playbookFilename);
+  const referenceLabel = resolvedRefPath ? path.basename(resolvedRefPath) : 'inline-session-exemplar';
+
+  const markdownLines = [
+    '---',
+    `name: ${rawSlug}`,
+    `description: "Reference-backed process skill distilled from ${displayTitle} redlines and exemplar (${referenceLabel})"`,
+    `reference_file: "${referenceLabel}"`,
+    `reference_page_hash: "${referencePageHash}"`,
+    '---',
+    '',
+    `# 📐 ${displayTitle} — Reference-Backed Process Skill`,
+    '',
+    '> **Core Principle**: Turn feedback into process knowledge. These learned corrections and the finished reference artifact provide a **high-signal starting point, not a substitute for human judgment**.',
+    '',
+    '## 1. Reference Exemplar & Structural Blueprint (`krusch-fs`)',
+    `- **Reference Artifact**: \`${referenceLabel}\` (${referencePageCount} page(s), Page 1 hash \`${referencePageHash}\`)`,
+    referenceTocSummary,
+    '',
+    '## 2. Learned Redline Guardrails (Always Apply to Draft v1)',
+    ...normalizedCorrections.map((item, idx) => `${idx + 1}. **Redline #${idx + 1}**: ${item}`),
+    '',
+    '## 3. Human Judgment Checkpoints (Review Required on Every New Draft)',
+    '> ⚠️ Do NOT blindly copy these context-specific choices from the prior exemplar. Surface a `[JUDGMENT CHECKPOINT]` block on every new draft for human review:',
+    ...normalizedCheckpoints.map((cp, idx) => `${idx + 1}. **Checkpoint #${idx + 1}**: ${cp}`),
+    ''
+  ];
+
+  const playbookContent = markdownLines.join('\n');
+  fs.writeFileSync(playbookPath, playbookContent, 'utf8');
+
+  // Anchor a page memory onto the reference file (or onto the newly created playbook file)
+  const memoryTargetPath = resolvedRefPath || playbookPath;
+  const memoryNote = `Distilled Skill "${rawSlug}" (${normalizedCorrections.length} redline guardrails, ${normalizedCheckpoints.length} judgment checkpoints): ${normalizedCorrections[0]}`;
+  const insertRes = database
+    .prepare(
+      `
+      INSERT INTO companion_fs_page_memories (file_path, page_number, page_hash, category, note, quoted_sentence)
+      VALUES (?, 1, ?, 'skill_reference', ?, ?)
+    `
+    )
+    .run(memoryTargetPath, referencePageHash, memoryNote, displayTitle.slice(0, 160));
+
+  try {
+    rememberMemory({
+      category: 'decision',
+      content: `Distilled proposal/document skill "${rawSlug}" (${playbookFilename}) anchored to reference "${referenceLabel}" (hash ${referencePageHash}). Apply ${normalizedCorrections.length} redline guardrails as a starting point and surface ${normalizedCheckpoints.length} human judgment checkpoints on every new draft.`,
+      source: 'krusch-fs-skill-distiller'
+    });
+  } catch {
+    // non-fatal if memory store is read-only
+  }
+
+  return {
+    ok: true,
+    tool: 'krusch_fs_explorer',
+    actionType: 'krusch_fs_distill_skill',
+    summary: `📐 **Distilled Reusable Skill \`${rawSlug}\`** (\`${playbookFilename}\`) with **${normalizedCorrections.length} Redline Guardrails**, **${normalizedCheckpoints.length} Human Judgment Checkpoints**, and Page Memory \`#${insertRes.lastInsertRowid}\` anchored to \`${referenceLabel}\` (\`${referencePageHash}\`).`,
+    data: {
+      skillName: rawSlug,
+      title: displayTitle,
+      playbookFilename,
+      playbookPath,
+      referenceFile: referenceLabel,
+      referenceFilePath: resolvedRefPath,
+      referencePageHash,
+      referencePageCount,
+      correctionsCount: normalizedCorrections.length,
+      corrections: normalizedCorrections,
+      judgmentCheckpoints: normalizedCheckpoints,
+      pageMemoryId: Number(insertRes.lastInsertRowid),
+      playbookContent
+    }
+  };
+}
+
+export function listDistilledPlaybooks({ notesDir = null } = {}) {
+  const targetNotesDir = notesDir || getNotesDirectory();
+  if (!fs.existsSync(targetNotesDir)) return [];
+  const entries = fs.readdirSync(targetNotesDir, { withFileTypes: true });
+  return entries
+    .filter(e => e.isFile() && /^playbook-.*\.md$/i.test(e.name))
+    .map(e => {
+      const fullPath = path.join(targetNotesDir, e.name);
+      const stat = fs.statSync(fullPath);
+      return {
+        fileName: e.name,
+        filePath: fullPath,
+        sizeBytes: stat.size,
+        updatedAt: stat.mtime.toISOString()
+      };
+    });
+}
+

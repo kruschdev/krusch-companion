@@ -527,5 +527,32 @@ describe('Krusch Companion V3.8 — Personal AI Ecosystem & Opt-In Extension Pac
     assert.equal(actionRes.status, 200);
     const actionJson = await actionRes.json();
     assert.equal(actionJson.ok, true);
+
+    // Proposal Redlines -> Reference-Backed Skill Distiller (POST & GET /api/companion/distill-skill)
+    const distillRes = await fetch(`${baseUrl}/api/companion/distill-skill`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: 'Enterprise Proposal Playbook',
+        corrections: [
+          'Lead Page 1 with 3-sentence problem framing and fixed-scope deliverable matrix',
+          'Replace hourly rate tables with milestone-gated fixed-fee stages'
+        ],
+        referenceFilePath: 'lease-agreement.md'
+      })
+    });
+    assert.equal(distillRes.status, 200);
+    const distillJson = await distillRes.json();
+    assert.equal(distillJson.ok, true);
+    assert.equal(distillJson.actionType, 'krusch_fs_distill_skill');
+    assert.ok(distillJson.data.playbookContent.includes('Learned Redline Guardrails'));
+    assert.ok(distillJson.data.playbookContent.includes('Human Judgment Checkpoints'));
+
+    const listDistillRes = await fetch(`${baseUrl}/api/companion/distill-skill`);
+    assert.equal(listDistillRes.status, 200);
+    const listDistillJson = await listDistillRes.json();
+    assert.equal(listDistillJson.ok, true);
+    assert.ok(listDistillJson.count >= 1);
   });
 });
+
