@@ -24,7 +24,14 @@ Krusch Companion (`krusch-companion`) is fully implemented, verified, and indexe
   - **2-Way Interactive Telegram / Discord / Mobile Shortcut Bot** (`src/services/channel-bot.js`, `INV-EXT-05`)
   - **Subscriptions, Bills & Receipt Ledger + Zero-Token Sentinel Channel 5 Auto-Renewal Watchdog** (`src/extensions/finance-ledger-extension.js`, `src/services/sentinel-daemon.js`, `INV-EXT-06`)
   - **Biometric Energy Readiness Sync + Jellyfin Media Controller + `🧩 Extensions` UI Hub** (`src/extensions/health-media-extension.js`, `client/src/views/ExtensionsView.jsx`, `INV-EXT-07`, `INV-EXT-08`)
+- [x] **4-Agent Parallel Security/DB/UI/Referee Audit & Remediations (`SEC-01`..`02`, `SPEC-01`..`06`, `DB-01`..`03`, `UI-01`..`04`)**:
+  - Enforced `fs.realpathSync` containment and 2 MB size cap in `src/extensions/krusch-fs-extension.js`
+  - Hardened `isSafePublicUrl` against bracketed IPv6 (`[::1]`), `::ffff:`, and Tailscale CGNAT (`100.64.0.0/10`) and gated `replyWebhookUrl` in `src/services/channel-bot.js`
+  - Dynamically merged `getEnabledExtensionTools()` into `src/agent/agentic-proxy.js` (`INV-EXT-01`)
+  - Initialized `ensureFinanceLedgerTables()` inside `src/services/vision.js` (`SPEC-02`), made callback claims atomic in `src/services/channel-bot.js` (`DB-01`), and made `adaptBoardToEnergyReadiness` idempotent (`DB-03`)
+- [x] **Proposal Redlines $\to$ Reference-Backed Skill Playbook Distiller (`INV-EXT-09`, `distillProposalToSkill`, `GET/POST /api/companion/distill-skill`, `.agent/skills/distill-skill/SKILL.md`)**
 - [x] All 62 unit/integration tests passing cleanly (`npm test`) and `npm run lint` (`oxlint`) 0 warnings / 0 errors
 - [x] L0 Dual-Zero-Finding Verification Gate (`checkConvergence` + `evaluateRefereeConsensus`) passed (`consecutiveZeroPasses: 2`, `isConverged: true`)
 - [x] Re-indexed into `krusch-git` (Repo ID 154)
+
 

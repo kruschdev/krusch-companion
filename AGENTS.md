@@ -1,51 +1,37 @@
-# Krusch Companion — Sovereign Personal Assistant
+# Krusch Companion — Sovereign Personal Assistant (`AGENTS.md`)
 
-## Overview
-Krusch Companion (`krusch-companion`) is a privacy-first, sovereign personal AI assistant and life companion (comparable to private versions of OpenAI Dot or xAI Grok Companion). It pairs ambient voice Thought Streams and a 5-tier priority framework with `krusch-context-mcp` working memory and `krusch-cascade-router` hierarchical tiering. All state, personal habits, notes, and tasks live strictly on local user-owned hardware with $0.00 cloud token costs for daily interactions.
+> **Version**: `v3.8.0` (`krusch-companion.service` on `krusch:3004`, `crush0` Kiosk, Faster-Whisper STT `:9000`)  
+> **Core Role**: Privacy-first, local-first personal AI assistant pairing ambient voice Thought Streams, a Dual-Axis 5-Tier Priority Board, 16-question `/setup` onboarding, Google AP2 Payment Mandates, Google Wallet Passes, and an opt-in Skylight Calendar 2 Connector (`@krusch/companion-skylight-connector`) with `krusch-context-mcp` working memory and `krusch-cascade-router`.
 
-## Architecture & Layout
-```
-krusch-companion/
-├── AGENTS.md                  # Project context & architecture
-├── INFLIGHT.md                # In-flight task tracker
-├── spec.md                    # Project specification
-├── implementation_plan.md     # Implementation plan & verification gates
-├── task.md                    # Atomic task checklist
-├── package.json               # Node.js 22 ESM backend
-├── config.json                # Layered configuration defaults
-├── config.js                  # Layered loader using @krusch/toolkit/config
-├── src/
-│   ├── server.js              # Express API server (default port: 3004)
-│   ├── db/                    # SQLite database with WAL mode
-│   ├── context/               # Working memory & knowledge boundary gating
-│   ├── router/                # krusch-cascade-router integration
-│   ├── services/              # Thought Stream, Coach, STT
-│   └── routes/                # REST endpoints
-├── client/                    # React 19 + Vite frontend (dark glassmorphism)
-└── tests/                     # Unit and integration test suites
-```
+---
 
-## Stack
-- **Runtime**: Node.js 22+ (ESM)
-- **Backend**: Express.js
-- **Shared Toolkit**: `@krusch/toolkit` (LLM, DB, Config, Pruning, Invalidation)
-- **Cascade Router**: `krusch-cascade-router` (sub-15µs CPU heuristic classifier, local edge 3B/7B, swarm 14B/32B)
-- **Database**: SQLite WAL via `@krusch/toolkit/db`
-- **Frontend**: React 19, Vite, Vanilla CSS
-- **Local LLMs**: Local Ollama (localhost:11434) and optional local network vLLM server
+## 🏗️ Architecture & Key File Map
 
-## Key Commands
-```bash
-npm install              # Install backend dependencies
-npm test                 # Run test suites
-npm run dev              # Run server with watch mode
-cd client && npm install # Install frontend dependencies
-cd client && npm run dev # Run Vite dev server
-cd client && npm run build # Production build
-```
+| Layer | Path | Responsibility |
+|---|---|---|
+| **SDK & Server Entry** | `src/index.js`, `src/server.js`, `config.js` | Programmatic SDK exports (`COMPANION_TOOLS`, `executeCompanionTool`, `validateCompanionConfig`), Express HTTP server (`:3004`, `KRUSCH_NO_LISTEN` test guard), and `@krusch/toolkit/config` loader. |
+| **Agent & Tool Router** | `src/agent/tools.js`, `src/router/` | 20-tool default catalog (strictly preserving token ceiling unless `ENABLE_SKYLIGHT_CONNECTOR=1`), `<holodata>` parser, AP2 HMAC-SHA256 payment mandates, Google Wallet pass builder, and `krusch-cascade-router` integration. |
+| **Persistence & Onboarding** | `src/db/`, `src/services/onboarding.js` | SQLite WAL (`data/companion.db`), `VACUUM INTO` verified backups, temporal memory superseding (`MemoryInvalidationEngine`), and 16-question `/setup` seeding (`companion_context`, `companion_contacts`, `data/whisper-prompt.txt`). |
+| **Frontend Client** | `client/src/` (`App.jsx`, `views/`, `utils/companionClient.js`) | React 19 + Vite dark glassmorphism UI, `AudioRecorder.jsx` voice Thought Stream, and `companionClient.js` client I/O boundary wrapper (`VALID_COMPANION_TABS`, `sanitizeSessionId`, `sortIncompleteTasks`). |
+| **Verification Suite** | `tests/test-hardening.test.js`, `tests/test-extensions-v38.test.js` | Hermetic unit, security hardening, AP2/Wallet, Skylight connector, and client boundary test suites (`npm test`). |
 
-## Core Invariants
-1. **Local-First Privacy**: Never exfiltrate user journal entries, voice dumps, or memories to external cloud LLMs unless explicitly permitted in `config.json` (`allowCloudEscalation: false`).
-2. **Sub-15µs L0 Fast-Path**: Utility and deterministic queries (math, alarms, notes, task creation) must bypass LLMs using Cascade Router heuristics.
-3. **Fact Superseding**: Contradictory personal habits or preferences must supersede previous memory records using `MemoryInvalidationEngine`.
-4. **Zero-Trust Hydration**: Always use `krusch_context_retrieve` and `krusch_context_remember` during agent workflows.
+---
+
+## 🖥️ Multi-Family 5-GPU + Colab G4 Routing Standard
+
+- **L0 Deterministic Fast-Path (`<15µs` CPU)**: Math (`safeEvaluateArithmetic`), timers, notes, and task mutations execute directly on SQLite with `$0.00` LLM overhead.
+- **L1/L2 Local Multi-Family Pool (`keep_alive: -1`, `100% GPU`)**:
+  - Primary Local Node (`OLLAMA_URL`, default `127.0.0.1:11434`): `qwen2.5-coder:7b` (fast local tool/tagger) + `bge-large:latest` (`1024`-dim embeddings).
+  - Executor & Referee Pool (`VISION_OLLAMA_URL` / secondary GPU host): `gemma4:e4b` (multimodal/tool executor) + `hermes3:latest` (coaching, prose & cross-family Referee).
+  - Heavy Synthesis Pool (compute GPU host): `qwen3-coder-30b-moe:latest` (30B MoE heavy synthesis).
+- **L2.5 On-Demand Burst (`127.0.0.1:11435`)**: `gpt-oss:120b` (`131K` ctx) via SSH tunnel when active.
+
+---
+
+## 🛑 Core Invariants (`INV-COMP-01` – `INV-COMP-05`)
+
+1. **Local-First Sovereignty (`INV-COMP-01`)**: Never exfiltrate journal entries, voice dumps, or memories to external cloud LLMs unless explicitly enabled (`allowCloudEscalation: false`).
+2. **20-Tool Default Catalog Ceiling (`INV-COMP-02`)**: `COMPANION_TOOLS` must remain at exactly 20 default tools unless `ENABLE_SKYLIGHT_CONNECTOR=1` opts in `SKYLIGHT_CALENDAR_TOOL`.
+3. **Confirm-Before-Act Side-Effect Gate (`INV-COMP-03`)**: External side-effect tools (email, SMS, calendar, AP2 payment mandates) require explicit `confirmed: true` or dry-run preview before execution.
+4. **Client Boundary Encapsulation (`INV-COMP-04`)**: Browser `localStorage`, URL routing, and `/api/*` fetches in `client/src/` must route through `client/src/utils/companionClient.js` with `logClientBoundaryWarning` observability.
+5. **Temporal Fact Superseding (`INV-COMP-05`)**: Updated personal habits or preferences must supersede prior records via `MemoryInvalidationEngine` rather than duplicating rows.

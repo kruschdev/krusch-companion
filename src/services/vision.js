@@ -168,6 +168,7 @@ export function resolveVisionMode(mode = 'auto', prompt = '', filename = '') {
     'receipt_or_bill',
     'flyer_or_schedule',
     'whiteboard_or_notes',
+    'chrome_ui_audit',
     'general_vision'
   ]);
   if (mode && mode !== 'auto' && explicitModes.has(mode)) {
@@ -183,6 +184,9 @@ export function resolveVisionMode(mode = 'auto', prompt = '', filename = '') {
   }
   if (/\b(whiteboard|diagram|handwritten|brainstorm|sticky|checklist|todo)\b/i.test(combined)) {
     return 'whiteboard_or_notes';
+  }
+  if (/\b(chrome|browser|screenshot|viewport|responsive|breakpoint|ui\s*audit|layout\s*bug|css\s*overflow|devtools)\b/i.test(combined)) {
+    return 'chrome_ui_audit';
   }
   return 'general_vision';
 }
@@ -275,6 +279,11 @@ function extractStructuredVisionFields({ resolvedMode, prompt = '', filename = '
       actionItems = [`Pay ${merchant || 'bill'}${amtLabel} due ${detectedDate}`];
     } else if (resolvedMode === 'flyer_or_schedule') {
       actionItems = [`Prepare for ${eventTitle || 'scheduled event'} on ${detectedDate}`];
+    } else if (resolvedMode === 'chrome_ui_audit') {
+      actionItems = [
+        `Audit Chrome UI layout & console telemetry (${filename || 'screenshot'})`,
+        'Verify 375px / 768px / 1440px responsive breakpoints'
+      ];
     } else if (rawPrompt) {
       actionItems = [rawPrompt];
     } else {
@@ -294,6 +303,8 @@ function extractStructuredVisionFields({ resolvedMode, prompt = '', filename = '
       summaryText = `Flyer/Schedule triaged: ${eventTitle || 'Family Event'} on ${eventDate || todayIso}.`;
     } else if (resolvedMode === 'whiteboard_or_notes') {
       summaryText = `Whiteboard/Notes triaged with ${actionItems.length} action item(s): ${actionItems.join('; ')}.`;
+    } else if (resolvedMode === 'chrome_ui_audit') {
+      summaryText = `Captured Chrome UI screenshot (${filename || 'capture.png'})${prompt ? ` — "${prompt}"` : ''}. Ready for responsive & DOM verification.`;
     } else {
       summaryText = `Visual capture (${filename}) analyzed: ${actionItems.join('; ')}.`;
     }
@@ -376,9 +387,9 @@ function insertReceiptIfTableExists({ extracted, filename, stagedTaskId = null }
 }
 
 /**
- * Analyze a captured companion image (receipt, bill, flyer, whiteboard, or general visual scene)
- * using resident gemma4:e4b on kruschserv with OpenRouter privacy-gated fallback and
- * deterministic structured extraction fallback when offline or in MOCK_LLM=1 mode.
+ * Analyze a captured companion image (receipt, bill, flyer, whiteboard, Chrome UI screenshot, or general visual scene)
+ * using resident gemma4:e4b on kruschserv with Gemini 4 Argon (gemini-4-argon) and OpenRouter privacy-gated fallback
+ * and deterministic structured extraction fallback when offline or in MOCK_LLM=1 mode.
  */
 export async function analyzeCompanionImage({
   imageBuffer = null,
@@ -407,7 +418,7 @@ export async function analyzeCompanionImage({
 
   const resolvedMode = resolveVisionMode(mode, prompt, filename);
   const visionModel = process.env.VISION_MODEL || 'gemma4:e4b';
-  const ollamaBaseUrl = (process.env.VISION_OLLAMA_URL || 'http://192.168.1.225:11434').replace(/\/+$/, '');
+  const ollamaBaseUrl = (process.env.VISION_OLLAMA_URL || process.env.OLLAMA_URL || 'http://127.0.0.1:11434').replace(/\/+$/, '');
   const base64Clean = buffer.toString('base64');
   const imageHash = crypto.createHash('sha256').update(buffer).digest('hex').slice(0, 10);
 
@@ -422,40 +433,100 @@ export async function analyzeCompanionImage({
       '{"merchant": string|null, "amount": number|null, "dueDate": string|null, "eventTitle": string|null, "eventDate": string|null, "actionItems": string[], "summaryText": string}'
     ].join(' ');
 
-    try {
-      const ollamaRes = await fetchImpl(`${ollamaBaseUrl}/api/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: visionModel,
-          stream: false,
-          format: 'json',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            {
-              role: 'user',
-              content: prompt || `Analyze this ${resolvedMode} image (${filename}) and extract structured fields.`,
-              images: [base64Clean]
-            }
-          ],
-          options: { temperature: 0.1 }
-        }),
-        signal: AbortSignal.timeout(Number(process.env.VISION_TIMEOUT_MS || 8000))
-      });
+    const preferGeminiDirect =
+      /^(?:gemini-4|argon)/i.test(visionModel) && Boolean(process.env.GEMINI_API_KEY);
 
-      if (ollamaRes.ok) {
-        const data = await ollamaRes.json();
-        const rawContent = data?.message?.content || data?.response || '';
-        if (rawContent) {
-          try {
-            modelParsed = JSON.parse(rawContent);
-          } catch {
-            modelParsed = { summaryText: String(rawContent).trim() };
+    if (!preferGeminiDirect) {
+      try {
+        const ollamaRes = await fetchImpl(`${ollamaBaseUrl}/api/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: visionModel,
+            stream: false,
+            format: 'json',
+            messages: [
+              { role: 'system', content: systemPrompt },
+              {
+                role: 'user',
+                content: prompt || `Analyze this ${resolvedMode} image (${filename}) and extract structured fields.`,
+                images: [base64Clean]
+              }
+            ],
+            options: { temperature: 0.1 }
+          }),
+          signal: AbortSignal.timeout(Number(process.env.VISION_TIMEOUT_MS || 8000))
+        });
+
+        if (ollamaRes.ok) {
+          const data = await ollamaRes.json();
+          const rawContent = data?.message?.content || data?.response || '';
+          if (rawContent) {
+            try {
+              modelParsed = JSON.parse(rawContent);
+            } catch {
+              modelParsed = { summaryText: String(rawContent).trim() };
+            }
           }
         }
+      } catch {
+        // Fallback to Gemini 4 Argon / OpenRouter Vision (if configured) or deterministic local extraction
       }
-    } catch {
-      // Fallback to OpenRouter Vision (if configured) or deterministic local extraction
+    }
+
+    if (!modelParsed && process.env.GEMINI_API_KEY) {
+      try {
+        const geminiModel = /^gemini-4/i.test(visionModel)
+          ? visionModel
+          : (process.env.GEMINI_VISION_MODEL || 'gemini-4-argon');
+        const geminiRes = await fetchImpl(
+          `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${process.env.GEMINI_API_KEY}`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': process.env.GEMINI_API_KEY
+            },
+            body: JSON.stringify({
+              system_instruction: { parts: [{ text: systemPrompt }] },
+              contents: [
+                {
+                  role: 'user',
+                  parts: [
+                    { text: prompt || `Analyze this ${resolvedMode} image (${filename}) and extract structured fields.` },
+                    { inlineData: { mimeType: validation.detectedMimeType, data: base64Clean } }
+                  ]
+                }
+              ],
+              generationConfig: {
+                maxOutputTokens: 65536,
+                thinkingConfig: { thinkingLevel: resolvedMode === 'chrome_ui_audit' ? 'high' : 'medium' },
+                responseMimeType: 'application/json'
+              }
+            }),
+            signal: AbortSignal.timeout(Number(process.env.VISION_TIMEOUT_MS || 10000))
+          }
+        );
+
+        if (geminiRes.ok) {
+          const geminiData = await geminiRes.json();
+          const parts = geminiData?.candidates?.[0]?.content?.parts || [];
+          const rawText = parts
+            .filter(p => p && typeof p.text === 'string' && !p.thought)
+            .map(p => p.text)
+            .join('');
+          if (rawText) {
+            modelUsed = geminiModel;
+            try {
+              modelParsed = JSON.parse(rawText);
+            } catch {
+              modelParsed = { summaryText: rawText.trim() };
+            }
+          }
+        }
+      } catch {
+        // Fallback to OpenRouter Vision (if configured) or deterministic local extraction
+      }
     }
 
     if (!modelParsed && process.env.OPENROUTER_API_KEY) {
@@ -553,6 +624,16 @@ export async function analyzeCompanionImage({
         notes: extracted.summaryText,
         items: extracted.actionItems
       });
+    } else if (resolvedMode === 'chrome_ui_audit') {
+      const primaryItem = extracted.actionItems[0] || `Chrome UI Audit (${filename})`;
+      stagedTask = createTask({
+        title: primaryItem,
+        priority_id: 5,
+        execution_priority: 1,
+        pillar: 'Work & Mastery',
+        notes: extracted.summaryText,
+        items: extracted.actionItems
+      });
     }
 
     const targetNotesDir = notesDir || getNotesDirectory();
@@ -616,16 +697,16 @@ export async function analyzeCompanionImage({
 }
 
 /**
- * Declarative V3.8 Extension Tool for Multimodal Vision & Camera Triage (gemma4:e4b).
+ * Declarative V3.8 Extension Tool for Multimodal Vision & Camera Triage (gemma4:e4b + gemini-4-argon).
  */
 export const VISION_CAPTURE_EXTENSION_TOOL = {
   name: 'vision_capture',
   category: 'multimodal_vision',
   extensionId: 'gemma4-vision-capture',
   description:
-    'Opt-in Multimodal Vision & Camera Triage (gemma4:e4b): analyze photos of paper bills, receipts, school flyers, or whiteboards to extract tasks onto Today Board, log expenses, and save notes.',
+    'Opt-in Multimodal Vision & Camera Triage (gemma4:e4b with gemini-4-argon cloud burst fallback): analyze photos of paper bills, receipts, school flyers, whiteboards, or Chrome UI audit screenshots (chrome_ui_audit) to extract tasks onto Today Board, log expenses, and save notes.',
   parameters: {
-    mode: 'string ("auto" | "receipt_or_bill" | "flyer_or_schedule" | "whiteboard_or_notes" | "general_vision")',
+    mode: 'string ("auto" | "receipt_or_bill" | "flyer_or_schedule" | "whiteboard_or_notes" | "chrome_ui_audit" | "general_vision")',
     prompt: 'string (Visual question or instructions)',
     base64Image: 'string (Base64-encoded image or data URI)',
     filename: 'string (Image filename)'

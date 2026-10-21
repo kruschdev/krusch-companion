@@ -130,7 +130,7 @@ describe('Krusch Companion V3.8 — Personal AI Ecosystem & Opt-In Extension Pac
     const traversalCheck = isPathProtectedOrTraversed('../../etc/shadow');
     assert.equal(traversalCheck.blocked, true);
 
-    const sshKeyCheck = isPathProtectedOrTraversed('/home/krusch/.ssh/id_ed25519');
+    const sshKeyCheck = isPathProtectedOrTraversed('/home/user/.ssh/id_ed25519');
     assert.equal(sshKeyCheck.blocked, true);
     assert.equal(sshKeyCheck.reason, 'VAULT_LOCKED');
 
@@ -239,6 +239,17 @@ describe('Krusch Companion V3.8 — Personal AI Ecosystem & Opt-In Extension Pac
     assert.equal(analysis.mode, 'receipt_or_bill');
     assert.ok(analysis.stagedTask?.id, 'Should stage a Priority 1 task on Today Board');
     assert.ok(analysis.receiptId, 'SPEC-02: Should initialize companion_receipts and return non-null receiptId');
+
+    const chromeAudit = await analyzeCompanionImage({
+      imageBuffer: pngBuf,
+      filename: 'chrome-viewport-375px.png',
+      prompt: 'Audit Chrome responsive breakpoint layout for horizontal overflow',
+      mode: 'auto',
+      autoStageBoard: true
+    });
+    assert.equal(chromeAudit.ok, true);
+    assert.equal(chromeAudit.mode, 'chrome_ui_audit');
+    assert.equal(chromeAudit.stagedTask?.pillar, 'Work & Mastery');
   });
 
   it('4. INV-EXT-04, UI-03 & SPEC-05: Local TTS Engine and client liveVoiceLoop controller settle promises cleanly on stopSpeaking()', async () => {
@@ -272,6 +283,30 @@ describe('Krusch Companion V3.8 — Personal AI Ecosystem & Opt-In Extension Pac
     const speakRes = await controller.speak('Testing live voice controller');
     assert.equal(speakRes.ok, true);
     stopSpeaking();
+
+    // Verify stopSpeaking() during an in-flight TTS fetch cancels stale playback (Jean SRE Review #6)
+    let resolveDelayedFetch;
+    const delayedController = createLiveVoiceController({
+      fetchImpl: () =>
+        new Promise((resolve) => {
+          resolveDelayedFetch = () =>
+            resolve({
+              ok: true,
+              json: async () => ({
+                ok: true,
+                useBrowserSpeechSynthesis: true,
+                cleanSpokenText: 'Delayed speech'
+              })
+            });
+        })
+    });
+    const inFlightPromise = delayedController.speak('Delayed speech');
+    delayedController.stop();
+    resolveDelayedFetch();
+    const cancelledRes = await inFlightPromise;
+    assert.equal(cancelledRes.ok, false);
+    assert.equal(cancelledRes.cancelled, true);
+    assert.equal(delayedController.isSpeaking(), false);
   });
 
   it('5. INV-EXT-05, SEC-02, DB-01 & SPEC-04: 2-Way Bot blocks SSRF replyWebhookUrl, prevents double-tap callback races, and accepts string body.message', async () => {
@@ -554,5 +589,85 @@ describe('Krusch Companion V3.8 — Personal AI Ecosystem & Opt-In Extension Pac
     assert.equal(listDistillJson.ok, true);
     assert.ok(listDistillJson.count >= 1);
   });
+
+  it('9. Jean SRE Audit Remediation: companionClient.js validates VALID_COMPANION_TABS (including extensions) and sanitizes session IDs', async () => {
+    const {
+      VALID_COMPANION_TABS,
+      sanitizeSessionId,
+      readInitialActiveTab
+    } = await import('../client/src/utils/companionClient.js');
+
+    assert.ok(VALID_COMPANION_TABS.includes('extensions'), 'VALID_COMPANION_TABS must include extensions tab');
+    assert.equal(sanitizeSessionId('  session-01<script>alert(1)</script>  '), 'session-01scriptalert1script');
+    assert.equal(sanitizeSessionId('   ', 'fallback-id'), 'fallback-id');
+    assert.equal(readInitialActiveTab(), 'companion');
+  });
+
+  it('10. Chrome Browser Navigator Extension (chrome-browser-navigator / browser_navigate) & Gemini 4 Argon UI Audit', async () => {
+    const {
+      validateBrowserTargetUrl,
+      navigateCompanionBrowser
+    } = await import('../src/extensions/browser-navigator-extension.js');
+
+    assert.equal(COMPANION_TOOLS.length, 20, 'Core COMPANION_TOOLS must remain strictly 20');
+    const extensions = listExtensions();
+    assert.ok(
+      extensions.some((e) => e.extensionId === 'chrome-browser-navigator' && e.toolName === 'browser_navigate'),
+      'chrome-browser-navigator must be registered in EXTENSION_CATALOG'
+    );
+
+    // SSRF guard must block internal Tailscale / loopback URLs by default
+    const ssrfCheck = validateBrowserTargetUrl('http://100.65.159.15:11434/api/tags');
+    assert.equal(ssrfCheck.allowed, false);
+    assert.equal(ssrfCheck.reason, 'SSRF_BLOCKED');
+
+    const ssrfRes = await fetch(`${baseUrl}/api/companion/browser`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'navigate',
+        url: 'http://100.65.159.15:11434/api/tags'
+      })
+    });
+    assert.equal(ssrfRes.status, 403);
+    const ssrfJson = await ssrfRes.json();
+    assert.equal(ssrfJson.blocked, true);
+    assert.equal(ssrfJson.reason, 'SSRF_BLOCKED');
+
+    // Enable chrome-browser-navigator and verify intent routing + execution
+    const enabled = setExtensionEnabled('chrome-browser-navigator', true);
+    assert.equal(enabled.enabled, true);
+
+    const navIntent = detectAgenticIntent('Navigate in Chrome to https://example.com and inspect the page');
+    assert.equal(navIntent.shouldUseAgenticProxy, true);
+    assert.ok(navIntent.matchedCategories.includes('browser_navigation'));
+    assert.ok(navIntent.tools.some((t) => t.name === 'browser_navigate'));
+
+    const interactOut = await navigateCompanionBrowser({
+      action: 'interact',
+      url: 'https://example.com/login',
+      steps: 'click:#open-modal; type:#email=user@example.com'
+    });
+    assert.equal(interactOut.ok, true);
+    assert.equal(interactOut.actionType, 'browser_interact');
+    assert.equal(interactOut.data.stepsExecuted.length, 2);
+
+    const auditRes = await fetch(`${baseUrl}/api/companion/browser`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'audit',
+        url: 'https://example.com',
+        autoStageBoard: true
+      })
+    });
+    assert.equal(auditRes.status, 200);
+    const auditJson = await auditRes.json();
+    assert.equal(auditJson.ok, true);
+    assert.equal(auditJson.actionType, 'browser_audit');
+    assert.equal(auditJson.data.breakpoints.length, 3);
+    assert.ok(auditJson.data.stagedTask?.id, 'Should stage Chrome UI audit task onto Today Board when autoStageBoard=true');
+  });
 });
+
 

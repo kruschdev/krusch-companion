@@ -22,7 +22,7 @@ DEVICE = os.environ.get("WHISPER_DEVICE", "cpu")
 COMPUTE_TYPE = os.environ.get("WHISPER_COMPUTE_TYPE", "int8")
 PORT = int(os.environ.get("WHISPER_PORT", "9000"))
 HOST = os.environ.get("WHISPER_HOST_BIND", "0.0.0.0")
-FFMPEG_BIN = shutil.which("ffmpeg") or "/home/krusch/.local/bin/ffmpeg"
+FFMPEG_BIN = shutil.which("ffmpeg") or os.path.expanduser("~/.local/bin/ffmpeg")
 
 print(f"[krusch-whisper-stt] Loading Faster-Whisper model '{MODEL_NAME}' ({DEVICE}/{COMPUTE_TYPE})...", flush=True)
 model = WhisperModel(MODEL_NAME, device=DEVICE, compute_type=COMPUTE_TYPE)

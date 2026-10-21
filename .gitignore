@@ -11,8 +11,8 @@ data/skills/
 data/profile/
 data/dossiers/
 data/passes/
-.agent/*.db-wal
-.agent/*.db-shm
+.agent/
+*INFLIGHT.md
 dist/
 client/dist/
 client/node_modules/
