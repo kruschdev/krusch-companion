@@ -12,7 +12,10 @@ data/profile/
 data/dossiers/
 data/passes/
 .agent/
-*INFLIGHT.md
+*INFLIGHT*.md
+scripts/seed_family_instances.js
+scripts/gkeep_bridge.py
+data/
 dist/
 client/dist/
 client/node_modules/

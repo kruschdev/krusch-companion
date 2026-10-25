@@ -90,7 +90,8 @@ export function isSafePublicUrl(rawUrl) {
  * Resolve the sandboxed notes directory inside the companion data folder.
  */
 export function getNotesDirectory() {
-  const dataDir = path.dirname(config.db.path);
+  const activeDbPath = config.dbPath();
+  const dataDir = path.dirname(activeDbPath);
   const notesDir = path.join(dataDir, 'notes');
   if (!fs.existsSync(notesDir)) {
     fs.mkdirSync(notesDir, { recursive: true });
@@ -253,11 +254,12 @@ export async function calculateCommuteAndDeparture({
         geocodeOne(cleanDest)
       ]);
 
-      // If origin is a short street address (e.g. "1161 North Citrus") that didn't resolve alone, retry with Drive / destination city
-      if (!origCoords && /^\d+\s+[A-Za-z\s]+$/.test(resolvedOrigin)) {
+      // If origin is a short street address that didn't resolve alone, retry with configured DEFAULT_COMMUTE_CITY_STATE
+      const defaultCityState = String(process.env.DEFAULT_COMMUTE_CITY_STATE || '').trim();
+      if (!origCoords && defaultCityState && /^\d+\s+[A-Za-z\s]+$/.test(resolvedOrigin)) {
         origCoords =
-          (await geocodeOne(`${resolvedOrigin} Drive, La Habra, CA`)) ||
-          (await geocodeOne(`${resolvedOrigin}, La Habra, CA`));
+          (await geocodeOne(`${resolvedOrigin} Drive, ${defaultCityState}`)) ||
+          (await geocodeOne(`${resolvedOrigin}, ${defaultCityState}`));
       }
 
       if (origCoords && destCoords) {
@@ -2214,6 +2216,34 @@ export const COMPANION_TOOLS = [
       const action = String(args?.action || 'home_status').toLowerCase().trim();
       const database = getDb();
 
+      if (
+        action === 'speak_google_home' ||
+        action === 'announce_google_home' ||
+        String(args?.channel || '').toLowerCase().trim() === 'google_home'
+      ) {
+        const spokenText = String(args?.message || args?.text || args?.state || '').trim();
+        if (!spokenText) {
+          return {
+            ok: false,
+            tool: 'smart_home_bridge',
+            summary: 'Parameter "message" is required to broadcast to Google Home.'
+          };
+        }
+        const { broadcastToGoogleHome } = await import('../services/google-home.js');
+        const castOut = await broadcastToGoogleHome({
+          text: spokenText,
+          entityId: args?.entityId || args?.device || null,
+          fetchImpl
+        });
+        return {
+          ok: true,
+          tool: 'smart_home_bridge',
+          actionType: 'google_home_broadcast',
+          summary: `🔊 **Broadcast to ${castOut.friendlyName}** (\`${castOut.entityId}\` via \`${castOut.transportUsed}\`):\n> "${castOut.cleanSpokenText}"`,
+          data: castOut
+        };
+      }
+
       if (action === 'send_channel_message' || ['telegram', 'discord', 'slack', 'webhook'].includes(action)) {
         const channel = String(args?.channel || (['telegram', 'discord', 'slack', 'webhook'].includes(action) ? action : 'telegram')).toLowerCase().trim();
         const message = String(args?.message || args?.text || args?.content || '').trim();
@@ -2506,9 +2536,9 @@ export const COMPANION_TOOLS = [
 
 /**
  * Opt-in Skylight Calendar 2 Connector Tool Plugin (`@krusch/companion-skylight-connector`).
- * Appended to COMPANION_TOOLS only when `ENABLE_SKYLIGHT_CONNECTOR=1` (preserving the default
- * 20-tool catalog token invariant), and always callable on demand via `executeCompanionTool('skylight_calendar', args)`
- * or `/api/skylight`.
+ * Registered in `EXTENSION_CATALOG` (`envFlag: 'ENABLE_SKYLIGHT_CONNECTOR'`) to preserve the
+ * 20-tool core `COMPANION_TOOLS` invariant (`INV-EXT-01`), and always callable on demand via
+ * `executeCompanionTool('skylight_calendar', args)` or `/api/skylight`.
  */
 export const SKYLIGHT_CALENDAR_TOOL = {
   name: 'skylight_calendar',
@@ -2548,10 +2578,6 @@ export const SKYLIGHT_CALENDAR_TOOL = {
     }
   }
 };
-
-if (process.env.ENABLE_SKYLIGHT_CONNECTOR === '1') {
-  COMPANION_TOOLS.push(SKYLIGHT_CALENDAR_TOOL);
-}
 
 
 /**
@@ -2736,13 +2762,38 @@ export function syncMarkdownProfileFiles({ notesDir } = {}) {
   const soulEntries = memories.filter(m => m.category === 'invariant' || String(m.content).includes('SOUL.md'));
   const userEntries = memories.filter(m => m.category === 'decision' || m.category === 'lesson' || String(m.content).includes('USER.md'));
 
+  const personaMode = process.env.COMPANION_PERSONA_MODE || 'chief_of_staff';
+  const appName = process.env.APP_NAME || config.app.name || 'Krusch Companion';
+
+  let identityLines;
+  if (personaMode === 'simple_concierge') {
+    identityLines = [
+      `- **Role**: Tech-Simple Personal Concierge (${appName}) — warm, patient, plain-spoken assistant with zero computer or AI jargon.`,
+      '- **Execution Mode**: Automatic Helper — capture any mentioned appointment, medication, chore, or reminder onto Today\'s Board immediately.',
+      '- **Response Style**: Clear & Unhampered Depth — keep quick task confirmations simple, and give complete, thorough, well-explained answers of any length whenever asked a question.',
+      '- **Sovereignty Invariant**: Never leak personal thoughts, medical notes, or financial schedules to unauthorized cloud telemetry.'
+    ];
+  } else if (personaMode === 'warm_family') {
+    identityLines = [
+      `- **Role**: Warm Family Assistant (${appName}) — organized, friendly, action-taking personal companion with zero technical jargon.`,
+      '- **Execution Mode**: Execution-First — turn spoken thoughts, shopping lists, family plans, and reminders into clean tasks and checklists.',
+      '- **Response Style**: Warm, clear, and helpful — never artificially truncate answers when explaining or planning.',
+      '- **Sovereignty Invariant**: Never leak personal thoughts, medical notes, or financial schedules to unauthorized cloud telemetry.'
+    ];
+  } else {
+    identityLines = [
+      '- **Role**: Sharp Executive Chief-of-Staff — 100% private, local-first personal AI companion that anticipates next steps and turns spoken or rambling input into clean action.',
+      '- **Execution Mode**: Strictly Execution-First — execute commands, update Today\'s Priority Board, and manage checklists/notes immediately; skip unsolicited coaching, pep talks, or lecturing unless explicitly asked.',
+      '- **Response Style**: Balanced — short, warm conversational confirmation (1–2 sentences) followed by a clear next-action prompt.',
+      '- **Sovereignty Invariant**: Never leak personal thoughts, medical notes, or financial schedules to unauthorized cloud telemetry.'
+    ];
+  }
+
   const soulMd = [
-    '# 🛡️ SOUL.md — Krusch Companion Sovereign Persona',
+    `# 🛡️ SOUL.md — ${appName} Sovereign Persona`,
     '',
     '## Core Identity & Philosophy',
-    '- **Role**: 100% private, local-first personal AI companion, executive chief-of-staff, and daily focus coach.',
-    '- **Tone**: Warm, concise, action-oriented, zero-fluff, empathetic when cognitive load is high.',
-    '- **Sovereignty Invariant**: Never leak personal thoughts, medical notes, or financial schedules to unauthorized cloud telemetry.',
+    ...identityLines,
     '',
     '## Active Persona Directives & Invariants',
     ...(soulEntries.length > 0 ? soulEntries.map(m => `- ${m.content}`) : ['- Prioritize Lane 1 (Must Happen Today — Deadlines & Provision) before non-urgent habits.'])

@@ -204,9 +204,14 @@ export function parseInboundPlatformPayload(rawBody = {}, explicitPlatform = nul
     };
   }
 
-  // 3. Mobile Shortcut / Generic ('ios_shortcut' | 'android_shortcut' | 'slack' | 'webhook')
+  // 3. Mobile Shortcut / Google Home / Generic ('ios_shortcut' | 'android_shortcut' | 'google_home' | 'slack' | 'webhook')
+  const isGoogleAssistantPayload = Boolean(
+    body.queryResult?.queryText || body.inputs?.[0]?.rawInputs?.[0]?.query
+  );
   const resolvedPlatform = String(
-    explicitPlatform || body.platform || 'ios_shortcut'
+    explicitPlatform ||
+      body.platform ||
+      (isGoogleAssistantPayload ? 'google_home' : 'ios_shortcut')
   ).toLowerCase().trim();
 
   const rawCallbackData = String(body.callbackData || body.callback_data || '').trim();
@@ -216,17 +221,34 @@ export function parseInboundPlatformPayload(rawBody = {}, explicitPlatform = nul
 
   return {
     platform: resolvedPlatform,
-    chatId: String(body.chatId || body.chat_id || body.channel_id || body.channel || `${resolvedPlatform}_default`),
-    sender: String(body.sender || body.user_name || body.username || 'mobile_user'),
+    chatId: String(
+      body.chatId ||
+        body.chat_id ||
+        body.channel_id ||
+        body.channel ||
+        body.entityId ||
+        body.entity_id ||
+        `${resolvedPlatform}_default`
+    ),
+    sender: String(
+      body.sender ||
+        body.speaker ||
+        body.user_name ||
+        body.username ||
+        (resolvedPlatform === 'google_home' ? 'google_home_voice' : 'mobile_user')
+    ),
     text: String(
       body.prompt ??
         body.text ??
         body.command ??
+        body.query ??
+        body.queryResult?.queryText ??
+        body.inputs?.[0]?.rawInputs?.[0]?.query ??
         (typeof body.message === 'string' ? body.message : '')
     ).trim(),
     callbackId: rawCallbackId || null,
     callbackData: rawCallbackData || (rawCallbackId ? `confirm:${rawCallbackId}` : null),
-    voiceMode: Boolean(body.voiceMode)
+    voiceMode: Boolean(body.voiceMode || resolvedPlatform === 'google_home')
   };
 }
 
@@ -318,6 +340,120 @@ function formatTodayBoardReply() {
       completedCount: completed.length,
       streak: streakInfo.streak
     }
+  };
+}
+
+/**
+ * Parse natural spoken Google Home commands or `/skylight` slash commands into
+ * structured `skylight_calendar` tool arguments (<1ms, $0.00 token cost).
+ */
+export function parseSkylightVoiceCommand(rawText = '') {
+  const text = String(rawText || '').trim();
+  if (!text) return null;
+
+  const isSlash = /^\/skylight(?:@\S+)?(?:\s+([\s\S]*))?$/i.test(text);
+  const mentionsSkylight = /\b(?:skylight|family\s+calendar)\b/i.test(text);
+  if (!isSlash && !mentionsSkylight) {
+    return null;
+  }
+
+  const body = isSlash
+    ? text.replace(/^\/skylight(?:@\S+)?\s*/i, '').trim()
+    : text;
+
+  if (!body || /^(?:status|ping|health)$/i.test(body)) {
+    return { action: 'status' };
+  }
+
+  // 0a. Fix Two-Tone Event Colors on Skylight
+  if (
+    /\b(?:fix|repair|normalize|single[-\s]?tone|solid)\b[\s\S]*\b(?:two[-\s]?tone|stripe|split|colors?|categories)\b/i.test(body) ||
+    /\b(?:two[-\s]?tone)\b/i.test(body)
+  ) {
+    return { action: 'fix_two_tone_events' };
+  }
+
+  // 0b. List Skylight Categories / Profile Colors
+  if (
+    /^(?:categories|colors|profiles)$/i.test(body) ||
+    (/\b(?:categories|colors|profiles)\b/i.test(body) && /\b(?:list|show|check|what|inspect)\b/i.test(body))
+  ) {
+    return { action: 'list_categories' };
+  }
+
+  // 1. List / Read Skylight Calendar events
+  if (
+    /^(?:events?|list|schedule|today)$/i.test(body) ||
+    /\b(?:what(?:'s|\s+is)\s+on|show|list|read|check)\b[\s\S]*\b(?:skylight|family\s+calendar)\b/i.test(text)
+  ) {
+    return { action: 'list_events' };
+  }
+
+  // 2. Grocery / Shopping List items on Skylight
+  if (/\b(?:grocery|shopping)\s+list\b|^grocery\s+/i.test(body)) {
+    const cleaned = body
+      .replace(/^(?:add|put|push)\s+/i, '')
+      .replace(/^grocery\s+/i, '')
+      .replace(/\s+(?:to|on|onto|in)\s+(?:the\s+|my\s+)?(?:skylight\s+)?(?:grocery|shopping)\s+list.*$/i, '')
+      .replace(/\s+(?:on|in|to)\s+skylight.*$/i, '')
+      .trim();
+    const items = cleaned
+      .split(/,|\band\b/i)
+      .map(s => s.trim())
+      .filter(Boolean);
+    return {
+      action: 'push_list_items',
+      listId: 'grocery',
+      items: items.length > 0 ? items : [cleaned || 'Groceries']
+    };
+  }
+
+  // 3. Meal Planning on Skylight
+  if (/\b(?:meal|breakfast|lunch|dinner)\b/i.test(body)) {
+    const mealTypeMatch = body.match(/\b(breakfast|lunch|dinner|snack)\b/i);
+    const mealType = mealTypeMatch ? mealTypeMatch[1].toLowerCase() : 'dinner';
+    const cleanedTitle = body
+      .replace(/^(?:plan|put|add|set|schedule)\s+(?:meal\s+)?/i, '')
+      .replace(/\s+for\s+(?:breakfast|lunch|dinner|snack)\b/i, '')
+      .replace(/\s+(?:on|to|onto|in)\s+(?:the\s+|my\s+)?skylight(?:\s+calendar|\s+meal\s+plan)?.*$/i, '')
+      .trim();
+    return {
+      action: 'plan_meal',
+      title: cleanedTitle || 'Family Dinner',
+      mealType
+    };
+  }
+
+  // 4. Chore Assignment on Skylight
+  if (/\bchore\b/i.test(body)) {
+    const assigneeMatch = body.match(/\bto\s+([A-Z][a-z]+)(?:\s+on\s+skylight)?/i);
+    const assignee =
+      assigneeMatch && !/^(?:skylight|the|my|calendar)$/i.test(assigneeMatch[1])
+        ? assigneeMatch[1]
+        : undefined;
+    const cleanedChore = body
+      .replace(/^(?:assign|add|create)\s+(?:a\s+)?chore\s+/i, '')
+      .replace(/^chore\s+/i, '')
+      .replace(/\s+to\s+[A-Za-z]+\s+on\s+(?:the\s+)?skylight.*$/i, '')
+      .replace(/\s+(?:on|to|onto)\s+(?:the\s+|my\s+)?skylight.*$/i, '')
+      .trim();
+    return {
+      action: 'assign_chore',
+      title: cleanedChore || 'Household Chore',
+      ...(assignee ? { assignee } : {})
+    };
+  }
+
+  // 5. Default: Create / Update Event on Skylight Calendar
+  const cleanedEventTitle = body
+    .replace(/^(?:please\s+)?(?:add|put|create|schedule|update|set)\s+(?:an?\s+event\s+)?/i, '')
+    .replace(/^(?:the\s+|my\s+)?(?:skylight(?:\s+calendar)?|family\s+calendar)\s+(?:with|to\s+include|event)\s+/i, '')
+    .replace(/\s+(?:to|on|onto|in)\s+(?:the\s+|my\s+)?(?:skylight(?:\s+calendar)?|family\s+calendar).*$/i, '')
+    .trim();
+
+  return {
+    action: 'create_event',
+    title: cleanedEventTitle || body
   };
 }
 
@@ -535,6 +671,19 @@ export async function handleInboundChannelBotTurn({
       incompleteCount,
       completedCount,
       totalTasks: tasks.length
+    };
+  } else if (parseSkylightVoiceCommand(text)) {
+    const skylightArgs = parseSkylightVoiceCommand(text);
+    const skylightRes = await executeTool('skylight_calendar', skylightArgs);
+    reply =
+      skylightRes?.summary ||
+      `🗓️ Updated Skylight Calendar 2 (${skylightArgs.action}): ${skylightArgs.title || 'completed'}.`;
+    tierUsed = 'L0_bot';
+    actionExecuted = {
+      type: skylightRes?.actionType || `skylight_${skylightArgs.action}`,
+      tool: 'skylight_calendar',
+      args: skylightArgs,
+      result: skylightRes
     };
   } else {
     // ── Natural-Language Turn via Krusch Cascade Router ───────────────────────
@@ -840,6 +989,9 @@ export function generateMobileShortcutManifest({
     endpoints: {
       botWebhook: `${cleanBase}/api/companion/bot/webhook`,
       botCallback: `${cleanBase}/api/companion/bot/callback`,
+      googleHomeWebhook: `${cleanBase}/api/companion/google-home`,
+      googleHomeAnnounce: `${cleanBase}/api/companion/google-home/announce`,
+      ttsStreamWav: `${cleanBase}/api/companion/tts.wav`,
       thoughtStream: `${cleanBase}/api/companion/dump`,
       visionCapture: `${cleanBase}/api/companion/vision`
     },

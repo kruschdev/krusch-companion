@@ -12,8 +12,22 @@ export function normalizeSpokenTranscript(rawText = '') {
     '$1$2'
   );
 
-  // 2. Fix phonetic mishearings of local schools / places ("Waba High School" -> "La Habra High School")
-  text = text.replace(/\b(?:waba|la\s*habra|lahabra)\s+high\s+school\b/gi, 'La Habra High School');
+  // 2. Apply optional custom phonetic replacements from STT_PHONETIC_REPLACEMENTS ("regex=>Replacement;regex2=>Replacement2")
+  const rawRules = String(process.env.STT_PHONETIC_REPLACEMENTS || '').trim();
+  if (rawRules) {
+    for (const pair of rawRules.split(';')) {
+      const idx = pair.indexOf('=>');
+      if (idx <= 0) continue;
+      const pattern = pair.slice(0, idx).trim();
+      const replacement = pair.slice(idx + 2).trim();
+      if (!pattern) continue;
+      try {
+        text = text.replace(new RegExp(pattern, 'gi'), replacement);
+      } catch {
+        // Ignore malformed user regex rule
+      }
+    }
+  }
 
   // 3. Fix spoken / period time formatting ("at 3.30" -> "at 3:30", "at three thirty" -> "at 3:30")
   text = text.replace(/\b(at|by|around|before|after)\s+(\d{1,2})\.(\d{2})\b/gi, '$1 $2:$3');

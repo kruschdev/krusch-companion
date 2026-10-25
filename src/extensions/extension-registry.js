@@ -157,6 +157,26 @@ const LAZY_SKYLIGHT_TOOL = createLazyExtensionTool({
   }
 });
 
+const LAZY_BROWSER_TOOL = createLazyExtensionTool({
+  extensionId: 'chrome-browser-navigator',
+  name: 'browser_navigate',
+  category: 'browser_navigation',
+  description:
+    'Opt-in Headless Chrome Browser Navigator & Gemini 4 Argon Visual UI Auditor: navigate dynamic SPAs, execute multi-step click/type interactions, capture full-page screenshots, or run a 375/768/1440px responsive visual audit.',
+  parameters: {
+    action: 'string (REQUIRED: "navigate" | "interact" | "screenshot" | "audit")',
+    url: 'string (REQUIRED: Target https:// URL to open in headless Chrome)',
+    steps: 'string (Optional JSON array or semicolon-separated steps, e.g. "click:#submit; type:#search=query")',
+    waitForSelector: 'string (Optional CSS selector to wait for before extracting DOM/screenshots)',
+    prompt: 'string (Optional visual audit question or extraction goal)'
+  },
+  required: ['action', 'url'],
+  loader: async () => {
+    const mod = await import('./browser-navigator-extension.js');
+    return mod.BROWSER_NAVIGATOR_EXTENSION_TOOL;
+  }
+});
+
 /**
  * Canonical V3.8 Opt-In Extension Marketplace Catalog (`INV-EXT-01`).
  */
@@ -226,6 +246,17 @@ export const EXTENSION_CATALOG = [
     envFlag: 'ENABLE_SKYLIGHT_CONNECTOR',
     defaultEnabled: false,
     tool: LAZY_SKYLIGHT_TOOL
+  },
+  {
+    extensionId: 'chrome-browser-navigator',
+    aliases: ['browser_navigate', 'browser-navigator', 'chrome-navigator', 'browser_navigation', 'argon-browser-audit'],
+    name: 'Headless Chrome Browser Navigator & Gemini 4 Argon UI Auditor',
+    toolName: 'browser_navigate',
+    category: 'browser_navigation',
+    description: LAZY_BROWSER_TOOL.description,
+    envFlag: 'ENABLE_BROWSER_EXTENSION',
+    defaultEnabled: false,
+    tool: LAZY_BROWSER_TOOL
   }
 ];
 
@@ -401,6 +432,25 @@ export async function ensureAllExtensionsLoaded() {
             ...mod.SKYLIGHT_CALENDAR_TOOL,
             extensionId: 'skylight-calendar'
           }
+        });
+      }
+    },
+    async () => {
+      const mod = await import('./browser-navigator-extension.js');
+      if (mod?.BROWSER_NAVIGATOR_EXTENSION_TOOL) {
+        registerExtensionPlugin({
+          extensionId: 'chrome-browser-navigator',
+          aliases: [
+            mod.BROWSER_NAVIGATOR_EXTENSION_TOOL.extensionId,
+            'browser_navigate',
+            'browser-navigator',
+            'chrome-navigator',
+            'browser_navigation'
+          ],
+          toolName: mod.BROWSER_NAVIGATOR_EXTENSION_TOOL.name,
+          category: mod.BROWSER_NAVIGATOR_EXTENSION_TOOL.category,
+          description: mod.BROWSER_NAVIGATOR_EXTENSION_TOOL.description,
+          tool: mod.BROWSER_NAVIGATOR_EXTENSION_TOOL
         });
       }
     }

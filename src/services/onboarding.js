@@ -52,7 +52,7 @@ export const STANDARD_ONBOARDING_QUESTIONS = [
         id: 'partnerName',
         number: 4,
         question: 'What is your spouse or partner’s name?',
-        placeholder: 'e.g., Maggie',
+        placeholder: 'e.g., Alex',
         targetTable: 'companion_contacts + companion_context (key: partner_wife)',
         type: 'text'
       },
@@ -60,7 +60,7 @@ export const STANDARD_ONBOARDING_QUESTIONS = [
         id: 'partnerWorkplace',
         number: 5,
         question: 'Where does your partner work or go regularly (name & address)?',
-        placeholder: 'e.g., La Habra High School, 801 West Highlander Avenue, La Habra, CA 90631',
+        placeholder: 'e.g., Springfield High School, 100 Maple Avenue, Springfield, OR 97477',
         targetTable: 'companion_contacts + companion_context (key: partner_wife)',
         type: 'text'
       },
@@ -68,7 +68,7 @@ export const STANDARD_ONBOARDING_QUESTIONS = [
         id: 'partnerPickupTime',
         number: 6,
         question: 'Is there a regular pickup, drop-off, or check-in time for your partner?',
-        placeholder: 'e.g., Pick up Maggie at 3:30 PM on weekdays',
+        placeholder: 'e.g., Pick up Alex at 3:30 PM on weekdays',
         targetTable: 'companion_context (key: partner_wife)',
         type: 'text'
       },
@@ -84,7 +84,7 @@ export const STANDARD_ONBOARDING_QUESTIONS = [
         id: 'importantDates',
         number: 8,
         question: 'What are the key birthdays, anniversaries, or family dates to remember?',
-        placeholder: 'e.g., Anniversary, Maggie’s birthday',
+        placeholder: 'e.g., Anniversary, Alex’s birthday',
         targetTable: 'companion_contacts + companion_context (key: important_dates)',
         type: 'text'
       }
@@ -100,7 +100,7 @@ export const STANDARD_ONBOARDING_QUESTIONS = [
         id: 'homeAddress',
         number: 9,
         question: 'What is your Home Address? (Used as your default starting location for directions)',
-        placeholder: 'e.g., 1161 North Citrus Drive, La Habra, CA 90631',
+        placeholder: 'e.g., 742 Evergreen Terrace, Springfield, OR 97477',
         targetTable: 'companion_context (key: home_location)',
         type: 'text'
       },
@@ -108,7 +108,7 @@ export const STANDARD_ONBOARDING_QUESTIONS = [
         id: 'workAddress',
         number: 10,
         question: 'What is your Work / Office Address (or Home Office)?',
-        placeholder: 'e.g., Home Office / Krusch Homelab — 1161 North Citrus Drive, La Habra, CA 90631',
+        placeholder: 'e.g., Home Office — 742 Evergreen Terrace, Springfield, OR 97477',
         targetTable: 'companion_context (key: work_location)',
         type: 'text'
       },
@@ -116,7 +116,7 @@ export const STANDARD_ONBOARDING_QUESTIONS = [
         id: 'frequentPlaces',
         number: 11,
         question: 'What are your frequent destinations (schools, stores, church, gym)? (One per line)',
-        placeholder: 'e.g., La Habra High School — 801 West Highlander Avenue, La Habra, CA 90631\nHome Depot La Habra',
+        placeholder: 'e.g., Springfield High School — 100 Maple Avenue, Springfield, OR 97477\nLocal Hardware Store',
         targetTable: 'companion_context (key: saved_places)',
         type: 'textarea'
       },
@@ -140,7 +140,7 @@ export const STANDARD_ONBOARDING_QUESTIONS = [
         id: 'workRole',
         number: 13,
         question: 'What is your job, role, or main focus right now?',
-        placeholder: 'e.g., Systems Architect & AI Engineer managing the Krusch Homelab fleet and Sovereign AI apps',
+        placeholder: 'e.g., Systems Architect & AI Engineer managing Sovereign AI applications',
         targetTable: 'companion_context (key: work_profile)',
         type: 'textarea'
       },
@@ -148,7 +148,7 @@ export const STANDARD_ONBOARDING_QUESTIONS = [
         id: 'dailyRhythm',
         number: 14,
         question: 'What are your typical work hours and protected family time windows?',
-        placeholder: 'e.g., Deep work 8:30 AM – 3:00 PM; 3:15 PM – 4:00 PM Maggie pickup run; evenings reserved for family',
+        placeholder: 'e.g., Deep work 8:30 AM – 3:00 PM; 3:15 PM – 4:00 PM school pickup run; evenings reserved for family',
         targetTable: 'companion_context (key: daily_rhythm)',
         type: 'textarea'
       }
@@ -164,7 +164,7 @@ export const STANDARD_ONBOARDING_QUESTIONS = [
         id: 'dailyHabits',
         number: 15,
         question: 'What recurring daily habits should appear on Today’s Board every morning? (One per line)',
-        placeholder: 'Morning gratitude & prayer\nCheck in with Maggie\nHydrate & morning movement\nReview top priority for today',
+        placeholder: 'Morning gratitude & prayer\nCheck in with partner\nHydrate & morning movement\nReview top priority for today',
         targetTable: 'tasks (recurring = 1, execution_priority = 3)',
         type: 'textarea'
       },
@@ -172,7 +172,7 @@ export const STANDARD_ONBOARDING_QUESTIONS = [
         id: 'customVocabulary',
         number: 16,
         question: 'What names, street names, or words should Voice Dictation (Whisper STT) always recognize?',
-        placeholder: 'Kevin, Maggie, La Habra High School, 1161 North Citrus Drive, West Whittier Boulevard, West Highlander Avenue, Krusch',
+        placeholder: 'Alex, Evergreen Terrace, Maple Avenue, Krusch Companion, Today\'s Board, checklist, priority',
         targetTable: 'data/whisper-prompt.txt + companion_context (key: whisper_vocabulary)',
         type: 'textarea'
       }
@@ -181,22 +181,22 @@ export const STANDARD_ONBOARDING_QUESTIONS = [
 ];
 
 export const DEFAULT_ONBOARDING_PROFILE = {
-  fullName: 'Kevin Rusch (Kevin)',
+  fullName: 'Krusch User',
   commStyle: 'Direct, concise, warm, action-oriented — turn spoken intentions into clear tasks and checklists without lecturing.',
   overwhelmProtocol: 'Pick the single highest-priority task, break it into 3 small actionable steps, and keep the board uncluttered.',
-  partnerName: 'Maggie',
-  partnerWorkplace: 'La Habra High School, 801 West Highlander Avenue, La Habra, CA 90631',
-  partnerPickupTime: '3:30 PM pickup from La Habra High School',
+  partnerName: '',
+  partnerWorkplace: '',
+  partnerPickupTime: '',
   householdMembers: '',
   importantDates: '',
-  homeAddress: '1161 North Citrus Drive, La Habra, CA 90631',
-  workAddress: 'Home Office / Krusch Homelab — 1161 North Citrus Drive, La Habra, CA 90631',
-  frequentPlaces: 'La Habra High School — 801 West Highlander Avenue, La Habra, CA 90631\nHome Depot La Habra',
+  homeAddress: '',
+  workAddress: '',
+  frequentPlaces: '',
   commuteBufferMinutes: '10',
-  workRole: 'Systems Architect & AI Engineer building the Krusch Homelab fleet and Sovereign AI applications',
-  dailyRhythm: 'Morning & early afternoon deep work; 3:15 PM departure to pick up Maggie at 3:30 PM; evenings with family',
-  dailyHabits: 'Morning gratitude & prayer\nCheck in with Maggie\nHydrate & morning movement\nReview top priority for today',
-  customVocabulary: 'Kevin, Maggie, my wife Maggie, La Habra High School, 1161 North Citrus Drive, La Habra, West Whittier Boulevard, West Highlander Avenue, Krusch Companion, Today\'s Board, checklist, priority, Home Depot, dishes'
+  workRole: 'Systems Architect & AI Engineer building Sovereign AI applications',
+  dailyRhythm: 'Morning & early afternoon deep work; late afternoon family logistics; evenings with family',
+  dailyHabits: 'Morning gratitude & prayer\nCheck in with family\nHydrate & morning movement\nReview top priority for today',
+  customVocabulary: 'Krusch Companion, Today\'s Board, checklist, priority, commute, groceries, dishes'
 };
 
 export function getOnboardingState() {

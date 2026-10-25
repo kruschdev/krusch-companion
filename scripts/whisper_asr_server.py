@@ -74,7 +74,7 @@ def decode_audio_to_float32(audio_bytes: bytes) -> np.ndarray:
 
 INITIAL_PROMPT = os.environ.get(
     "WHISPER_INITIAL_PROMPT",
-    "Kevin, Maggie, my wife Maggie, La Habra High School, 1161 North Citrus Drive, La Habra, West Whittier Boulevard, West Highlander Avenue, Krusch Companion, Today's Board, checklist, priority, Home Depot, dishes.",
+    "Krusch Companion, Today's Board, checklist, priority, commute, groceries, errands, calendar.",
 )
 DYNAMIC_PROMPT_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -95,7 +95,6 @@ def get_initial_prompt() -> str:
     return INITIAL_PROMPT
 
 
-
 def normalize_transcript(raw_text: str) -> str:
     text = (raw_text or "").strip()
     if not text:
@@ -108,8 +107,20 @@ def normalize_transcript(raw_text: str) -> str:
         r"\1\2",
         text,
     )
-    # Fix phonetic mishearings of La Habra High School ("Waba High School", "La Habra high school")
-    text = re.sub(r"\b(?:waba|la\s*habra|lahabra)\s+high\s+school\b", "La Habra High School", text, flags=re.IGNORECASE)
+    # Apply optional custom phonetic replacements from STT_PHONETIC_REPLACEMENTS ("pattern=>Replacement;...")
+    raw_rules = os.environ.get("STT_PHONETIC_REPLACEMENTS", "").strip()
+    if raw_rules:
+        for pair in raw_rules.split(";"):
+            if "=>" not in pair:
+                continue
+            pattern, replacement = pair.split("=>", 1)
+            pattern = pattern.strip()
+            if not pattern:
+                continue
+            try:
+                text = re.sub(pattern, replacement.strip(), text, flags=re.IGNORECASE)
+            except re.error:
+                pass
     # Fix time with period ("at 3.30" -> "at 3:30")
     text = re.sub(r"\b(at|by|around|before|after)\s+(\d{1,2})\.(\d{2})\b", r"\1 \2:\3", text, flags=re.IGNORECASE)
     return text

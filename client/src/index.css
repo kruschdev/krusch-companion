@@ -122,6 +122,13 @@ h1, h2, h3, h4, .font-display {
   box-shadow: var(--glow-purple);
 }
 
+.tier-l25 {
+  background: rgba(244, 63, 94, 0.16);
+  border: 1px solid rgba(244, 63, 94, 0.45);
+  color: #fb7185;
+  box-shadow: 0 0 12px rgba(244, 63, 94, 0.25);
+}
+
 .tier-l3 {
   background: rgba(255, 183, 0, 0.15);
   border: 1px solid rgba(255, 183, 0, 0.4);

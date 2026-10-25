@@ -31,6 +31,7 @@ export const TIERS = {
   L0_HEURISTIC: 'L0_heuristic',
   L1_EDGE: 'L1_edge',
   L2_SWARM: 'L2_swarm',
+  L2_5_COLAB_BURST: 'L2_5_colab_burst',
   L3_CLOUD: 'L3_cloud'
 };
 
@@ -56,11 +57,24 @@ export function inferPriorityTierFromText(rawTitle) {
 
   if (!tier) {
     const lower = cleanTitle.toLowerCase();
+    const parseAliases = (envKey, defaults) => {
+      const extra = String(process.env[envKey] || '')
+        .split(',')
+        .map(s => s.trim().toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+        .filter(Boolean);
+      return new RegExp(`\\b(${[...defaults, ...extra].join('|')})\\b`);
+    };
+    const partnerRe = parseAliases('FAMILY_PARTNER_ALIASES', [
+      'wife', 'husband', 'partner', 'spouse', 'marriage', 'anniversary', 'date night'
+    ]);
+    const householdRe = parseAliases('FAMILY_HOUSEHOLD_ALIASES', [
+      'daughter', 'son', 'kid', 'kids', 'children', 'school', 'teacher', 'parent', 'mom', 'dad', 'family', 'brother', 'sister', 'dogs?', 'cats?', 'pets?', 'vet'
+    ]);
     if (/\b(pray|prayer|gratitude|meditat|faith|church|scripture|devotional|worship)\b/.test(lower)) {
       tier = 1;
-    } else if (/\b(wife|husband|partner|spouse|marriage|anniversary|date night)\b/.test(lower)) {
+    } else if (partnerRe.test(lower)) {
       tier = 2;
-    } else if (/\b(daughter|son|kid|kids|children|school|teacher|parent|mom|dad|family)\b/.test(lower)) {
+    } else if (householdRe.test(lower)) {
       tier = 3;
     } else if (/\b(water|hydrat|vitamin|medication|prescription|doctor|dentist|workout|gym|walk|run|stretch|sleep|exercise)\b/.test(lower)) {
       tier = 4;
@@ -244,8 +258,8 @@ export function evaluateL0Heuristic(rawText) {
         reason: 'L0 Heuristic: memory superseding with lineage',
         actionExecuted: { type: 'memory_superseded', ...res }
       };
-    } catch {
-      // Fall through if targetId not found
+    } catch (err) {
+      console.error('Cascade client error:', err);
     }
   }
 
@@ -270,8 +284,8 @@ export function evaluateL0Heuristic(rawText) {
           actionExecuted: { type: 'memory_superseded', ...res }
         };
       }
-    } catch {
-      // Fall through
+    } catch (err) {
+      console.error('Cascade client error:', err);
     }
   }
 
@@ -297,8 +311,8 @@ export function evaluateL0Heuristic(rawText) {
         reason: 'L0 Heuristic: direct working memory persistence',
         actionExecuted: { type: 'memory_saved', memory: saved }
       };
-    } catch {
-      // Fall through to LLM if error
+    } catch (err) {
+      console.error('Cascade client error:', err);
     }
   }
 
@@ -309,6 +323,26 @@ export function evaluateL0Heuristic(rawText) {
     try {
       const existing = findTaskByQuery(spokenBoard.title, today(), { onlyIncomplete: true }) || findTaskByQuery(spokenBoard.title, today());
       const itemLines = normalizeChecklistItems(spokenBoard.items);
+      const cleanItemLabels = itemLines.map(line => line.replace(/^- \[[ xX]\]\s*/, '').trim()).filter(Boolean);
+
+      // Fire-and-forget Skylight Grocery List sync when opted-in and credentials are set
+      if (
+        /\b(grocery|groceries|shopping|costco|target|trader\s+joe)\b/i.test(spokenBoard.title) &&
+        (process.env.ALLOW_SKYLIGHT === '1' || process.env.ALLOW_CLOUD === '1') &&
+        (process.env.SKYLIGHT_TOKEN || (process.env.SKYLIGHT_EMAIL && process.env.SKYLIGHT_PASSWORD))
+      ) {
+        import('../../../krusch-companion-skylight-connector/src/index.js')
+          .then(({ createSkylightConnector }) => {
+            const connector = createSkylightConnector({ companionDbPath: config.db.path });
+            return connector.companion
+              .pushListItems({ listId: 'grocery', items: cleanItemLabels })
+              .finally(() => connector.close());
+          })
+          .catch((err) => {
+            console.error('Cascade client error:', err);
+          });
+      }
+
       if (existing) {
         const updated = addListToTask(existing.id, { items: spokenBoard.items, append: true });
         return {
@@ -337,8 +371,9 @@ export function evaluateL0Heuristic(rawText) {
           actionExecuted: { type: 'task_created', task: created, itemsAdded: itemLines }
         };
       }
-    } catch {
-      // Fall through
+    } catch (err) {
+      console.error('Cascade client error:', err);
+      throw err;
     }
   }
 
@@ -355,7 +390,7 @@ export function evaluateL0Heuristic(rawText) {
         : addGeneralMatch[1].trim();
     if (rawTitle.length > 0) {
       try {
-        // Check if this is a spoken correction ("uh no uh not a magnet maggie my wife i need to...")
+        // Check if this is a spoken correction ("uh no uh not a magnet Alex my partner i need to...")
         const correctionWrongMatch = text.match(/^(?:(?:uh+|um+|oh+|ah+|well|no|nope|nah|wait|actually|sorry)\b[,.\s]*)*not\s+(?:a\s+|an\s+|the\s+)?([a-z0-9\s]{2,20}?)(?=[,.\s]+(?:[A-Z]|[a-z]+\s+my\s+(?:wife|husband|partner)|i\s+need\b|i\s+meant\b))/i);
         let replacedTask = null;
         if (correctionWrongMatch) {
@@ -367,7 +402,7 @@ export function evaluateL0Heuristic(rawText) {
           }
         }
 
-        // Persist inline family/partner fact if mentioned ("Maggie my wife")
+        // Persist inline family/partner fact if mentioned ("Alex my partner")
         const partnerFact = text.match(/\b([A-Z][a-z]+)\s+(?:is\s+)?my\s+(wife|husband|partner)\b/i);
         if (partnerFact) {
           try {
@@ -376,8 +411,8 @@ export function evaluateL0Heuristic(rawText) {
               key: `partner_${partnerFact[2].toLowerCase()}`,
               content: `User's ${partnerFact[2].toLowerCase()} is ${partnerFact[1]}.`
             });
-          } catch {
-            // Non-fatal
+          } catch (err) {
+            console.error('Cascade client error:', err);
           }
         }
 
@@ -413,8 +448,8 @@ export function evaluateL0Heuristic(rawText) {
           reason: 'L0 Heuristic: deterministic dual-axis task creation',
           actionExecuted: { type: 'task_created', task: created, replacedTask }
         };
-      } catch {
-        // Fall through
+      } catch (err) {
+        console.error('Cascade client error:', err);
       }
     }
   }
@@ -437,8 +472,8 @@ export function evaluateL0Heuristic(rawText) {
           actionExecuted: { type: 'task_prioritized', task: updated }
         };
       }
-    } catch {
-      // Fall through
+    } catch (err) {
+      console.error('Cascade client error:', err);
     }
   }
 
@@ -483,8 +518,8 @@ export function evaluateL0Heuristic(rawText) {
           actionExecuted: { type: 'task_completed', task: updated, gamify }
         };
       }
-    } catch {
-      // Fall through
+    } catch (err) {
+      console.error('Cascade client error:', err);
     }
   }
 
@@ -504,8 +539,8 @@ export function evaluateL0Heuristic(rawText) {
           actionExecuted: { type: 'task_deleted', task: target }
         };
       }
-    } catch {
-      // Fall through
+    } catch (err) {
+      console.error('Cascade client error:', err);
     }
   }
 
@@ -530,8 +565,8 @@ export function evaluateL0Heuristic(rawText) {
         reason: 'L0 Heuristic: unfinished task rollover',
         actionExecuted: { type: 'tasks_rolled_over', ...res }
       };
-    } catch {
-      // Fall through
+    } catch (err) {
+      console.error('Cascade client error:', err);
     }
   }
 
@@ -573,8 +608,8 @@ export function evaluateL0Heuristic(rawText) {
         reason: 'L0 Heuristic: direct SQLite board query',
         actionExecuted: { type: 'tasks_listed', pendingCount: pending.length, completedCount: completed.length }
       };
-    } catch {
-      // Fall through
+    } catch (err) {
+      console.error('Cascade client error:', err);
     }
   }
 
@@ -625,19 +660,33 @@ export function classifyCompanionPrompt(prompt) {
     String(prompt || '').trim()
   );
 
+  // Explicit Colab G4 Burst trigger: e.g. "[colab] ...", "/colab ...", "[g4] ...", "/g4 ...", "use colab ..."
+  const explicitColabBurst = /^(?:\[colab\]|\/colab\b|\[g4\]|\/g4\b|\[burst\]|\/burst\b|escalate\s+to\s+colab\b|use\s+colab\b|use\s+g4\b)/i.test(
+    String(prompt || '').trim()
+  );
+
+  // Explicit Google AI Ultra Gemini trigger: e.g. "[gemini] ...", "/gemini ...", "use gemini ..."
+  const explicitGemini = /^(?:\[gemini\]|\/gemini\b|escalate\s+to\s+gemini\b|use\s+gemini\b)/i.test(
+    String(prompt || '').trim()
+  );
+
   let tier = TIERS.L1_EDGE;
 
-  if (explicitFrontier && config.cascade.allowCloudEscalation && config.cascade.openrouterApiKey) {
+  if (explicitColabBurst && config.cascade.colabBurstEnabled !== false) {
+    tier = TIERS.L2_5_COLAB_BURST;
+  } else if (explicitGemini && config.cascade.geminiApiKey) {
+    tier = TIERS.L3_CLOUD;
+  } else if (explicitFrontier && config.cascade.allowCloudEscalation && (config.cascade.openrouterApiKey || config.cascade.geminiApiKey)) {
     tier = TIERS.L3_CLOUD;
   } else if (activeResourceMode === 'minimal') {
     // Minimal CPU/Edge mode: strictly keep all inference on L0 or L1 Edge
     tier = TIERS.L1_EDGE;
   } else if (activeResourceMode === 'quality') {
-    // Quality mode: escalate deep reasoning to L3 Frontier Cloud (if OpenRouter key & cloud escalation enabled), otherwise L2 Swarm
+    // Quality mode: escalate deep reasoning to L3 Frontier Cloud (if OpenRouter/Gemini key & cloud escalation enabled), otherwise L2 Swarm
     if (
       (preRoute.complexityScore >= 0.35 || preRoute.role === 'reasoning_deep') &&
       config.cascade.allowCloudEscalation &&
-      Boolean(config.cascade.openrouterApiKey)
+      Boolean(config.cascade.openrouterApiKey || config.cascade.geminiApiKey)
     ) {
       tier = TIERS.L3_CLOUD;
     } else if (
@@ -662,6 +711,8 @@ export function classifyCompanionPrompt(prompt) {
   return {
     tier,
     explicitFrontier,
+    explicitColabBurst,
+    explicitGemini,
     isFastPath: preRoute.isFastPath,
     role: preRoute.role,
     confidence: preRoute.confidence,
@@ -708,7 +759,12 @@ async function callOllama({ prompt, history = [], systemPrompt = '', model = nul
     clearTimeout(timer);
 
     if (!res.ok) {
-      throw new Error(`Ollama error ${res.status}: ${await res.text()}`);
+      await res.text().catch(() => '');
+      console.warn('[CascadeRouter] Ollama request failed', {
+        status: res.status,
+        model: targetModel
+      });
+      throw new Error(`Ollama error ${res.status}`);
     }
 
     const data = await res.json();
@@ -840,6 +896,129 @@ export async function callOpenRouter({ prompt, history = [], systemPrompt = '', 
 }
 
 /**
+ * Call the Colab G4 Burst Tier (gpt-oss:120b on 96GB RTX PRO 6000 Blackwell via SSH tunnel 127.0.0.1:11435).
+ */
+export async function callColabBurst({ prompt, history = [], systemPrompt = '', model = null, timeoutMs = 45000 }) {
+  const baseUrl = (config.cascade.colabBurstUrl || 'http://127.0.0.1:11435/v1').replace(/\/+$/, '');
+  const targetModel = model || config.cascade.colabBurstModel || 'gpt-oss:120b';
+
+  const messages = [];
+  if (systemPrompt) {
+    messages.push({ role: 'system', content: systemPrompt });
+  }
+  for (const h of history) {
+    messages.push({ role: h.role, content: h.content });
+  }
+  messages.push({ role: 'user', content: prompt });
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: targetModel,
+        messages,
+        temperature: 0.6
+      })
+    });
+
+    clearTimeout(timer);
+
+    if (!res.ok) {
+      throw new Error(`Colab Burst error ${res.status}: ${await res.text()}`);
+    }
+
+    const data = await res.json();
+    const content = data?.choices?.[0]?.message?.content;
+    if (!content) {
+      throw new Error('Colab Burst returned empty response');
+    }
+    return content;
+  } catch (err) {
+    clearTimeout(timer);
+    if (err.name === 'AbortError') {
+      throw new Error(`Colab Burst call timed out after ${timeoutMs}ms on model ${targetModel}`);
+    }
+    throw err;
+  }
+}
+
+/**
+ * Call Google Gemini API using the $100/mo Google AI Ultra / Developer Program GCP credit.
+ */
+export async function callGeminiCloud({ prompt, history = [], systemPrompt = '', model = null, timeoutMs = 25000 }) {
+  const apiKey = config.cascade.geminiApiKey;
+  if (!apiKey) {
+    throw new Error('Gemini API key is not configured. Set GEMINI_API_KEY in .env.');
+  }
+
+  const targetModel = model || config.cascade.geminiModel || 'gemini-2.5-flash';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${apiKey}`;
+
+  const contents = [];
+  for (const h of history) {
+    if (!h?.content) continue;
+    contents.push({
+      role: h.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: String(h.content) }]
+    });
+  }
+  contents.push({
+    role: 'user',
+    parts: [{ text: String(prompt) }]
+  });
+
+  const payload = {
+    contents,
+    generationConfig: {
+      temperature: 0.7
+    }
+  };
+
+  if (systemPrompt) {
+    payload.systemInstruction = {
+      parts: [{ text: String(systemPrompt) }]
+    };
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify(payload)
+    });
+
+    clearTimeout(timer);
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Gemini error ${res.status}: ${errText}`);
+    }
+
+    const data = await res.json();
+    const content = data?.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '';
+    if (!content) {
+      throw new Error('Gemini returned empty response');
+    }
+    return content;
+  } catch (err) {
+    clearTimeout(timer);
+    if (err.name === 'AbortError') {
+      throw new Error(`Gemini call timed out after ${timeoutMs}ms on model ${targetModel}`);
+    }
+    throw err;
+  }
+}
+
+/**
  * Break down a task (by ID, existing title query, or raw complex task description)
  * into 3 concrete, low-friction subtasks on Today's Priority Board.
  */
@@ -866,14 +1045,14 @@ Respond with valid JSON ONLY in this format:
 
   const userPrompt = `Break down this task into 3 concrete steps: "${parentTitle}"`;
   const startTime = Date.now();
-  const llmRes = await dispatchCompanionChat({
-    prompt: userPrompt,
-    systemPrompt
-  });
-
+  let llmRes = null;
   let rawSubtasks = [];
   let encouragement = `I've broken **"${parentTitle}"** down into 3 bite-sized steps on Today's Priority Board:`;
   try {
+    llmRes = await dispatchCompanionChat({
+      prompt: userPrompt,
+      systemPrompt
+    });
     const parsed = parseAIJson(llmRes.content, { allowPartial: true });
     if (Array.isArray(parsed?.subtasks) && parsed.subtasks.length > 0) {
       rawSubtasks = parsed.subtasks;
@@ -881,8 +1060,8 @@ Respond with valid JSON ONLY in this format:
     if (parsed?.encouragement) {
       encouragement = parsed.encouragement;
     }
-  } catch {
-    // Fallback below
+  } catch (err) {
+    console.error('Cascade client error:', err);
   }
 
   if (rawSubtasks.length === 0) {
@@ -913,7 +1092,7 @@ Respond with valid JSON ONLY in this format:
     content,
     parentTask: matchedTask || { title: parentTitle, tier: inferred.tier },
     subtasks: createdSubtasks,
-    tierUsed: llmRes.tierUsed,
+    tierUsed: llmRes?.tierUsed || TIERS.L1_EDGE,
     latencyMs: Date.now() - startTime,
     reason: `Task Breakdown (${createdSubtasks.length} subtasks created)`,
     actionExecuted: {
@@ -935,10 +1114,27 @@ export function stripHallucinatedBoardDump(rawContent = '') {
     .trim();
 }
 
+export function createL1FallbackSentinel(startTime = Date.now(), error = null) {
+  return {
+    content: null,
+    tierUsed: TIERS.L1_EDGE,
+    latencyMs: Math.max(0, Date.now() - startTime),
+    reason: 'L1 fallback failed',
+    error: error?.message || null
+  };
+}
+
 /**
  * Dispatch conversational turn through the cascade router hierarchy.
  */
-export async function dispatchCompanionChat({ prompt, history = [], contextBriefing = '', systemPrompt = null }) {
+export async function dispatchCompanionChat({
+  prompt,
+  history = [],
+  contextBriefing = '',
+  systemPrompt = null,
+  disableTools = false,
+  returnOnL1FallbackError = false
+}) {
   const startTime = Date.now();
 
   // 1. Sanitize incoming prompt for security & injection containment (arXiv: 2608.10218)
@@ -954,12 +1150,18 @@ export async function dispatchCompanionChat({ prompt, history = [], contextBrief
       }))
     : [];
 
-  // 2. Check L0 heuristic (only when not invoked with a custom systemPrompt like coach/dump/breakdown)
+  // 2. Check L0 heuristic & Agentic Proxy tools (strictly skipped when disableTools=true or when invoked with a custom systemPrompt)
   const isExplicitFrontier = /^(?:\[frontier\]|\/frontier\b|\[glm\]|\/glm\b|escalate\s+to\s+frontier\b|use\s+frontier\b|use\s+glm\b)/i.test(
     String(cleanPrompt || '').trim()
   );
+  const isExplicitColabBurst = /^(?:\[colab\]|\/colab\b|\[g4\]|\/g4\b|\[burst\]|\/burst\b|escalate\s+to\s+colab\b|use\s+colab\b|use\s+g4\b)/i.test(
+    String(cleanPrompt || '').trim()
+  );
+  const isExplicitGemini = /^(?:\[gemini\]|\/gemini\b|escalate\s+to\s+gemini\b|use\s+gemini\b)/i.test(
+    String(cleanPrompt || '').trim()
+  );
 
-  if (!systemPrompt && !isExplicitFrontier) {
+  if (!disableTools && !systemPrompt && !isExplicitFrontier && !isExplicitColabBurst && !isExplicitGemini) {
     const l0 = evaluateL0Heuristic(cleanPrompt);
     if (l0 && l0.handled) {
       return {
@@ -1021,17 +1223,97 @@ export async function dispatchCompanionChat({ prompt, history = [], contextBrief
   // 3. Classify tier
   const classification = classifyCompanionPrompt(cleanPrompt);
 
-  const baseSystemPrompt = systemPrompt || `You are Krusch Companion, a sovereign, empathetic, and action-taking personal AI assistant and daily companion.
-You speak clearly, warmly, and constructively. You help the user manage their daily focus, priorities, goals, tasks, and checklists.
-CRITICAL CAPABILITY INVARIANT: You DO have direct, live execution access to modify Krusch Companion's Today's Priority Board (adding tasks, attaching a list/checklist of items to any task, completing tasks, breaking down tasks into steps), Sovereign Working Memory, local Markdown Notes Vault, and G-Krusch Google Workspace Extensions (Google Drive & Docs, Google Calendar, and Gmail) via the Krusch Agentic Proxy (<holodata> Dual-Engine).
-NEVER claim or apologize that you lack access to modify task lists, checklists, Krusch Companion's UI, or Google Drive.
-STRICT ANTI-HALLUCINATION RULE: Never output a fake "### Updated Today's Live Priority Board" markdown dump and never invent fake [#ID] task numbers that are not in Today's Live Priority Board. Keep conversational answers concise and grounded.`;
+  const ownerName = process.env.COMPANION_OWNER_NAME || config.app.ownerName;
+  const personaMode = process.env.COMPANION_PERSONA_MODE || config.app.personaMode;
+
+  let defaultPersonaPrompt;
+  if (personaMode === 'simple_concierge') {
+    defaultPersonaPrompt = `You are ${config.app.name || "Jim's Companion"}, a warm, patient, plain-spoken personal assistant for ${ownerName}.
+PERSONA & EXECUTION RULES (SOUL.md):
+1. ZERO TECHNICAL JARGON: Never mention AI models, tiers (L0/L1/L2), databases, markdown, tokens, or computer jargon. Speak in warm, friendly, everyday English.
+2. CLEAR & UNHAMPERED DEPTH: Keep simple task confirmations clear and easy to read, but never artificially limit your length—when ${ownerName} asks a question, wants an explanation, directions, or a detailed breakdown, give a complete, thorough, well-explained answer for as many sentences or paragraphs as needed.
+3. AUTOMATIC HELPER: Whenever ${ownerName} mentions an appointment, medication, chore, errand, or reminder, add it to Today's Board immediately without requiring special commands, and confirm clearly.
+4. CAPABILITY INVARIANT: You have direct access to ${ownerName}'s Today's Board, Checklists, Notes, Weather, and Driving Directions. Never output a fake "### Updated Today's Live Priority Board" markdown dump.`;
+  } else if (personaMode === 'warm_family') {
+    defaultPersonaPrompt = `You are ${config.app.name || "Robin's Companion"}, a warm, organized, and action-taking personal assistant for ${ownerName}.
+PERSONA & EXECUTION RULES (SOUL.md):
+1. WARM & ORGANIZED: Be friendly, clear, and helpful with zero technical jargon. Turn spoken thoughts, shopping lists, family plans, and reminders into clean tasks and checklists.
+2. EXECUTION-FIRST: Update Today's Priority Board, attach checklists, and save notes immediately when asked, then reply with a short confirmation (1–2 sentences) and a helpful next step.
+3. CAPABILITY INVARIANT: You have direct access to ${ownerName}'s Today's Priority Board, Checklists, Notes Vault, Personal CRM, Weather, and Driving Directions. Never output a fake "### Updated Today's Live Priority Board" markdown dump.`;
+  } else {
+    defaultPersonaPrompt = `You are Krusch Companion, ${ownerName}'s Sharp Executive Chief-of-Staff and 100% private, action-taking personal AI assistant.
+PERSONA & EXECUTION RULES (SOUL.md):
+1. SHARP EXECUTIVE CHIEF-OF-STAFF: Be direct, warm, and zero-fluff. Anticipate next steps and turn spoken or rambling input into clean, structured action.
+2. STRICTLY EXECUTION-FIRST: Execute commands, update Today's Priority Board, and attach checklists/notes immediately. Skip unsolicited life coaching, pep talks, or lecturing unless the user explicitly asks for coaching or reflection.
+3. BALANCED RESPONSE STYLE: Give a short, warm conversational confirmation (1–2 sentences) plus a single clear next-action prompt.
+4. CAPABILITY INVARIANT: You DO have direct, live execution access to modify Krusch Companion's Today's Priority Board (adding tasks, attaching a list/checklist of items to any task, completing tasks, breaking down tasks into steps), Sovereign Working Memory, local Markdown Notes Vault, and G-Krusch Google Workspace Extensions (Google Drive & Docs, Google Calendar, and Gmail) via the Krusch Agentic Proxy (<holodata> Dual-Engine). NEVER claim or apologize that you lack access to modify task lists, checklists, Krusch Companion's UI, or Google Drive.
+5. STRICT ANTI-HALLUCINATION RULE: Never output a fake "### Updated Today's Live Priority Board" markdown dump and never invent fake [#ID] task numbers that are not in Today's Live Priority Board.`;
+  }
+
+  const baseSystemPrompt = systemPrompt || defaultPersonaPrompt;
 
   const fullSystemPrompt = contextBriefing
     ? `${baseSystemPrompt}\n\n${contextBriefing}`
     : baseSystemPrompt;
 
-  // Mode: Direct OpenRouter Provider OR L3 Frontier Cloud Escalation
+  // 3b. Intermediate Escalation Tier: L2.5 Colab G4 Burst (gpt-oss:120b on 96GB Blackwell via 127.0.0.1:11435)
+  // Attempted before paid L3 OpenRouter cloud when explicitly requested OR when escalating to L3_CLOUD (unless explicitFrontier/explicitGemini or provider === 'openrouter')
+  if (
+    config.cascade.provider !== 'openrouter' &&
+    config.cascade.colabBurstEnabled !== false &&
+    (classification.tier === TIERS.L2_5_COLAB_BURST ||
+      (classification.tier === TIERS.L3_CLOUD && !classification.explicitFrontier && !classification.explicitGemini))
+  ) {
+    try {
+      const burstContent = await callColabBurst({
+        prompt: cleanPrompt.replace(/^(?:\[colab\]|\/colab|\[g4\]|\/g4|\[burst\]|\/burst|use\s+colab:?|use\s+g4:?|escalate\s+to\s+colab:?)\s*/i, ''),
+        history: cleanHistory,
+        systemPrompt: fullSystemPrompt
+      });
+      return {
+        content: systemPrompt ? burstContent : stripHallucinatedBoardDump(burstContent),
+        tierUsed: TIERS.L2_5_COLAB_BURST,
+        latencyMs: Date.now() - startTime,
+        reason: `L2.5 Colab G4 Burst (${config.cascade.colabBurstModel || 'gpt-oss:120b'} @ ${config.cascade.colabBurstUrl})`
+      };
+    } catch (burstErr) {
+      console.warn(`⚡ L2.5 Colab G4 Burst unavailable (${burstErr.message}); cascading to next tier`);
+    }
+  }
+
+  // 3c. Google AI Ultra $100/mo GCP Credit Tier (Gemini API) — PRIMARY L3 Cloud target before paid OpenRouter
+  const isExplicitOpenRouterOnly = /^(?:\[openrouter\]|\/openrouter\b|\[glm\]|\/glm\b|use\s+glm\b|use\s+openrouter\b)/i.test(
+    String(cleanPrompt || '').trim()
+  );
+  if (
+    config.cascade.provider !== 'openrouter' &&
+    config.cascade.geminiApiKey &&
+    !isExplicitOpenRouterOnly &&
+    (classification.explicitGemini ||
+      (classification.tier === TIERS.L3_CLOUD && config.cascade.allowCloudEscalation))
+  ) {
+    const geminiModel = classification.explicitFrontier
+      ? (process.env.GEMINI_FRONTIER_MODEL || 'gemini-2.5-pro')
+      : (config.cascade.geminiModel || 'gemini-2.5-flash');
+    try {
+      const geminiContent = await callGeminiCloud({
+        prompt: cleanPrompt.replace(/^(?:\[gemini\]|\/gemini|\[frontier\]|\/frontier|use\s+gemini:?|use\s+frontier:?|escalate\s+to\s+gemini:?|escalate\s+to\s+frontier:?)\s*/i, ''),
+        history: cleanHistory,
+        systemPrompt: fullSystemPrompt,
+        model: geminiModel
+      });
+      return {
+        content: systemPrompt ? geminiContent : stripHallucinatedBoardDump(geminiContent),
+        tierUsed: TIERS.L3_CLOUD,
+        latencyMs: Date.now() - startTime,
+        reason: `L3 Google AI Ultra Credit (${geminiModel})`
+      };
+    } catch (geminiErr) {
+      console.warn(`⚡ L3 Google AI Ultra Gemini unavailable (${geminiErr.message}); cascading to OpenRouter fallback`);
+    }
+  }
+
+  // Mode: Direct OpenRouter Provider OR Secondary L3 Cloud Fallback (only if Gemini is unconfigured/failed or [glm]/[openrouter] requested)
   if (
     config.cascade.provider === 'openrouter' ||
     (classification.tier === TIERS.L3_CLOUD && config.cascade.allowCloudEscalation && config.cascade.openrouterApiKey)
@@ -1044,7 +1326,7 @@ STRICT ANTI-HALLUCINATION RULE: Never output a fake "### Updated Today's Live Pr
         });
     try {
       const cloudContent = await callOpenRouter({
-        prompt: cleanPrompt.replace(/^(?:\[frontier\]|\/frontier|\[glm\]|\/glm|use\s+glm:?|use\s+frontier:?|escalate\s+to\s+frontier:?)\s*/i, ''),
+        prompt: cleanPrompt.replace(/^(?:\[frontier\]|\/frontier|\[glm\]|\/glm|\[openrouter\]|\/openrouter|use\s+glm:?|use\s+openrouter:?|use\s+frontier:?|escalate\s+to\s+frontier:?)\s*/i, ''),
         history: cleanHistory,
         systemPrompt: fullSystemPrompt,
         model: selectedCloudModel
@@ -1064,8 +1346,8 @@ STRICT ANTI-HALLUCINATION RULE: Never output a fake "### Updated Today's Live Pr
     }
   }
 
-  // 4. Execution with resilient multi-node hedging for L2 Swarm (kruschdev Dual 2080 Ti -> kruschserv Dual 3060)
-  if (classification.tier === TIERS.L2_SWARM || classification.tier === TIERS.L3_CLOUD) {
+  // 4. Execution with resilient multi-node hedging for L2 Swarm (kruschdev Dual 2080 Ti -> kruschserv Dual 3060 -> L2.5 Colab G4 Burst)
+  if (classification.tier === TIERS.L2_SWARM || classification.tier === TIERS.L2_5_COLAB_BURST || classification.tier === TIERS.L3_CLOUD) {
     const swarmTargets = [
       {
         endpoint: config.cascade.swarmUrl,
@@ -1110,10 +1392,30 @@ STRICT ANTI-HALLUCINATION RULE: Never output a fake "### Updated Today's Live Pr
             };
           }
         }
-      } catch {
-        // Try next swarm node or fall back to L1 edge
+      } catch (err) {
+        console.error('Cascade client error:', err);
       }
     }
+
+    // If L2 Swarm is unreachable and Colab Burst hasn't been tried yet, escalate to L2.5 Colab G4 Burst before falling back
+    if (config.cascade.colabBurstEnabled !== false && classification.tier !== TIERS.L2_5_COLAB_BURST) {
+      try {
+        const burstContent = await callColabBurst({
+          prompt: cleanPrompt,
+          history: cleanHistory,
+          systemPrompt: fullSystemPrompt
+        });
+        return {
+          content: systemPrompt ? burstContent : stripHallucinatedBoardDump(burstContent),
+          tierUsed: TIERS.L2_5_COLAB_BURST,
+          latencyMs: Date.now() - startTime,
+          reason: `L2.5 Colab G4 Burst (${config.cascade.colabBurstModel || 'gpt-oss:120b'} @ ${config.cascade.colabBurstUrl})`
+        };
+      } catch (err) {
+        console.error('Cascade client error:', err);
+      }
+    }
+
     console.log('⚡ L2 Swarm unreachable; gracefully falling back to local L1 Edge');
   }
 
@@ -1150,19 +1452,67 @@ STRICT ANTI-HALLUCINATION RULE: Never output a fake "### Updated Today's Live Pr
           latencyMs: Date.now() - startTime,
           reason: 'L1 Local Edge (hermes3:latest fallback)'
         };
-      } catch {
-        // Fallback failed
+      } catch (fallbackErr) {
+        console.error('Cascade client error:', fallbackErr);
+        if (returnOnL1FallbackError) {
+          return createL1FallbackSentinel(startTime, fallbackErr);
+        }
       }
     }
 
-    // If local Ollama failed and cloud escalation is allowed, fall back to OpenRouter
-    const canEscalateToCloud = (config.cascade.allowCloudEscalation || config.cascade.provider === 'hybrid') && Boolean(config.cascade.openrouterApiKey);
-    if (canEscalateToCloud) {
+    // Try L2.5 Colab G4 Burst before escalating to cloud
+    if (config.cascade.colabBurstEnabled !== false) {
+      try {
+        const burstContent = await callColabBurst({
+          prompt: cleanPrompt,
+          history: cleanHistory,
+          systemPrompt: fullSystemPrompt
+        });
+        return {
+          content: systemPrompt ? burstContent : stripHallucinatedBoardDump(burstContent),
+          tierUsed: TIERS.L2_5_COLAB_BURST,
+          latencyMs: Date.now() - startTime,
+          reason: `L2.5 Colab G4 Burst fallback (${config.cascade.colabBurstModel || 'gpt-oss:120b'})`
+        };
+      } catch (burstErr) {
+        console.error('Cascade client error:', burstErr);
+      }
+    }
+
+    // If local Ollama and Colab Burst failed and cloud escalation is allowed:
+    // 1st Cloud Fallback: Google AI Ultra $100/mo GCP Credit (Gemini API)
+    const cloudEscalationAllowed = config.cascade.allowCloudEscalation || config.cascade.provider === 'hybrid';
+    if (cloudEscalationAllowed && config.cascade.geminiApiKey) {
+      const geminiModel = config.cascade.geminiModel || 'gemini-2.5-flash';
+      console.log(`⚡ Local Ollama unavailable (${err.message}); escalating to L3 Google AI Ultra Credit (${geminiModel})`);
+      try {
+        const geminiContent = await callGeminiCloud({
+          prompt: cleanPrompt,
+          history: cleanHistory,
+          systemPrompt: fullSystemPrompt,
+          model: geminiModel
+        });
+        return {
+          content: systemPrompt ? geminiContent : stripHallucinatedBoardDump(geminiContent),
+          tierUsed: TIERS.L3_CLOUD,
+          latencyMs: Date.now() - startTime,
+          reason: `L3 Google AI Ultra Credit fallback (${geminiModel})`
+        };
+      } catch (geminiErr) {
+        console.warn(`⚡ L3 Google AI Ultra Gemini fallback failed (${geminiErr.message}); trying OpenRouter`);
+        if (!config.cascade.openrouterApiKey) {
+          throw new Error(`Companion LLM dispatch failed (Local: ${err.message}; Gemini: ${geminiErr.message})`);
+        }
+      }
+    }
+
+    // 2nd Cloud Fallback: Paid OpenRouter (only if Gemini is unconfigured or failed)
+    if (cloudEscalationAllowed && Boolean(config.cascade.openrouterApiKey)) {
       const selectedCloudModel = selectOpenRouterSpecialistModel({
         classification,
         systemPrompt: fullSystemPrompt
       });
-      console.log(`⚡ Local Ollama unavailable (${err.message}); escalating to L3 OpenRouter (${selectedCloudModel})`);
+      console.log(`⚡ Escalating to L3 OpenRouter (${selectedCloudModel})`);
       try {
         const cloudContent = await callOpenRouter({
           prompt: cleanPrompt,

@@ -7,6 +7,7 @@
 
 let activeAudioInstance = null;
 let activeSpeechFinalizer = null;
+let speechGeneration = 0;
 
 export function cleanSpokenPreview(rawText = '') {
   let text = String(rawText || '');
@@ -31,6 +32,8 @@ export function cleanSpokenPreview(rawText = '') {
 }
 
 export function stopSpeaking() {
+  speechGeneration += 1;
+
   if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
     try {
       window.speechSynthesis.cancel();
@@ -78,6 +81,7 @@ export async function speakReplyText(
   }
 
   stopSpeaking();
+  const currentGeneration = ++speechGeneration;
 
   let ttsPayload = null;
   if (typeof fetchImpl === 'function') {
@@ -91,10 +95,16 @@ export async function speakReplyText(
         ttsPayload = await response.json();
       }
     } catch (err) {
-      if (typeof onError === 'function') {
+      if (currentGeneration === speechGeneration && typeof onError === 'function') {
         onError(err);
       }
     }
+  }
+
+  // Guard against stopSpeaking() or a newer speakReplyText() call firing while fetchImpl was in flight
+  if (currentGeneration !== speechGeneration) {
+    if (typeof onEnd === 'function') onEnd();
+    return { ok: false, spoken: false, cancelled: true };
   }
 
   const spokenText = (ttsPayload && ttsPayload.cleanSpokenText) || cleanedFallback;
@@ -210,6 +220,7 @@ export function createLiveVoiceController({
 } = {}) {
   let enabled = false;
   let speaking = false;
+  let activeSpeakToken = 0;
 
   const setSpeakingState = (next) => {
     speaking = Boolean(next);
@@ -224,6 +235,7 @@ export function createLiveVoiceController({
     setEnabled(next) {
       enabled = Boolean(next);
       if (!enabled) {
+        activeSpeakToken += 1;
         stopSpeaking();
         setSpeakingState(false);
       }
@@ -233,24 +245,26 @@ export function createLiveVoiceController({
       return this.setEnabled(!enabled);
     },
     stop() {
+      activeSpeakToken += 1;
       stopSpeaking();
       setSpeakingState(false);
     },
     async speak(rawText, overrides = {}) {
+      const token = ++activeSpeakToken;
       return speakReplyText(rawText, {
         voice: overrides.voice || voice,
         speed: overrides.speed || speed,
         fetchImpl: overrides.fetchImpl || fetchImpl,
         onStart: () => {
-          setSpeakingState(true);
+          if (token === activeSpeakToken) setSpeakingState(true);
           if (typeof overrides.onStart === 'function') overrides.onStart();
         },
         onEnd: () => {
-          setSpeakingState(false);
+          if (token === activeSpeakToken) setSpeakingState(false);
           if (typeof overrides.onEnd === 'function') overrides.onEnd();
         },
         onError: (err) => {
-          setSpeakingState(false);
+          if (token === activeSpeakToken) setSpeakingState(false);
           if (typeof onError === 'function') onError(err);
           if (typeof overrides.onError === 'function') overrides.onError(err);
         }

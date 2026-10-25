@@ -7,7 +7,8 @@ import config from '../config.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-let db = null;
+const dbHolder = { instance: null };
+
 
 export const TIER_POINTS = { 1: 50, 2: 30, 3: 20, 4: 15, 5: 10 };
 export const EXECUTION_PRIORITY_POINTS = { 1: 50, 2: 35, 3: 25, 4: 15 };
@@ -91,15 +92,29 @@ export function inferExecutionPriorityAndPillar({
   const combined = `${title} ${notes || ''}`.toLowerCase();
 
   // 1. Determine Life Pillar tag
+  const parseAliasRegex = (envKey, defaults) => {
+    const extra = String(process.env[envKey] || '')
+      .split(',')
+      .map(s => s.trim().toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+      .filter(Boolean);
+    return new RegExp(`\\b(${[...defaults, ...extra].join('|')})\\b`);
+  };
+  const partnerRe = parseAliasRegex('FAMILY_PARTNER_ALIASES', [
+    'wife', 'husband', 'partner', 'spouse', 'marriage', 'anniversary', 'date night', 'reservation'
+  ]);
+  const householdRe = parseAliasRegex('FAMILY_HOUSEHOLD_ALIASES', [
+    'daughter', 'son', 'kid', 'kids', 'children', 'school', 'teacher', 'parent', 'mom', 'dad', 'brother', 'sister', 'dogs?', 'cats?', 'pets?', 'vet'
+  ]);
+
   let resolvedPillar = pillar;
   if (!resolvedPillar) {
     if (/\b(bill|invoice|mortgage|rent|tax|taxes|insurance|paycheck|budget|bank|payment|utility|electric|water heater|plumb|car repair|lease|contract|dishes|dishwasher|laundry|grocery|groceries|trash|garbage|clean|vacuum|sweep|mop|kitchen|yard|errands?)\b/.test(combined)) {
       resolvedPillar = 'Provision & Finance';
     } else if (priority_id === 1 || /\b(pray|prayer|gratitude|meditat|faith|church|scripture|devotional|worship)\b/.test(combined)) {
       resolvedPillar = 'Core Values & Faith';
-    } else if (priority_id === 2 || /\b(wife|husband|partner|spouse|marriage|anniversary|date night|reservation)\b/.test(combined)) {
+    } else if (priority_id === 2 || partnerRe.test(combined)) {
       resolvedPillar = 'Family & Partner';
-    } else if (priority_id === 3 || /\b(daughter|son|kid|kids|children|school|teacher|parent|mom|dad)\b/.test(combined)) {
+    } else if (priority_id === 3 || householdRe.test(combined)) {
       resolvedPillar = 'Children & Loved Ones';
     } else if (priority_id === 4 || /\b(water|hydrat|vitamin|medication|prescription|doctor|dentist|workout|gym|walk|run|stretch|sleep|exercise)\b/.test(combined)) {
       resolvedPillar = 'Health & Self';
@@ -242,7 +257,7 @@ export function today() {
 const seededDatesCache = new Set();
 
 export function initCompanionDb(customPath = null) {
-  if (db) return db;
+  if (dbHolder.instance) return dbHolder.instance;
   seededDatesCache.clear();
 
   const dbPath = customPath || config.db.path;
@@ -251,29 +266,29 @@ export function initCompanionDb(customPath = null) {
     fs.mkdirSync(dbDir, { recursive: true });
   }
 
-  db = new Database(dbPath);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
+  const conn = new Database(dbPath);
+  conn.pragma('journal_mode = WAL');
+  conn.pragma('foreign_keys = ON');
 
   // Load and execute schema
   const schemaPath = path.join(__dirname, 'schema.sql');
   const schemaSql = fs.readFileSync(schemaPath, 'utf-8');
-  db.exec(schemaSql);
+  conn.exec(schemaSql);
 
   // Safe idempotent migration for existing databases created prior to Dual-Axis Priority upgrade
-  const cols = db.prepare("PRAGMA table_info('tasks')").all().map(c => c.name);
+  const cols = conn.prepare("PRAGMA table_info('tasks')").all().map(c => c.name);
   if (!cols.includes('execution_priority')) {
-    db.exec('ALTER TABLE tasks ADD COLUMN execution_priority INTEGER NOT NULL DEFAULT 2');
-    db.exec('UPDATE tasks SET execution_priority = 3 WHERE recurring = 1');
+    conn.exec('ALTER TABLE tasks ADD COLUMN execution_priority INTEGER NOT NULL DEFAULT 2');
+    conn.exec('UPDATE tasks SET execution_priority = 3 WHERE recurring = 1');
   }
   if (!cols.includes('pillar')) {
-    db.exec('ALTER TABLE tasks ADD COLUMN pillar TEXT');
+    conn.exec('ALTER TABLE tasks ADD COLUMN pillar TEXT');
   }
 
   // Seed default priorities if empty
-  const count = db.prepare('SELECT COUNT(*) as count FROM priorities').get().count;
+  const count = conn.prepare('SELECT COUNT(*) as count FROM priorities').get().count;
   if (count === 0) {
-    const insertPriority = db.prepare(
+    const insertPriority = conn.prepare(
       'INSERT INTO priorities (name, emoji, color, tier) VALUES (?, ?, ?, ?)'
     );
     insertPriority.run('Core Values & Faith', '🙏', '#f0c040', 1);
@@ -283,7 +298,7 @@ export function initCompanionDb(customPath = null) {
     insertPriority.run('Work & Mastery', '🔧', '#60a5fa', 5);
 
     const dateToday = today();
-    const insertTask = db.prepare(
+    const insertTask = conn.prepare(
       'INSERT INTO tasks (priority_id, execution_priority, pillar, title, recurring, date) VALUES (?, 3, ?, ?, 1, ?)'
     );
     insertTask.run(1, 'Core Values & Faith', 'Morning gratitude & prayer', dateToday);
@@ -292,15 +307,17 @@ export function initCompanionDb(customPath = null) {
     insertTask.run(5, 'Work & Mastery', 'Review top priority for today', dateToday);
   }
 
-  return db;
+  dbHolder.instance = conn;
+  return dbHolder.instance;
 }
 
 export function getDb() {
-  if (!db) {
+  if (!dbHolder.instance) {
     return initCompanionDb();
   }
-  return db;
+  return dbHolder.instance;
 }
+
 
 // ── Priorities ──────────────────────────────────────────────────────────────
 export function getPriorities() {

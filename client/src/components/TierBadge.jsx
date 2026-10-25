@@ -13,11 +13,15 @@ export function TierBadge({ tier, latencyMs }) {
     icon = '🚀';
   } else if (tier === 'L2_swarm') {
     badgeClass = 'tier-l2';
-    label = 'L2 Swarm (14B · Dual GPU)';
+    label = 'L2 Swarm (30B · Dual GPU)';
     icon = '🧠';
+  } else if (tier === 'L2_5_colab_burst' || tier === 'L2.5_colab_burst') {
+    badgeClass = 'tier-l25';
+    label = 'L2.5 Colab G4 (120B · 96GB)';
+    icon = '🔥';
   } else if (tier === 'L3_cloud') {
     badgeClass = 'tier-l3';
-    label = 'L3 Frontier (GLM 5.3 · ZDR)';
+    label = 'L3 Frontier (OpenRouter · ZDR)';
     icon = '☁️';
   }
 

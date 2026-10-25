@@ -32,8 +32,8 @@ jobs:
 
       - name: Instant Failure Push Notification
         if: failure()
-      env:
-        NTFY_TOPIC_URL: ${{ secrets.NTFY_TOPIC_URL }}
+        env:
+          NTFY_TOPIC_URL: ${{ secrets.NTFY_TOPIC_URL }}
         run: |
           ERR_SNIPPET=$(tail -n 25 test.log 2>/dev/null || echo "No test log found")
           curl -s -X POST \

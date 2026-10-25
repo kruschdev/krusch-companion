@@ -313,14 +313,14 @@ describe('Krusch Companion V3.8 — Personal AI Ecosystem & Opt-In Extension Pac
     // SEC-02: Verify IPv6 loopback, IPv4-mapped IPv6, and Tailscale CGNAT are blocked by isSafePublicUrl
     assert.equal(isSafePublicUrl('http://[::1]:3004/api/status'), false);
     assert.equal(isSafePublicUrl('http://[::ffff:127.0.0.1]:3004/api/status'), false);
-    assert.equal(isSafePublicUrl('http://100.65.159.15:11434/api/tags'), false);
+    assert.equal(isSafePublicUrl('http://100.64.0.10:11434/api/tags'), false);
     assert.equal(isSafePublicUrl('https://api.github.com'), true);
 
     let webhookFetched = false;
     const addTurn = await handleInboundChannelBotTurn({
       platform: 'telegram',
       payload: {
-        replyWebhookUrl: 'http://100.65.159.15:11434/ssrf-test',
+        replyWebhookUrl: 'http://100.64.0.10:11434/ssrf-test',
         message: {
           chat: { id: 778899 },
           from: { first_name: 'Krusch' },
@@ -617,7 +617,7 @@ describe('Krusch Companion V3.8 — Personal AI Ecosystem & Opt-In Extension Pac
     );
 
     // SSRF guard must block internal Tailscale / loopback URLs by default
-    const ssrfCheck = validateBrowserTargetUrl('http://100.65.159.15:11434/api/tags');
+    const ssrfCheck = validateBrowserTargetUrl('http://100.64.0.10:11434/api/tags');
     assert.equal(ssrfCheck.allowed, false);
     assert.equal(ssrfCheck.reason, 'SSRF_BLOCKED');
 
@@ -626,7 +626,7 @@ describe('Krusch Companion V3.8 — Personal AI Ecosystem & Opt-In Extension Pac
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         action: 'navigate',
-        url: 'http://100.65.159.15:11434/api/tags'
+        url: 'http://100.64.0.10:11434/api/tags'
       })
     });
     assert.equal(ssrfRes.status, 403);
@@ -668,6 +668,23 @@ describe('Krusch Companion V3.8 — Personal AI Ecosystem & Opt-In Extension Pac
     assert.equal(auditJson.data.breakpoints.length, 3);
     assert.ok(auditJson.data.stagedTask?.id, 'Should stage Chrome UI audit task onto Today Board when autoStageBoard=true');
   });
+
+  it('ARCH-DBPATH: config.dbPath() returns fallback when DB_PATH is unset and honours override', async () => {
+    const { config: companionCfg } = await import('../src/config.js');
+    const { dbPath: toolkitDbPath } = await import('../src/toolkit/config.js');
+    const saved = process.env.DB_PATH;
+    try {
+      delete process.env.DB_PATH;
+      assert.equal(companionCfg.dbPath(), companionCfg.db.path);
+      assert.equal(toolkitDbPath('/tmp/fallback.db'), '/tmp/fallback.db');
+      process.env.DB_PATH = '/tmp/override-companion.db';
+      assert.equal(companionCfg.dbPath(), '/tmp/override-companion.db');
+    } finally {
+      if (saved === undefined) delete process.env.DB_PATH;
+      else process.env.DB_PATH = saved;
+    }
+  });
 });
+
 
 

@@ -49,3 +49,9 @@ export {
   skipOnboarding,
   STANDARD_ONBOARDING_QUESTIONS
 } from './services/onboarding.js';
+export {
+  handleGoogleHomeTurn,
+  broadcastToGoogleHome,
+  buildCompanionTtsStreamUrl,
+  getGoogleHomeSetupGuide
+} from './services/google-home.js';

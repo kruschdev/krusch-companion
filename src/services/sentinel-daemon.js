@@ -27,8 +27,14 @@ import { dispatchCompanionChat, inferPriorityTierFromText } from '../router/casc
 const routeStateMap = new Map();
 const seenEmailIds = new Set();
 const seenConflictKeys = new Set();
+const seenConflictEventIds = new Set();
 const seenStartingSoonIds = new Set();
 const seenDeadlineTaskIds = new Set();
+let hydratedSeenFromDb = false;
+
+export const SENTINEL_READONLY_SYSTEM_PROMPT = `You are Krusch Companion's Read-Only Proactive Sentinel Advisory Writer.
+Write a concise, helpful 1-to-2 sentence plain-text notification summarizing the alert for the user.
+STRICT INVARIANT: You are generating a passive notification banner ONLY. Never output <holodata>, JSON tool calls, or calendar/task creation commands.`;
 
 let sentinelIntervalHandle = null;
 let lastTickAt = null;
@@ -54,6 +60,34 @@ function ensureSentinelTable() {
       created_at TEXT DEFAULT (datetime('now'))
     )
   `);
+
+  if (!hydratedSeenFromDb) {
+    hydratedSeenFromDb = true;
+    try {
+      const existingRows = database
+        .prepare('SELECT event_id FROM sentinel_alerts ORDER BY id DESC LIMIT 1000')
+        .all();
+      for (const row of existingRows) {
+        const eid = String(row.event_id || '');
+        if (eid.startsWith('gmail-')) {
+          seenEmailIds.add(eid.slice('gmail-'.length));
+        } else if (eid.startsWith('conflict-')) {
+          const pairKey = eid.slice('conflict-'.length);
+          seenConflictKeys.add(pairKey);
+          for (const part of pairKey.split('::')) {
+            if (part) seenConflictEventIds.add(part);
+          }
+        } else if (eid.startsWith('soon-')) {
+          seenStartingSoonIds.add(eid.slice('soon-'.length));
+        } else if (eid.startsWith('deadline-task-')) {
+          const tid = Number(eid.slice('deadline-task-'.length));
+          if (!Number.isNaN(tid)) seenDeadlineTaskIds.add(tid);
+        }
+      }
+    } catch {
+      // Non-fatal
+    }
+  }
 }
 
 /**
@@ -82,10 +116,12 @@ export function resetSentinelState() {
   routeStateMap.clear();
   seenEmailIds.clear();
   seenConflictKeys.clear();
+  seenConflictEventIds.clear();
   seenStartingSoonIds.clear();
   seenDeadlineTaskIds.clear();
   ensureSentinelTable();
   db.getDb().prepare('DELETE FROM sentinel_alerts').run();
+  hydratedSeenFromDb = true;
 }
 
 /**
@@ -144,12 +180,22 @@ export function evaluateEmailTrigger(msg) {
   return { shouldWakeLlm: false };
 }
 
+function isAllDayCalendarEvent(ev) {
+  if (!ev) return false;
+  if (ev.allDay === true || ev.transparency === 'transparent') return true;
+  const rawStart = String(ev.start || '').trim();
+  // Date-only ISO strings (YYYY-MM-DD) are all-day events (birthdays, holidays, anniversaries)
+  return /^\d{4}-\d{2}-\d{2}$/.test(rawStart);
+}
+
 /**
  * L0 Gate 2: Detect Google Calendar double-booking conflicts and imminent meetings (<= 15 min).
+ * Strictly ignores all-day events and caps conflict alerts to prevent O(N^2) alert storms.
  */
 export function evaluateCalendarAnomalies(calendarEvents = []) {
   const triggers = [];
   const parsed = calendarEvents
+    .filter(ev => !isAllDayCalendarEvent(ev))
     .map(ev => {
       const start = ev.start ? new Date(ev.start) : null;
       const end = ev.end
@@ -165,15 +211,20 @@ export function evaluateCalendarAnomalies(calendarEvents = []) {
     })
     .filter(e => e.startMs !== null);
 
-  // 1. Check for overlapping events (double-booking conflict)
+  // 1. Check for overlapping timed events (double-booking conflict), capped at 1 conflict alert per event
   for (let i = 0; i < parsed.length; i++) {
     for (let j = i + 1; j < parsed.length; j++) {
       const a = parsed[i];
       const b = parsed[j];
       if (a.startMs < b.endMs && b.startMs < a.endMs) {
         const pairKey = [a.id, b.id].sort().join('::');
-        if (!seenConflictKeys.has(pairKey)) {
+        if (
+          !seenConflictKeys.has(pairKey) &&
+          !(seenConflictEventIds.has(a.id) && seenConflictEventIds.has(b.id))
+        ) {
           seenConflictKeys.add(pairKey);
+          seenConflictEventIds.add(a.id);
+          seenConflictEventIds.add(b.id);
           triggers.push({
             eventId: `conflict-${pairKey}`,
             triggerReason: 'calendar_conflict',
@@ -345,14 +396,22 @@ async function dispatchSentinelWakeup({
       const out = await callLlm({ prompt: wakePrompt, triggerReason });
       llmAdvisory = String(out?.content || out?.reply || '').trim();
     } else {
-      const res = await dispatchCompanionChat({ prompt: wakePrompt, history: [], contextBriefing: '' });
-      llmAdvisory = String(res?.content || '').trim();
+      const res = await dispatchCompanionChat({
+        prompt: wakePrompt,
+        history: [],
+        contextBriefing: '',
+        systemPrompt: SENTINEL_READONLY_SYSTEM_PROMPT,
+        disableTools: true
+      });
+      llmAdvisory = String(res?.content || '')
+        .replace(/<holodata>[\s\S]*?<\/holodata>/gi, '')
+        .trim();
     }
   } catch {
     // Use fallback advisory below
   }
 
-  if (!llmAdvisory) {
+  if (!llmAdvisory || llmAdvisory === 'SOVEREIGN') {
     llmAdvisory = fallbackAdvisory;
   }
 
@@ -488,17 +547,23 @@ export async function runSentinelTick({
   lastTickAt = new Date().toISOString();
 
   const baseUrl = (process.env.G_KRUSCH_URL || 'http://127.0.0.1:5446').replace(/\/+$/, '');
+  const gkruschSyncDisabled = String(process.env.DISABLE_GKRUSCH_SYNC || '').toLowerCase() === 'true';
   const triggeredAlerts = [];
   let llmCallsThisTick = 0;
 
   // ── Channel 0: G-Krusch Google Drive `agent.md` Steering Sync ───────────
-  if (!Array.isArray(customEmails) && !Array.isArray(customEvents) && !Array.isArray(customCalendarEvents)) {
+  if (
+    !gkruschSyncDisabled &&
+    !Array.isArray(customEmails) &&
+    !Array.isArray(customEvents) &&
+    !Array.isArray(customCalendarEvents)
+  ) {
     await syncGkruschDriveSteering({ fetchImpl }).catch(() => {});
   }
 
   // ── Channel 1: Gmail Unread Inbox Watchdog ──────────────────────────────
   let unreadEmails = Array.isArray(customEmails) ? customEmails : [];
-  if (!Array.isArray(customEmails) && !Array.isArray(customEvents)) {
+  if (!gkruschSyncDisabled && !Array.isArray(customEmails) && !Array.isArray(customEvents)) {
     try {
       const mailRes = await fetchImpl(`${baseUrl}/api/gmail/messages?q=${encodeURIComponent('is:unread')}&limit=8`, {
         headers: getGkruschHeaders(),
@@ -558,7 +623,7 @@ export async function runSentinelTick({
 
   // ── Channel 2: Google Calendar Conflicts & Starting-Soon Watchdog ───────
   let rawCalendarEvents = Array.isArray(customCalendarEvents) ? customCalendarEvents : [];
-  if (!Array.isArray(customCalendarEvents) && !Array.isArray(customEvents)) {
+  if (!gkruschSyncDisabled && !Array.isArray(customCalendarEvents) && !Array.isArray(customEvents)) {
     try {
       const calRes = await fetchImpl(`${baseUrl}/api/calendar/events?limit=8`, {
         headers: getGkruschHeaders(),
@@ -798,6 +863,66 @@ export async function runSentinelTick({
   };
 }
 
+let gkeepIntervalHandle = null;
+
+/**
+ * Channel 6: Poll Google Keep "grocery list" note via `scripts/gkeep_bridge.py`
+ * (when GOOGLE_KEEP_MASTER_TOKEN is configured), append new unchecked items onto
+ * Companion's Grocery List card, push them to Skylight's Grocery List (8185920),
+ * and mark them checked in Google Keep so kitchen Google Home voice items sync automatically.
+ */
+export async function syncGoogleKeepGroceryList() {
+  if (!process.env.GOOGLE_KEEP_MASTER_TOKEN) {
+    return { ok: false, configured: false };
+  }
+  try {
+    const { execFile } = await import('child_process');
+    const { promisify } = await import('util');
+    const execFileAsync = promisify(execFile);
+    const rootDir = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../..');
+    const pyBin = path.join(rootDir, '.venv', 'bin', 'python');
+    const scriptPath = path.join(rootDir, 'scripts', 'gkeep_bridge.py');
+    if (!fs.existsSync(pyBin) || !fs.existsSync(scriptPath)) {
+      return { ok: false, error: 'gkeep_bridge.py or .venv missing' };
+    }
+    const { stdout } = await execFileAsync(pyBin, [scriptPath, 'sync', '--check-off'], {
+      timeout: 15000,
+      env: process.env
+    });
+    const parsed = JSON.parse(String(stdout || '{}').trim());
+    const items = Array.isArray(parsed.items) ? parsed.items.map(i => i.text).filter(Boolean) : [];
+    if (items.length > 0) {
+      const existing =
+        db.findTaskByQuery('Grocery List', db.today(), { onlyIncomplete: true }) ||
+        db.findTaskByQuery('Grocery List', db.today());
+      if (existing) {
+        db.addListToTask(existing.id, { items: items.join(', '), append: true });
+      } else {
+        db.createTask({
+          title: 'Grocery List',
+          priority_id: 5,
+          execution_priority: 2,
+          pillar: 'Provision & Finance',
+          items: items.join(', '),
+          date: db.today()
+        });
+      }
+      if (process.env.ALLOW_SKYLIGHT === '1' && process.env.SKYLIGHT_TOKEN) {
+        const { createSkylightConnector } = await import(
+          '../../../krusch-companion-skylight-connector/src/index.js'
+        );
+        const connector = createSkylightConnector();
+        await connector.companion
+          .pushListItems({ listId: 'grocery', items })
+          .finally(() => connector.close());
+      }
+    }
+    return { ok: true, syncedItems: items };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
 /**
  * Start the background Sentinel Watchdog loop inside the Companion process.
  */
@@ -817,6 +942,17 @@ export function startSentinelDaemon({ intervalMs = null } = {}) {
   if (typeof sentinelIntervalHandle.unref === 'function') {
     sentinelIntervalHandle.unref();
   }
+
+  if (process.env.GOOGLE_KEEP_MASTER_TOKEN && !gkeepIntervalHandle) {
+    syncGoogleKeepGroceryList().catch(() => {});
+    gkeepIntervalHandle = setInterval(() => {
+      syncGoogleKeepGroceryList().catch(() => {});
+    }, 30000);
+    if (typeof gkeepIntervalHandle.unref === 'function') {
+      gkeepIntervalHandle.unref();
+    }
+  }
+
   return sentinelIntervalHandle;
 }
 

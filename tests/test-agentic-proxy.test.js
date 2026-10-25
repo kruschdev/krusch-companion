@@ -892,6 +892,73 @@ describe('Krusch Companion — Agentic Proxy (<holodata> Dual-Engine for 7B/14B 
     const remainingFiles = fs.readdirSync(backupDir).filter(f => f.endsWith('.db'));
     assert.equal(remainingFiles.length, 2, 'Should retain exactly 2 backup snapshots');
   });
+
+  test('19. Sentinel Runaway Calendar Loop Prevention: read-only wakeups (disableTools), all-day event ignore, O(N^2) conflict cap & DISABLE_GKRUSCH_SYNC guard', async () => {
+    resetSentinelState();
+    const tasksBefore = getTasksForDate(today()).length;
+
+    // 1. All-day events (YYYY-MM-DD) must never trigger double-booking conflicts with timed events
+    // 2. 4 overlapping timed events at the same hour must cap conflict alerts instead of firing C(4,2) = 6 pairs
+    // 3. Running WITHOUT custom callLlm (using real dispatchCompanionChat path) must NEVER execute gkrusch_calendar or create fallback tasks
+    const overlapTick = await runSentinelTick({
+      customEmails: [],
+      customEvents: [],
+      checkAutomations: false,
+      customCalendarEvents: [
+        {
+          id: 'allday-bday',
+          summary: 'Happy birthday!',
+          start: '2026-10-24',
+          end: '2026-10-25'
+        },
+        {
+          id: 'ev-game-1',
+          summary: 'Brewers Rays game',
+          start: '2026-10-24T19:00:00-05:00',
+          end: '2026-10-24T21:00:00-05:00'
+        },
+        {
+          id: 'ev-game-2',
+          summary: 'Upcoming Event',
+          start: '2026-10-24T19:30:00-05:00',
+          end: '2026-10-24T20:30:00-05:00'
+        },
+        {
+          id: 'ev-game-3',
+          summary: 'Third Overlapping Item',
+          start: '2026-10-24T19:45:00-05:00',
+          end: '2026-10-24T20:45:00-05:00'
+        }
+      ]
+    });
+
+    // Only 2 conflict alerts (ev-game-1::ev-game-2 and ev-game-1::ev-game-3) instead of 3+ pairs, and 0 all-day conflicts
+    assert.ok(overlapTick.triggeredAlerts.every(a => !a.eventTitle.includes('Happy birthday!')));
+    assert.equal(overlapTick.triggeredAlerts.length, 2);
+
+    // Crucial: zero fallback calendar tasks ("Scheduled via G-Krusch Calendar fallback") created on Today's Board!
+    const tasksAfter = getTasksForDate(today());
+    assert.equal(tasksAfter.length, tasksBefore, 'Sentinel conflict wakeup must NEVER create tasks or invoke calendar write tools');
+
+    // 4. Verify DISABLE_GKRUSCH_SYNC=true skips all G-Krusch network requests in runSentinelTick
+    const prevDisable = process.env.DISABLE_GKRUSCH_SYNC;
+    process.env.DISABLE_GKRUSCH_SYNC = 'true';
+    let networkCalls = 0;
+    try {
+      await runSentinelTick({
+        checkAutomations: false,
+        fetchImpl: async (url) => {
+          if (String(url).includes(':5446')) networkCalls++;
+          throw new Error('Should not be called');
+        }
+      });
+      assert.equal(networkCalls, 0, 'DISABLE_GKRUSCH_SYNC=true must prevent Sentinel from polling :5446 Gmail/Calendar');
+    } finally {
+      if (prevDisable === undefined) delete process.env.DISABLE_GKRUSCH_SYNC;
+      else process.env.DISABLE_GKRUSCH_SYNC = prevDisable;
+    }
+  });
 });
+
 
 

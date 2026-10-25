@@ -81,7 +81,7 @@ export function ExtensionsView({ onBoardUpdated } = {}) {
   const [healthLoading, setHealthLoading] = useState(false);
 
   // 5. Media & Focus Soundscape state
-  const [mediaState, setMediaState] = useState({ activeSession: null, sessions: [], jellyfinUrl: 'http://100.69.39.19:8096' });
+  const [mediaState, setMediaState] = useState({ activeSession: null, sessions: [], jellyfinUrl: 'http://127.0.0.1:8096' });
   const [mediaVolume, setMediaVolume] = useState(65);
   const [mediaResult, setMediaResult] = useState('');
 
@@ -158,7 +158,7 @@ export function ExtensionsView({ onBoardUpdated } = {}) {
         setMediaState({
           activeSession: payload.activeSession || null,
           sessions: payload.sessions || [],
-          jellyfinUrl: payload.jellyfinUrl || 'http://100.69.39.19:8096'
+          jellyfinUrl: payload.jellyfinUrl || 'http://127.0.0.1:8096'
         });
         if (payload.activeSession?.volume !== undefined) {
           setMediaVolume(Number(payload.activeSession.volume));
@@ -941,6 +941,69 @@ export function ExtensionsView({ onBoardUpdated } = {}) {
               {botReply}
             </div>
           )}
+        </section>
+
+        {/* Card 7: Google Home & Skylight Calendar Voice Speaker Bridge */}
+        <section className="glass-panel" style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+            <div>
+              <h3 style={{ fontSize: '1rem', fontWeight: 700 }}>🔊 Google Home &amp; Skylight Voice Bridge</h3>
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                Speak to Google Home (<code>/api/companion/google-home</code>) to update your Skylight Calendar, Priority Board, or cast spoken WAV replies.
+              </p>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => setBotInput('Add soccer practice at 4pm to the Skylight calendar')}
+              style={{ padding: '6px 10px', fontSize: '0.76rem' }}
+            >
+              🗓️ + Skylight Event
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => setBotInput('Plan tacos for dinner on Skylight')}
+              style={{ padding: '6px 10px', fontSize: '0.76rem' }}
+            >
+              🌮 + Skylight Dinner
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => setBotInput('Add milk, eggs, and bread to the Skylight grocery list')}
+              style={{ padding: '6px 10px', fontSize: '0.76rem' }}
+            >
+              🛒 + Skylight Grocery
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => setBotInput('Assign chore unload dishwasher to Sophia on Skylight')}
+              style={{ padding: '6px 10px', fontSize: '0.76rem' }}
+            >
+              🧹 + Skylight Chore
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => setBotInput('Show Skylight categories and colors')}
+              style={{ padding: '6px 10px', fontSize: '0.76rem' }}
+            >
+              🎨 Categories
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => setBotInput('Fix two-tone colors on Skylight')}
+              style={{ padding: '6px 10px', fontSize: '0.76rem' }}
+            >
+              ✨ Fix Two-Tone
+            </button>
+          </div>
         </section>
       </div>
     </div>

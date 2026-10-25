@@ -1,8 +1,15 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { COMPANION_TOOLS, executeCompanionTool, recordLowConfidenceOrFailedParse, recordLearnedTrajectorySkill } from './tools.js';
 import { getEnabledExtensionTools } from '../extensions/extension-registry.js';
 import { parseAIJson } from '../toolkit/json-parse.js';
+import { normalizeSpokenTranscript } from '../services/stt.js';
 
-let lastToolPruningReport = null;
+const toolPruningContextStore = new AsyncLocalStorage();
+const toolPruningState = { latestReport: null };
+
+export function runWithToolPruningContext(fn, ctx = {}) {
+  return toolPruningContextStore.run(ctx, fn);
+}
 
 /**
  * Estimate LLM token count (~4 chars per token for JSON/English tool schemas).
@@ -119,9 +126,9 @@ export function compactToolSchemaForPrompt(tool, prompt = '') {
       rawParams.action = '"add_list_to_task" | "add_task"';
     }
   } else if (tool.name === 'skylight_calendar') {
-    const isList = /\b(grocery|list|items?)\b/.test(text);
-    const isEvent = /\b(event|schedule|book)\b/.test(text);
+    const isList = /\b(grocery|shopping|items?)\b/.test(text);
     const isMeal = /\b(meal|dinner|lunch|breakfast|recipe)\b/.test(text);
+    const isEvent = /\b(add|put|create|events?|schedule|book|calendar|appointment|meeting)\b/.test(text);
     if (isList) {
       delete rawParams.startTime;
       delete rawParams.location;
@@ -133,12 +140,33 @@ export function compactToolSchemaForPrompt(tool, prompt = '') {
       delete rawParams.listId;
       delete rawParams.items;
       rawParams.action = '"plan_meal" | "list_meals"';
-    } else if (!isEvent) {
+    } else if (isEvent) {
+      delete rawParams.listId;
+      delete rawParams.items;
+      delete rawParams.mealType;
+      rawParams.action = '"create_event" | "list_events"';
+    } else {
       delete rawParams.startTime;
       delete rawParams.location;
       delete rawParams.listId;
       delete rawParams.mealType;
-      rawParams.action = '"status" | "sync_tasks" | "pull_chores"';
+      rawParams.action = '"status" | "list_events" | "create_event"';
+    }
+  } else if (tool.name === 'browser_navigate') {
+    const isInteract = /\b(click|type|fill|submit|press|interact)\b/.test(text);
+    const isAudit = /\b(audit|responsive|breakpoint|argon|layout|overflow)\b/.test(text);
+    const isShot = /\b(screenshot|capture|snap)\b/.test(text);
+    if (!isInteract) {
+      delete rawParams.steps;
+    }
+    if (isAudit) {
+      rawParams.action = '"audit"';
+    } else if (isShot) {
+      rawParams.action = '"screenshot"';
+    } else if (isInteract) {
+      rawParams.action = '"interact"';
+    } else {
+      rawParams.action = '"navigate" | "audit" | "screenshot"';
     }
   }
 
@@ -266,8 +294,10 @@ export function routeDiverseTools(query, candidateTools = COMPANION_TOOLS, optio
   };
 }
 
-export function getLastToolPruningReport() {
-  if (!lastToolPruningReport) {
+export function getLastToolPruningReport(ctx = null) {
+  const activeStore = ctx || toolPruningContextStore.getStore();
+  const report = activeStore?.lastToolPruningReport || toolPruningState.latestReport;
+  if (!report) {
     const total = Array.isArray(COMPANION_TOOLS) ? COMPANION_TOOLS.length : 20;
     const fullTokens = getFullCatalogSchemaTokens();
     return {
@@ -287,7 +317,7 @@ export function getLastToolPruningReport() {
       diversityScore: 1.0
     };
   }
-  return lastToolPruningReport;
+  return report;
 }
 
 /**
@@ -430,7 +460,12 @@ const EXTENSION_INTENT_PATTERNS = [
   {
     category: 'skylight_calendar',
     tools: ['skylight_calendar', 'skylight_calendar_hub'],
-    regex: /\b(?:skylight\s+calendar|skylight\s+(?:frame|chores?|meals?|grocery)|family\s+chore\s+chart|push\s+to\s+skylight|sync\s+(?:with\s+)?skylight)\b/i
+    regex: /\b(?:skylight\s+calendar|skylight\s+(?:2|two|frame|chores?|meals?|grocery|events?|sync|status)|family\s+chore\s+chart|push\s+to\s+skylight|sync\s+(?:.+?\s+)?(?:with|to)\s+skylight)\b/i
+  },
+  {
+    category: 'browser_navigation',
+    tools: ['browser_navigate'],
+    regex: /\b(?:(?:navigate|browse)\s+(?:to\s+|in\s+chrome\s+to\s+)?https?:\/\/\S+|open\s+https?:\/\/\S+\s+in\s+(?:headless\s+)?(?:chrome|browser)|(?:headless\s+chrome|chrome\s+browser|browser\s+navigator)|(?:audit|screenshot|click|interact\s+with)\s+(?:the\s+)?(?:webpage|page|site|ui)\s+(?:at\s+|on\s+)?https?:\/\/\S+|gemini\s*4?\s*argon\s+(?:chrome|browser|ui)\s+audit)\b/i
   }
 ];
 
@@ -520,7 +555,7 @@ export function detectAgenticIntent(prompt, options = {}) {
     ? Math.round((schemaTokensSavedEst / fullCatalogTokensEst) * 100)
     : reductionPct;
 
-  lastToolPruningReport = {
+  const pruningReport = {
     timestamp: new Date().toISOString(),
     totalAvailableTools: COMPANION_TOOLS.length,
     totalToolsAvailable: COMPANION_TOOLS.length,
@@ -538,12 +573,21 @@ export function detectAgenticIntent(prompt, options = {}) {
     schemaTokensSavedEst
   };
 
+  if (options.ctx && typeof options.ctx === 'object') {
+    options.ctx.lastToolPruningReport = pruningReport;
+  }
+  const activeStore = toolPruningContextStore.getStore();
+  if (activeStore && typeof activeStore === 'object') {
+    activeStore.lastToolPruningReport = pruningReport;
+  }
+  toolPruningState.latestReport = pruningReport;
+
   return {
     shouldUseAgenticProxy: true,
     matchedCategories,
     tools,
     compactedSchemas: dppRouted.compactedSchemas,
-    pruningReport: lastToolPruningReport
+    pruningReport
   };
 }
 
@@ -692,6 +736,22 @@ export function extractSpokenBoardAction(rawText) {
     };
   }
 
+  // e.g. "Add energy drinks to my grocery list", "Put milk and eggs on the shopping list", "Add paper towels to my Costco list"
+  const namedListMatch = text.match(
+    /^(?:hey\s+|hi\s+|okay\s+|so\s+)*(?:can\s+you\s+|could\s+you\s+|would\s+you\s+|please\s+)*(?:add|put|throw|append)\s+(.+?)\s+(?:to|on|onto|in|into)\s+(?:my\s+|the\s+|our\s+)?(grocery|groceries|shopping|costco|target|trader\s+joe'?s?|walmart|hardware|home\s+depot|packing|errands?)\s+list(?:\s+(?:please|thanks|thank\s+you|for\s+me))?[?.!]*$/i
+  );
+  if (namedListMatch) {
+    const rawListName = namedListMatch[2].trim();
+    const normalizedListTitle = /^grocer/i.test(rawListName)
+      ? 'Grocery List'
+      : `${rawListName.charAt(0).toUpperCase() + rawListName.slice(1).toLowerCase()} List`;
+    return {
+      action: 'add_list_to_task',
+      title: normalizedListTitle,
+      items: namedListMatch[1].trim()
+    };
+  }
+
   // e.g. "Add a list: unload top rack, unload bottom rack" (defaults to latest task on board)
   const implicitListMatch = text.match(/^(?:please\s+)?(?:add|put|attach|append)\s+(?:a\s+|this\s+)?(?:list|checklist|sublist|items?|steps?)\s*[:\-]\s*(.+)$/i);
   if (implicitListMatch) {
@@ -803,14 +863,10 @@ export function extractSpokenBoardAction(rawText) {
 
 /**
  * Extract origin, destination, and arrivalTime across natural spoken commute/directions sentences
- * and recent conversation history (e.g. "She works at La Habra High School. Get driving directions from 1161 North Citrus Drive").
+ * and recent conversation history (e.g. "She works at Springfield High School. Get driving directions from 742 Evergreen Terrace").
  */
 export function extractCommuteParams(rawText, history = []) {
-  let text = String(rawText || '').trim();
-  // Normalize spoken street numbers ("11.6 to 1" -> "1161") & phonetic "Waba High School" -> "La Habra High School"
-  text = text
-    .replace(/\b(\d{1,2})[.\s]+(\d)\s+to\s+(\d)\b/gi, '$1$2$3')
-    .replace(/\b(?:waba|la\s*habra|lahabra)\s+high\s+school\b/gi, 'La Habra High School')
+  let text = normalizeSpokenTranscript(String(rawText || '').trim())
     .replace(/\b(at|by|around|for)\s+(\d{1,2})\.(\d{2})\b/gi, '$1 $2:$3');
 
   let origin = null;
@@ -826,7 +882,7 @@ export function extractCommuteParams(rawText, history = []) {
     destination = fromToMatch[2].trim();
   }
 
-  // 2. Explicit origin: "leaving from 1161 North Citrus" or "directions from 1161 North Citrus Drive"
+  // 2. Explicit origin: "leaving from 742 Evergreen Terrace" or "directions from 742 Evergreen Terrace"
   if (!origin) {
     const originMatch = text.match(
       /\b(?:leaving|starting|departing|directions|driving|drive|route)\s+from\s+([0-9]+\s+[A-Za-z0-9\s.,'-]+?|[A-Z][A-Za-z0-9\s.,'-]+?)(?=\s+(?:and\s+(?:to\s+)?(?:get|find|check)|to\s+|by\s+\d|at\s+\d)|[?.!]|$)/i
@@ -837,14 +893,14 @@ export function extractCommuteParams(rawText, history = []) {
   }
 
   // 3. Destination from context inside the same utterance:
-  // e.g. "She works at La Habra High School. Get driving directions from 1161 North Citrus Drive."
-  // e.g. "...pick up my wife and get her from La Habra High School we're leaving from 1161 North Citrus..."
+  // e.g. "She works at Springfield High School. Get driving directions from 742 Evergreen Terrace."
+  // e.g. "...pick up my partner and get her from Springfield High School we're leaving from 742 Evergreen Terrace..."
   if (!destination) {
     const worksAtMatch = text.match(
-      /\b(?:she|he|my\s+wife|my\s+husband|maggie|[A-Z][a-z]+)\s+works\s+at\s+([A-Za-z0-9\s,'&-]+?)(?=[?.!]|\s+(?:get|give|find|show|check|and|we(?:'re|\s+are)|leaving)\b|$)/i
+      /\b(?:she|he|my\s+wife|my\s+husband|my\s+partner|[A-Z][a-z]+)\s+works\s+at\s+([A-Za-z0-9\s,'&-]+?)(?=[?.!]|\s+(?:get|give|find|show|check|and|we(?:'re|\s+are)|leaving)\b|$)/i
     );
     const pickUpPlaceMatch = text.match(
-      /\b(?:pick\s+(?:her|him|them|my\s+wife|my\s+husband|[A-Z][a-z]+)\s+up|get\s+(?:her|him|them|my\s+wife|my\s+husband|[A-Z][a-z]+))\s+(?:from|at)\s+(?!work\b)([A-Za-z0-9\s,'&-]+?)(?=\s+(?:we(?:'re|\s+are)|and\s+|at\s+\d|by\s+\d|leaving\s+from)|[?.!]|$)/i
+      /\b(?:pick\s+(?:her|him|them|my\s+wife|my\s+husband|my\s+partner|[A-Z][a-z]+)\s+up|get\s+(?:her|him|them|my\s+wife|my\s+husband|my\s+partner|[A-Z][a-z]+))\s+(?:from|at)\s+(?!work\b)([A-Za-z0-9\s,'&-]+?)(?=\s+(?:we(?:'re|\s+are)|and\s+|at\s+\d|by\s+\d|leaving\s+from)|[?.!]|$)/i
     );
     const dirToMatch = text.match(
       /\b(?:directions|drive\s+time|travel\s+time|commute|route)\s+(?:to|for)\s+([A-Za-z0-9\s,'&-]+?)(?=\s+(?:from|by|at)\s+|[?.!]|$)/i
@@ -901,7 +957,7 @@ export function extractCommuteParams(rawText, history = []) {
 
   return {
     origin: origin || null,
-    destination: destination || (origin ? 'La Habra High School' : text),
+    destination: destination || (origin ? (process.env.DEFAULT_COMMUTE_DESTINATION || 'Work') : text),
     arrivalTime: arrivalTime || null
   };
 }
@@ -923,7 +979,7 @@ export function inferFallbackToolCalls(prompt, matchedCategories = [], history =
     calls.push({ name: 'get_weather', tool: 'get_weather', arguments: { location } });
   }
 
-  if (categories.includes('url_digest')) {
+  if (categories.includes('url_digest') && !categories.includes('browser_navigation')) {
     const urlMatch = text.match(/https?:\/\/[^\s)>\]"']+/i);
     if (urlMatch) {
       calls.push({ name: 'fetch_url_digest', tool: 'fetch_url_digest', arguments: { url: urlMatch[0] } });
@@ -1401,6 +1457,9 @@ export function inferFallbackToolCalls(prompt, matchedCategories = [], history =
   }
 
   if (categories.includes('skylight_calendar')) {
+    const createEventMatch = text.match(
+      /\b(?:add|put|schedule|create|book)\s+(.+?)\s+(?:to|on|onto|in)\s+(?:my\s+|the\s+|our\s+)?(?:skylight(?:\s+calendar)?|family\s+calendar)\b/i
+    );
     if (/\b(?:assign|add)\s+(?:chore|star)\b/i.test(text)) {
       calls.push({
         name: 'skylight_calendar',
@@ -1411,7 +1470,19 @@ export function inferFallbackToolCalls(prompt, matchedCategories = [], history =
       calls.push({
         name: 'skylight_calendar',
         tool: 'skylight_calendar',
-        arguments: { action: 'plan_meal', meal: text }
+        arguments: { action: 'plan_meal', meal: text, title: text }
+      });
+    } else if (createEventMatch) {
+      calls.push({
+        name: 'skylight_calendar',
+        tool: 'skylight_calendar',
+        arguments: { action: 'create_event', title: createEventMatch[1].trim() }
+      });
+    } else if (/\b(?:list|show|what(?:'s|\s+is)\s+on)\s+(?:my\s+|the\s+|our\s+)?skylight(?:\s+calendar)?(?:\s+events?)?\b/i.test(text)) {
+      calls.push({
+        name: 'skylight_calendar',
+        tool: 'skylight_calendar',
+        arguments: { action: 'list_events' }
       });
     } else {
       calls.push({
@@ -1420,6 +1491,30 @@ export function inferFallbackToolCalls(prompt, matchedCategories = [], history =
         arguments: { action: 'status' }
       });
     }
+  }
+
+  if (categories.includes('browser_navigation')) {
+    const urlMatch = text.match(/https?:\/\/[^\s)>\]"']+/i);
+    const targetUrl = urlMatch ? urlMatch[0].replace(/[.,;!?]+$/, '') : 'https://example.com';
+    const isAudit = /\b(?:audit|responsive|breakpoint|argon|layout|overflow)\b/i.test(text);
+    const isScreenshot = /\b(?:screenshot|capture|snap)\b/i.test(text);
+    const isInteract = /\b(?:click|type|fill|submit|interact)\b/i.test(text);
+    const action = isAudit
+      ? 'audit'
+      : isScreenshot
+        ? 'screenshot'
+        : isInteract
+          ? 'interact'
+          : 'navigate';
+    calls.push({
+      name: 'browser_navigate',
+      tool: 'browser_navigate',
+      arguments: {
+        action,
+        url: targetUrl,
+        prompt: text
+      }
+    });
   }
 
   return calls;

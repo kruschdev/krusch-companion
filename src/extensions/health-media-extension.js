@@ -5,7 +5,7 @@
  * - Deterministic readiness score (0-100) and energy band ('low_recovery' | 'medium' | 'high').
  * - Low-recovery board adaptation demotes non-urgent high-energy tasks (execution_priority >= 2
  *   and energy_level === 'high') to Lane 4 (Backlog) while keeping Lane 1 (Must Happen Today) untouched.
- * - Media & Focus Soundscape controller queries Jellyfin on kruschmedia (http://100.69.39.19:8096)
+ * - Media & Focus Soundscape controller queries Jellyfin (JELLYFIN_URL or http://127.0.0.1:8096)
  *   when JELLYFIN_API_KEY is configured and falls back cleanly (ok: true) to the local
  *   companion_media_sessions SQLite state twin.
  */
@@ -48,7 +48,7 @@ export const DEFAULT_MEDIA_PROFILES = [
     provider: 'jellyfin',
     playback_state: 'stopped',
     volume: 75,
-    stream_url: 'http://100.69.39.19:8096'
+    stream_url: process.env.JELLYFIN_URL || 'http://127.0.0.1:8096'
   }
 ];
 
@@ -398,7 +398,7 @@ export function getMediaSessions() {
   return {
     ok: true,
     jellyfinConfigured: Boolean((process.env.JELLYFIN_API_KEY || '').trim()),
-    jellyfinUrl: (process.env.JELLYFIN_URL || 'http://100.69.39.19:8096').replace(/\/+$/, ''),
+    jellyfinUrl: (process.env.JELLYFIN_URL || 'http://127.0.0.1:8096').replace(/\/+$/, ''),
     activeSession,
     sessions
   };
@@ -432,7 +432,7 @@ export async function controlMedia({
   ensureHealthAndMediaTables();
   const db = getDb();
   const normAction = String(action || 'status').toLowerCase().trim();
-  const jellyfinUrl = (process.env.JELLYFIN_URL || 'http://100.69.39.19:8096').replace(/\/+$/, '');
+  const jellyfinUrl = (process.env.JELLYFIN_URL || 'http://127.0.0.1:8096').replace(/\/+$/, '');
   const jellyfinApiKey = String(process.env.JELLYFIN_API_KEY || '').trim();
 
   const safeVolume =

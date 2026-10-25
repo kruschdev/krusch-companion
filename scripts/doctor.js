@@ -105,6 +105,33 @@ export async function runDoctorChecks() {
     remediation: openrouterReady ? null : 'Optional: set OPENROUTER_API_KEY and LLM_PROVIDER="openrouter" for zero-GPU mode.'
   });
 
+  // 5b. Colab Pro L2.5 G4 Burst Tier (SSH Tunnel on 127.0.0.1:11435)
+  const colabBase = (config.cascade.colabBurstUrl || 'http://127.0.0.1:11435/v1').replace(/\/v1\/?$/, '');
+  let colabBurstOnline = false;
+  try {
+    if (config.cascade.colabBurstEnabled !== false) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 1200);
+      const res = await fetch(`${colabBase}/api/tags`, { signal: controller.signal });
+      clearTimeout(timer);
+      if (res.ok) {
+        colabBurstOnline = true;
+      }
+    }
+  } catch {
+    colabBurstOnline = false;
+  }
+
+  checks.push({
+    id: 'colab_burst_l25',
+    name: `Colab Pro L2.5 G4 Burst (${colabBase})`,
+    status: colabBurstOnline ? 'ok' : 'optional',
+    detail: colabBurstOnline
+      ? `SSH Tunnel Active · 96GB Blackwell G4 (${config.cascade.colabBurstModel || 'gpt-oss:120b'}) ready`
+      : 'Sleeping (0 CU/hr · run ./scripts/colab-ollama-g4.sh start or /open to wake)',
+    remediation: null
+  });
+
   // 6. Optional G-Krusch Google Workspace Bridge
   const gkruschUrl = process.env.G_KRUSCH_URL || 'http://127.0.0.1:5446';
   let gkruschOnline = false;

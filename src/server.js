@@ -70,6 +70,11 @@ import {
   generateMobileShortcutManifest
 } from './services/channel-bot.js';
 import {
+  handleGoogleHomeTurn,
+  broadcastToGoogleHome,
+  getGoogleHomeSetupGuide
+} from './services/google-home.js';
+import {
   getMonthlyFinanceSummary,
   listSubscriptionsAndBills
 } from './extensions/finance-ledger-extension.js';
@@ -78,6 +83,8 @@ import {
   listDistilledPlaybooks
 } from './extensions/krusch-fs-extension.js';
 import { getHealthMetrics } from './extensions/health-media-extension.js';
+import { navigateCompanionBrowser } from './extensions/browser-navigator-extension.js';
+import { registerFamilyAuthRoutes, familyAuthGateMiddleware } from './auth/family-gate.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -92,7 +99,9 @@ ensureAllExtensionsLoaded().catch(() => {});
 if (String(process.env.DISABLE_SENTINEL_DAEMON || '').toLowerCase() !== 'true') {
   const intervalMs = parseInt(process.env.SENTINEL_INTERVAL_MS || '300000', 10) || 300000;
   startSentinelDaemon({ intervalMs });
-  syncGkruschDriveSteering().catch(() => {});
+  if (String(process.env.DISABLE_GKRUSCH_SYNC || '').toLowerCase() !== 'true') {
+    syncGkruschDriveSteering().catch(() => {});
+  }
 }
 
 const app = express();
@@ -111,7 +120,11 @@ function isTrustedCompanionOrigin(origin) {
       /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host) ||
       /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}$/.test(host) ||
       host.endsWith('.ts.net') ||
-      host.endsWith('.local')
+      host.endsWith('.local') ||
+      host === 'krusch.dev' ||
+      host.endsWith('.krusch.dev') ||
+      host === 'kruschdev.com' ||
+      host.endsWith('.kruschdev.com')
     ) {
       return true;
     }
@@ -132,6 +145,7 @@ app.use(
   })
 );
 app.use(express.json({ limit: '5mb' }));
+app.use(express.urlencoded({ extended: false }));
 
 app.use('/api', (req, res, next) => {
   const origin = req.headers.origin;
@@ -150,6 +164,9 @@ app.use('/api', (req, res, next) => {
   }
   next();
 });
+
+registerFamilyAuthRoutes(app);
+app.use(familyAuthGateMiddleware);
 
 // Serve static frontend assets if built (with no-cache on index.html and sw.js so UI updates apply immediately)
 const clientDist = path.join(projectRoot, 'client', 'dist');
@@ -174,6 +191,9 @@ app.get('/api/health', (_req, res) => {
     provider: config.cascade.provider,
     edgeModel: config.cascade.edgeModel,
     swarmModel: config.cascade.swarmModel,
+    colabBurstEnabled: Boolean(config.cascade.colabBurstEnabled),
+    colabBurstModel: config.cascade.colabBurstModel,
+    colabBurstUrl: config.cascade.colabBurstUrl,
     openrouterModel: config.cascade.openrouterModel,
     openrouterConfigured: Boolean(config.cascade.openrouterApiKey),
     allowCloudEscalation: config.cascade.allowCloudEscalation,
@@ -446,6 +466,8 @@ app.post('/api/companion/chat', async (req, res) => {
       timestamp: new Date().toISOString(),
       promptPreview: prompt.slice(0, 140),
       tierUsed: result.tierUsed,
+      tierLabel: result.tierLabel || null,
+      modelUsed: result.modelUsed || null,
       latencyMs: result.latencyMs,
       reason: result.reason,
       contextActivated: Boolean(contextEval.shouldInjectContext),
@@ -459,6 +481,8 @@ app.post('/api/companion/chat', async (req, res) => {
       sessionId,
       reply: result.content,
       tierUsed: result.tierUsed,
+      tierLabel: result.tierLabel || null,
+      modelUsed: result.modelUsed || null,
       latencyMs: result.latencyMs,
       reason: result.reason,
       contextActivated: contextEval.shouldInjectContext,
@@ -1065,6 +1089,60 @@ app.post('/api/skylight', async (req, res) => {
   }
 });
 
+app.get('/api/skylight/tools', async (req, res) => {
+  try {
+    const {
+      getMcpToolDefinitions,
+      getOpenAiToolSchemas,
+      getAnthropicToolSchemas,
+       getUniversalAgentManifest
+    } = await import('../../krusch-companion-skylight-connector/src/universal-adapter.js');
+    const format = String(req.query.format || 'mcp').toLowerCase();
+    const granular = String(req.query.granular ?? '1') !== '0';
+    if (format === 'manifest') {
+      return res.json(getUniversalAgentManifest());
+    }
+    const tools = ['claude', 'claudebot', 'anthropic'].includes(format)
+      ? getAnthropicToolSchemas({ granular })
+      : ['openai', 'grok', 'grokbot', 'xai', 'hermes', 'muse', 'openclaw', 'clawdbot'].includes(format)
+        ? getOpenAiToolSchemas({ granular })
+        : getMcpToolDefinitions({ granular: true, includeUnified: true });
+    res.json({ ok: true, format, count: tools.length, tools });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.post(['/api/skylight/mcp', '/api/skylight/call'], async (req, res) => {
+  try {
+    const {
+      handleMcpJsonRpc,
+      executeAnthropicToolUse,
+      executeOpenAiToolCall,
+      executeUniversalToolCall
+    } = await import('../../krusch-companion-skylight-connector/src/universal-adapter.js');
+    const body = req.body || {};
+    const options = { dbPath: config.db.path };
+
+    if (req.path === '/api/skylight/mcp' || body.jsonrpc === '2.0') {
+      const rpcRes = await handleMcpJsonRpc(body, options);
+      return res.status(rpcRes ? 200 : 202).json(rpcRes || { ok: true });
+    }
+    if (body.type === 'tool_use' || body.input) {
+      return res.json(await executeAnthropicToolUse(body, options));
+    }
+    if (body.function) {
+      return res.json(await executeOpenAiToolCall(body, options));
+    }
+    const toolName = body.tool || body.name || 'skylight_calendar';
+    const toolArgs = body.arguments || body.args || body;
+    res.json(await executeUniversalToolCall(toolName, toolArgs, options));
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+
 // ── Initial Setup / Database Seeding Questionnaire ──────────────────────────
 app.get('/api/companion/onboarding', (_req, res) => {
   try {
@@ -1196,6 +1274,28 @@ app.post('/api/companion/vision', upload.single('image'), async (req, res) => {
   }
 });
 
+app.post('/api/companion/browser', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const out = await navigateCompanionBrowser({
+      action: body.action || 'navigate',
+      url: body.url || body.targetUrl || '',
+      steps: body.steps || [],
+      waitForSelector: body.waitForSelector || null,
+      prompt: body.prompt || '',
+      allowLocalhost: Boolean(body.allowLocalhost && process.env.ALLOW_LOCAL_BROWSER_AUDIT === '1'),
+      autoStageBoard: Boolean(body.autoStageBoard)
+    });
+    if (!out.ok && out.blocked) {
+      const status = out.reason === 'SSRF_BLOCKED' ? 403 : 400;
+      return res.status(status).json(out);
+    }
+    res.json(out);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/companion/tts', async (req, res) => {
   try {
     const { text, voice = 'af_heart', speed = 1.0 } = req.body || {};
@@ -1214,6 +1314,90 @@ app.post('/api/companion/tts', async (req, res) => {
       useBrowserSpeechSynthesis: result.useBrowserSpeechSynthesis,
       estimatedDurationMs: result.estimatedDurationMs
     });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Binary WAV audio stream endpoint for Google Cast / Home Assistant media_player.play_media
+app.get(['/api/companion/tts.wav', '/api/companion/tts/stream.wav'], async (req, res) => {
+  try {
+    const text = String(req.query.text || req.query.prompt || '').trim();
+    const voice = String(req.query.voice || 'af_heart').trim();
+    const speed = parseFloat(req.query.speed || '1.0') || 1.0;
+    const result = await synthesizeSpeech({ text, voice, speed });
+    if (!result.ok || !result.audioBuffer) {
+      return res.status(400).json(result);
+    }
+    res.setHeader('Content-Type', 'audio/wav');
+    res.setHeader('Content-Length', String(result.audioBuffer.length));
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(result.audioBuffer);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Sovereign Google Home / Cast & Home Assistant Voice Bridge Endpoints
+app.get('/api/companion/google-home', (req, res) => {
+  try {
+    const hostHeader = req.headers.host;
+    const defaultHost =
+      process.env.COMPANION_LAN_HOST || (config.app.host === '0.0.0.0' ? '127.0.0.1' : config.app.host);
+    const baseUrl = hostHeader ? `${req.protocol}://${hostHeader}` : `http://${defaultHost}:${config.app.port}`;
+    res.json(getGoogleHomeSetupGuide({ baseUrl }));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/companion/google-home', async (req, res) => {
+  try {
+    const requiredSecret = String(process.env.GOOGLE_HOME_WEBHOOK_SECRET || '').trim();
+    if (requiredSecret) {
+      const headerSecret =
+        req.headers['x-webhook-secret'] ||
+        String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+      if (headerSecret !== requiredSecret) {
+        return res.status(401).json({ error: 'Unauthorized Google Home webhook request' });
+      }
+    }
+    const hostHeader = req.headers.host;
+    const defaultHost =
+      process.env.COMPANION_LAN_HOST || (config.app.host === '0.0.0.0' ? '127.0.0.1' : config.app.host);
+    const baseUrl = hostHeader ? `${req.protocol}://${hostHeader}` : `http://${defaultHost}:${config.app.port}`;
+    const out = await handleGoogleHomeTurn({
+      payload: req.body || {},
+      baseUrl
+    });
+    if (!out.ok) {
+      return res.status(400).json(out);
+    }
+    res.json(out);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/companion/google-home/announce', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const hostHeader = req.headers.host;
+    const defaultHost =
+      process.env.COMPANION_LAN_HOST || (config.app.host === '0.0.0.0' ? '127.0.0.1' : config.app.host);
+    const baseUrl = hostHeader ? `${req.protocol}://${hostHeader}` : `http://${defaultHost}:${config.app.port}`;
+    const out = await broadcastToGoogleHome({
+      text: body.text || body.message || body.prompt || '',
+      entityId: body.entityId || body.entity_id || body.device || null,
+      room: body.room || body.area || null,
+      voice: body.voice || 'af_heart',
+      speed: body.speed || 1.0,
+      baseUrl
+    });
+    if (!out.ok) {
+      return res.status(400).json(out);
+    }
+    res.json(out);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

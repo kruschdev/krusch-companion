@@ -15,7 +15,7 @@
   <img src="https://img.shields.io/badge/Voice--to--Text-Web%20Speech%20%2B%20Whisper%20STT-2dd4bf.svg?style=flat-square" alt="Voice-to-Text">
   <img src="https://img.shields.io/badge/Google%20AP2%20%26%20Wallet-Mandates%20%2B%20Passes-f0c040.svg?style=flat-square" alt="Google AP2 & Wallet">
   <a href="https://github.com/kruschdev/krusch-companion/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/CI-passing-brightgreen.svg?style=flat-square" alt="CI"></a>
-  <img src="https://img.shields.io/badge/tests-53%20passed-brightgreen.svg?style=flat-square" alt="Tests Passed">
+  <img src="https://img.shields.io/badge/tests-62%20passed-brightgreen.svg?style=flat-square" alt="Tests Passed">
 </p>
 
 ---
@@ -189,9 +189,9 @@ npm start                                                                 # 3. 1
 
 Once running at **`http://localhost:3004`**, the standalone **16-Question Initial Setup Page (`/setup`)** lets you seed your identity, partner/family CRM, home/work commute addresses, daily habits, and custom Faster-Whisper voice vocabulary in one step (or click **`Skip Setup →`** to jump straight into the app).
 
-### Run the Automated Test Suite (`53/53` Tests), Linter & Benchmarks
+### Run the Automated Test Suite (`62/62` Tests), Linter & Benchmarks
 ```bash
-# 1. Instant Hermetic Test Suite (53/53 unit, integration, 20-tool, onboarding & token-limiter tests):
+# 1. Instant Hermetic Test Suite (62/62 unit, integration, 20-tool, onboarding, L2.5 Colab Burst & token-limiter tests):
 MOCK_LLM=1 npm test
 
 # 2. Zero-Warning Frontend Linter (oxlint):
@@ -338,10 +338,10 @@ Krusch Companion is built around four core engines: the **Krusch Cascade Router*
                                           │
          ┌────────────────────────────────┼────────────────────────────────┐
          ▼                                ▼                                ▼
-   [ Tier 0: Direct CPU ]     [ <holodata> Agentic Proxy ]     [ Tier 1 / 2 / Cloud ]
-   - Safe AST Arithmetic       - DPP Diverse Tool Router        - Local: 7B Edge / 14B Swarm
-   - Direct Task/Board/Memory  - Micro-Schema Compaction (95%)  - OpenRouter 3-Specialist
-   - <15µs Latency ($0.00)     - 20 Sovereign Tools + Chaining    Dynamic Cascade (ZDR)
+   [ Tier 0: Direct CPU ]     [ <holodata> Agentic Proxy ]     [ Tier 1 / 2 / 2.5 / Cloud ]
+   - Safe AST Arithmetic       - DPP Diverse Tool Router        - L1 Edge (7B) / L2 Swarm (30B)
+   - Direct Task/Board/Memory  - Micro-Schema Compaction (95%)  - L2.5 Colab G4 Burst (120B)
+   - <15µs Latency ($0.00)     - 20 Sovereign Tools + Chaining  - L3 OpenRouter 3-Specialist (ZDR)
          │                                │                                │
          └────────────────────────────────┼────────────────────────────────┘
                                           ▲
@@ -377,21 +377,22 @@ krusch-companion/
 │   │   ├── chaos-dump.js          # Thought Stream Dual-Axis triage & memory extraction
 │   │   └── coach.js               # Morning briefings, focus micro-nudges & evening reflections
 │   ├── router/
-│   │   └── cascade-client.js      # L0 (<15µs) CPU router, Ollama & OpenRouter 3-Specialist cascade
+│   │   └── cascade-client.js      # L0 (<15µs) CPU router, L1/L2 Ollama, L2.5 Colab G4 Burst & L3 OpenRouter
 │   ├── context/
 │   │   └── index.js               # KruschContext 5-taxonomy store, superseding & boundary gate
 │   ├── db/
 │   │   └── index.js               # SQLite WAL Dual-Axis schema, recurring habit seeder & task rollover
 │   └── toolkit/                   # Self-contained @krusch/toolkit modules (zero external path deps)
 ├── client/                        # React 19 + Vite dark glassmorphism Progressive Web App
-└── tests/                         # 51 automated unit, integration & security hardening tests
+└── tests/                         # 62 automated unit, integration, L2.5 burst & security hardening tests
 ```
 
 ### 1. Sub-15µs CPU Cascade Router & Dynamic Specialist Routing
 * **L0 Deterministic Heuristic (`<15µs` CPU, `$0.00` Cost)**: Captures commands like `"Add task: ..."`, `"Prioritize task: ..."`, `"Complete task: ..."`, `"Show my tasks"`, `"Roll over unfinished tasks"`, `"Instead of X, remember that Y"`, or evaluates math expressions on CPU in microseconds with zero token cost.
 * **L1 Local Edge (`Ollama`)**: Dispatches daily conversational queries and `<holodata>` tool calls to local Ollama (`qwen2.5-coder:7b`) with sub-second response times.
-* **L2 Compute Swarm (`vLLM` / `Ollama 14B`)**: Transparently escalates heavy, multi-paragraph prompts to local network compute nodes with automatic fallback hedging.
-* **OpenRouter 3-Specialist Dynamic Cascade (Zero-GPU Mode)**: When `LLM_PROVIDER="openrouter"` (or hybrid escalation is enabled), [`selectOpenRouterSpecialistModel()`](src/router/cascade-client.js) inspects each turn and dynamically selects the optimal Zero-Data-Retention (`data_collection: "deny"`) specialist model:
+* **L2 Compute Swarm (`kruschdev` 30B / `kruschserv`)**: Transparently escalates heavy, multi-paragraph prompts to local network compute nodes (`qwen3-coder-30b-moe:latest` on Dual RTX 2080 Ti NVLink, with `hermes3:latest` secondary fallback on Dual RTX 3060).
+* **L2.5 Colab G4 Burst Tier (`gpt-oss:120b` via Private SSH Tunnel)**: Before escalating to external cloud APIs, `L2_SWARM` failures (or explicit `[colab]` / `/colab` / `[g4]` / `/g4` tags) escalate to the private SSH-tunneled **Google Colab Pro 96GB NVIDIA RTX PRO 6000 Blackwell (`--gpu G4`)** server at `http://127.0.0.1:11435/v1` running **`gpt-oss:120b`** (`116.8B` MXFP4, `131,072` ctx, **`~117.7 tok/s`**).
+* **L3 OpenRouter 3-Specialist Dynamic Cascade (Zero-GPU Mode)**: When `LLM_PROVIDER="openrouter"` (or hybrid escalation is enabled and local/Colab tiers are unreachable), [`selectOpenRouterSpecialistModel()`](src/router/cascade-client.js) inspects each turn and dynamically selects the optimal Zero-Data-Retention (`data_collection: "deny"`) specialist model:
 
 | Specialist Role | Selected OpenRouter Model | Live ZDR Benchmark Latency (2-Tool / 3-Tool Chain) | `<holodata>` Accuracy |
 | :--- | :--- | :---: | :---: |
@@ -493,6 +494,9 @@ The server configuration is located in [`config.json`](config.json) at the proje
 | `cascade.ollamaUrl` | `"http://127.0.0.1:11434"` | `OLLAMA_HOST` | URL of local Ollama instance. |
 | `cascade.swarmUrl` | `"http://kruschdev:11434/v1"` | `SWARM_VLLM_URL` | URL of primary L2 Swarm compute node. |
 | `cascade.swarmFallbackUrl` | `"http://kruschserv:11434/v1"` | `SWARM_FALLBACK_URL` | URL of secondary L2 Swarm compute node. |
+| `cascade.colabBurstEnabled` | `true` | `COLAB_BURST_ENABLED` | Enables the intermediate `L2.5` Colab G4 96GB burst tier between `L2_SWARM` and `L3_CLOUD` (OpenRouter). |
+| `cascade.colabBurstUrl` | `"http://127.0.0.1:11435/v1"` | `COLAB_BURST_URL` | Local SSH-tunneled URL (`./scripts/colab-ollama-g4.sh start`) for the Colab G4 Ollama server. |
+| `cascade.colabBurstModel` | `"gpt-oss:120b"` | `COLAB_BURST_MODEL` | Private 120B MXFP4 model (`131K` ctx, `~117.7 tok/s`) running on the 96GB Blackwell G4 burst tier. |
 | — | `"http://127.0.0.1:5446"` | `G_KRUSCH_URL` | URL of local G-Krusch Google Workspace Extension server (Drive RAG, Calendar, Gmail). |
 | — | `""` *(OSRM Fallback)* | `GOOGLE_MAPS_API_KEY` | Optional Google Maps Directions API key for live `duration_in_traffic` telemetry (automatically falls back to zero-key OpenStreetMap + OSRM routing when unset). |
 | — | `"Seattle, WA"` | `DEFAULT_ORIGIN_ADDRESS` | Default home/office departure address for `commute_departure_check` and Sentinel Watchdog Leave-By calculations (auto-resolves from `home_location` memory). |
@@ -623,7 +627,7 @@ docker compose ps
 
 ## 📌 Project Status, Limitations & Failure Modes
 
-* **Current Stage**: Standalone V3.7 (`53/53` automated unit, integration, 20-tool execution, 16-question onboarding, and security hardening tests passing across all suites; `0` lint warnings/errors).
+* **Current Stage**: Standalone V3.8 (`62/62` automated unit, integration, 20-tool execution, L2.5 Colab G4 Burst escalation, 16-question onboarding, and security hardening tests passing across all suites; `0` lint warnings/errors).
 * **Small Local Model (7B) Constraints & Mitigations**:
   - Small 7B parameter models (`qwen2.5-coder:7b`) can occasionally omit XML tool wrappers or struggle with deeply nested multi-step tool chains.
   - **How Companion Mitigates This**:

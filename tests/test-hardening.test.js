@@ -384,18 +384,18 @@ test('Hardening: Initial Setup / Database Seeding Questionnaire (16 Questions, S
   assert.strictEqual(skipped.completed, true);
 
   const saved = await saveOnboardingProfile({
-    fullName: 'Kevin Rusch (Kevin)',
-    partnerName: 'Maggie',
-    partnerWorkplace: 'La Habra High School, 801 West Highlander Avenue, La Habra, CA 90631',
+    fullName: 'Krusch User (Krusch)',
+    partnerName: 'Alex',
+    partnerWorkplace: 'Springfield High School, 100 Maple Avenue, Springfield, OR 97477',
     partnerPickupTime: '3:30 PM',
-    homeAddress: '1161 North Citrus Drive, La Habra, CA 90631',
-    dailyHabits: 'Morning prayer\nCheck in with Maggie',
-    customVocabulary: 'Kevin, Maggie, La Habra High School, 1161 North Citrus Drive'
+    homeAddress: '742 Evergreen Terrace, Springfield, OR 97477',
+    dailyHabits: 'Morning prayer\nCheck in with Alex',
+    customVocabulary: 'Alex, Springfield High School, 742 Evergreen Terrace'
   });
   assert.strictEqual(saved.ok, true);
   assert.strictEqual(saved.completed, true);
   assert.ok(saved.seededSummary.memoriesCount >= 5);
-  assert.strictEqual(resolveDefaultOrigin(null), '1161 North Citrus Drive, La Habra, CA 90631');
+  assert.strictEqual(resolveDefaultOrigin(null), '742 Evergreen Terrace, Springfield, OR 97477');
 });
 
 test('Hardening: Opt-In Skylight Calendar 2 Connector & Programmatic SDK Entrypoint (src/index.js) execute cleanly', async () => {
@@ -420,6 +420,190 @@ test('Hardening: Opt-In Skylight Calendar 2 Connector & Programmatic SDK Entrypo
   assert.ok(typeof syncRes.data.pushed === 'number');
 });
 
+test('Hardening: Client I/O boundary utilities (client/src/utils/companionClient.js) sanitize sessions, validate tabs, and sort tasks', async () => {
+  const clientUtils = await import('../client/src/utils/companionClient.js');
+  assert.ok(Array.isArray(clientUtils.VALID_COMPANION_TABS));
+  assert.ok(clientUtils.VALID_COMPANION_TABS.includes('companion'));
+  assert.strictEqual(clientUtils.sanitizeSessionId('  valid_session-123:abc.def  '), 'valid_session-123:abc.def');
+  assert.strictEqual(clientUtils.sanitizeSessionId('<script>alert(1)</script>'), 'scriptalert1script');
+  assert.strictEqual(clientUtils.sanitizeSessionId('', 'fallback-id'), 'fallback-id');
+
+  const sorted = clientUtils.sortIncompleteTasks([
+    { id: 1, title: 'Low priority', completed: false, execution_priority: 3, tier: 4 },
+    { id: 2, title: 'Completed task', completed: true, execution_priority: 1, tier: 1 },
+    { id: 3, title: 'High priority tier 2', completed: false, execution_priority: 1, tier: 2 },
+    { id: 4, title: 'High priority tier 1', completed: false, execution_priority: 1, tier: 1 }
+  ]);
+  assert.deepStrictEqual(sorted.map(t => t.id), [4, 3, 1]);
+  assert.strictEqual(clientUtils.readInitialSetupRoute(), false);
+  assert.strictEqual(clientUtils.readInitialActiveTab(), 'companion');
+  assert.strictEqual(clientUtils.readStoredSessionId('fallback-sess'), 'fallback-sess');
+});
+
+test('Hardening: Google Home Voice Turn Webhook, WAV Stream URL, & Home Assistant Media Player Cast Bridge', async () => {
+  const {
+    handleGoogleHomeTurn,
+    broadcastToGoogleHome,
+    buildCompanionTtsStreamUrl,
+    getGoogleHomeSetupGuide
+  } = await import('../src/services/google-home.js');
+
+  const wavUrl = buildCompanionTtsStreamUrl({
+    text: '**Good morning!** Here is your briefing.',
+    baseUrl: 'http://192.168.1.50:3004'
+  });
+  assert.ok(wavUrl.startsWith('http://192.168.1.50:3004/api/companion/tts.wav?'));
+  assert.ok(wavUrl.includes('Good+morning'));
+
+  // Test 2-way voice turn with fast-path slash command (/status) + simulated Home Assistant media_player.play_media
+  let haCalledUrl = null;
+  let haPayload = null;
+  process.env.HOME_ASSISTANT_URL = 'http://192.168.1.60:8123';
+  process.env.HOME_ASSISTANT_TOKEN = 'test-ha-token';
+
+  try {
+    const turnOut = await handleGoogleHomeTurn({
+      payload: {
+        prompt: '/status',
+        room: 'Kitchen',
+        castReply: true
+      },
+      baseUrl: 'http://192.168.1.50:3004',
+      fetchImpl: async (url, opts) => {
+        haCalledUrl = url;
+        haPayload = JSON.parse(opts.body);
+        return { ok: true, status: 200, json: async () => ({}) };
+      }
+    });
+
+    assert.strictEqual(turnOut.ok, true);
+    assert.strictEqual(turnOut.platform, 'google_home');
+    assert.ok(turnOut.cleanSpokenReply.includes('Krusch Companion Channel Bot Status'));
+    assert.strictEqual(turnOut.speech, turnOut.cleanSpokenReply);
+    assert.strictEqual(turnOut.fulfillmentText, turnOut.cleanSpokenReply);
+    assert.strictEqual(turnOut.castResult.ok, true);
+    assert.strictEqual(turnOut.castResult.haDispatched, true);
+    assert.strictEqual(turnOut.castResult.entityId, 'media_player.kitchen_speaker');
+    assert.strictEqual(haCalledUrl, 'http://192.168.1.60:8123/api/services/media_player/play_media');
+    assert.strictEqual(haPayload.entity_id, 'media_player.kitchen_speaker');
+    assert.strictEqual(haPayload.announce, true);
+
+    // Also test smart_home_bridge tool integration with channel="google_home"
+    const toolOut = await executeCompanionTool(
+      'smart_home_bridge',
+      {
+        action: 'speak_google_home',
+        channel: 'google_home',
+        message: 'Dinner is ready in 5 minutes!'
+      },
+      {
+        fetchImpl: async () => ({ ok: true, status: 200 })
+      }
+    );
+    assert.strictEqual(toolOut.ok, true);
+    assert.strictEqual(toolOut.actionType, 'google_home_broadcast');
+
+    const guide = getGoogleHomeSetupGuide({ baseUrl: 'http://192.168.1.50:3004' });
+    assert.strictEqual(guide.ok, true);
+    assert.ok(guide.speakers.some(s => s.entity_id === 'media_player.kitchen_speaker'));
+    assert.ok(guide.homeAssistantYaml.includes('krusch_companion_voice'));
+
+    // Test updating Skylight Calendar 2 (event, meal plan, grocery list) directly from Google Home voice turn
+    const skylightEventTurn = await handleGoogleHomeTurn({
+      payload: {
+        prompt: 'Add soccer practice at 4pm to the Skylight calendar',
+        room: 'Kitchen',
+        castReply: true
+      },
+      baseUrl: 'http://192.168.1.50:3004',
+      executeTool: async (tool, args) => executeCompanionTool(tool, { ...args, dryRun: true }),
+      fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({}) })
+    });
+    assert.strictEqual(skylightEventTurn.ok, true);
+    assert.strictEqual(skylightEventTurn.actionExecuted.tool, 'skylight_calendar');
+    assert.strictEqual(skylightEventTurn.actionExecuted.args.action, 'create_event');
+    assert.strictEqual(skylightEventTurn.actionExecuted.args.title, 'soccer practice at 4pm');
+    assert.ok(skylightEventTurn.cleanSpokenReply.toLowerCase().includes('soccer practice'));
+
+    const skylightMealTurn = await handleGoogleHomeTurn({
+      payload: {
+        prompt: 'Plan tacos for dinner on Skylight',
+        room: 'Kitchen',
+        castReply: false
+      }
+    });
+    assert.strictEqual(skylightMealTurn.ok, true);
+    assert.strictEqual(skylightMealTurn.actionExecuted.tool, 'skylight_calendar');
+    assert.strictEqual(skylightMealTurn.actionExecuted.args.action, 'plan_meal');
+    assert.strictEqual(skylightMealTurn.actionExecuted.args.mealType, 'dinner');
+    assert.strictEqual(skylightMealTurn.actionExecuted.args.title, 'tacos');
+  } finally {
+    delete process.env.HOME_ASSISTANT_URL;
+    delete process.env.HOME_ASSISTANT_TOKEN;
+  }
+});
+
+test('Hardening (BUG-01): markTaskComplete validates and encodes taskId before URL interpolation', async () => {
+  const { markTaskComplete, validateTaskId } = await import('../client/src/utils/companionClient.js');
+  const requestedUrls = [];
+  const mockFetch = async (url, opts) => {
+    requestedUrls.push({ url, opts });
+    return { ok: true };
+  };
+
+  const okNumeric = await markTaskComplete(42, { fetchImpl: mockFetch });
+  assert.strictEqual(okNumeric, true);
+  assert.strictEqual(requestedUrls[0].url, '/api/tasks/42/complete');
+  assert.strictEqual(requestedUrls[0].opts.method, 'PATCH');
+
+  const okUuid = await markTaskComplete('550e8400-e29b-41d4-a716-446655440000', { fetchImpl: mockFetch });
+  assert.strictEqual(okUuid, true);
+  assert.strictEqual(requestedUrls[1].url, '/api/tasks/550e8400-e29b-41d4-a716-446655440000/complete');
+
+  await assert.rejects(
+    async () => markTaskComplete('../admin/delete', { fetchImpl: mockFetch }),
+    /Invalid taskId/i
+  );
+  await assert.rejects(
+    async () => markTaskComplete('123?override=true', { fetchImpl: mockFetch }),
+    /Invalid taskId/i
+  );
+  await assert.rejects(
+    async () => markTaskComplete('', { fetchImpl: mockFetch }),
+    /Invalid taskId/i
+  );
+  assert.throws(() => validateTaskId(null), /Invalid taskId/i);
+  assert.strictEqual(requestedUrls.length, 2, 'Malformed taskIds must throw before calling fetch');
+});
+
+test('Hardening (BUG-01): loadEnvFile returns frozen parsed config without mutating process.env', async () => {
+  const { loadEnvFile, envOr } = await import('../src/toolkit/config.js');
+  const tmpEnvPath = path.join(__dirname, 'tmp-bug01.env');
+  const testKey = 'COMPANION_IMMUTABLE_TEST_KEY_BUG01';
+  delete process.env[testKey];
+  fs.writeFileSync(tmpEnvPath, `# Comment\n${testKey}="immutable_value"\n`, 'utf8');
+
+  try {
+    const parsed = loadEnvFile(tmpEnvPath, { skipInTest: false });
+    assert.strictEqual(Object.isFrozen(parsed), true);
+    assert.strictEqual(parsed[testKey], 'immutable_value');
+    assert.strictEqual(process.env[testKey], undefined, 'process.env must remain unchanged');
+    assert.strictEqual(envOr(testKey, null, 'fallback', parsed), 'immutable_value');
+  } finally {
+    if (fs.existsSync(tmpEnvPath)) fs.unlinkSync(tmpEnvPath);
+  }
+});
+
+test('Hardening (BUG-01): createL1FallbackSentinel returns structured L1 fallback sentinel response', async () => {
+  const { createL1FallbackSentinel, TIERS } = await import('../src/router/cascade-client.js');
+  const sentinel = createL1FallbackSentinel(Date.now() - 12, new Error('hermes3 unreachable'));
+  assert.strictEqual(sentinel.content, null);
+  assert.strictEqual(sentinel.tierUsed, TIERS.L1_EDGE);
+  assert.strictEqual(sentinel.reason, 'L1 fallback failed');
+  assert.strictEqual(typeof sentinel.latencyMs, 'number');
+  assert.ok(sentinel.latencyMs >= 0);
+});
+
 test('Hardening: Cleanup test artifacts', () => {
   if (fs.existsSync(testDbPath)) fs.unlinkSync(testDbPath);
   if (fs.existsSync(`${testDbPath}-wal`)) fs.unlinkSync(`${testDbPath}-wal`);
@@ -438,3 +622,4 @@ test('Hardening: Cleanup test artifacts', () => {
     }
   }
 });
+

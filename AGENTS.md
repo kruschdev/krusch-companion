@@ -21,7 +21,7 @@
 
 - **L0 Deterministic Fast-Path (`<15µs` CPU)**: Math (`safeEvaluateArithmetic`), timers, notes, and task mutations execute directly on SQLite with `$0.00` LLM overhead.
 - **L1/L2 Local Multi-Family Pool (`keep_alive: -1`, `100% GPU`)**:
-  - Primary Local Node (`OLLAMA_URL`, default `127.0.0.1:11434`): `qwen2.5-coder:7b` (fast local tool/tagger) + `bge-large:latest` (`1024`-dim embeddings).
+  - Primary Local Node (`OLLAMA_URL`, default `127.0.0.1:11434`): `qwen2.5-coder:7b` (fast local tool/tagger) + `snowflake-arctic-embed2:latest` (`1024`-dim embeddings).
   - Executor & Referee Pool (`VISION_OLLAMA_URL` / secondary GPU host): `gemma4:e4b` (multimodal/tool executor) + `hermes3:latest` (coaching, prose & cross-family Referee).
   - Heavy Synthesis Pool (compute GPU host): `qwen3-coder-30b-moe:latest` (30B MoE heavy synthesis).
 - **L2.5 On-Demand Burst (`127.0.0.1:11435`)**: `gpt-oss:120b` (`131K` ctx) via SSH tunnel when active.

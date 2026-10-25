@@ -37,38 +37,60 @@ export function App() {
       setFocusTask(preferredTask);
       return;
     }
-    const incomplete = await fetchIncompleteTasksSorted();
-    if (incomplete) {
-      setFocusTask(prev => {
-        if (prev && incomplete.some(t => t.id === prev.id)) {
-          return incomplete.find(t => t.id === prev.id);
-        }
-        return incomplete[0] || null;
-      });
+    try {
+      const incomplete = await fetchIncompleteTasksSorted();
+      if (incomplete) {
+        setFocusTask(prev => {
+          if (prev && incomplete.some(t => t.id === prev.id)) {
+            return incomplete.find(t => t.id === prev.id);
+          }
+          return incomplete[0] || null;
+        });
+      }
+    } catch (err) {
+      console.error('[App] Failed to fetch incomplete tasks:', err);
+      setFocusTask(null);
     }
   };
 
   const fetchStreak = async () => {
-    const nextStreak = await fetchStreakCount();
-    if (nextStreak !== null) {
-      setStreak(nextStreak);
+    try {
+      const nextStreak = await fetchStreakCount();
+      if (nextStreak !== null) {
+        setStreak(nextStreak);
+      }
+    } catch (err) {
+      console.error('[App] Failed to fetch streak count:', err);
     }
   };
 
   useEffect(() => {
-    let active = true;
-    fetchStreakCount().then((nextStreak) => {
-      if (active && nextStreak !== null) setStreak(nextStreak);
-    });
+    const controller = new AbortController();
+    const { signal } = controller;
 
-    fetchIncompleteTasksSorted().then((incomplete) => {
-      if (active && incomplete) {
-        setFocusTask(incomplete[0] || null);
-      }
-    });
+    fetchStreakCount({ signal })
+      .then((nextStreak) => {
+        if (!signal.aborted && nextStreak !== null) setStreak(nextStreak);
+      })
+      .catch((err) => {
+        if (!signal.aborted) console.error('[App] Initial streak fetch failed:', err);
+      });
 
-    fetchOnboardingStatus().then((data) => {
-      if (!active || !data) return;
+    fetchIncompleteTasksSorted({ signal })
+      .then((incomplete) => {
+        if (!signal.aborted && incomplete) {
+          setFocusTask(incomplete[0] || null);
+        }
+      })
+      .catch((err) => {
+        if (!signal.aborted) {
+          console.error('[App] Initial incomplete tasks fetch failed:', err);
+          setFocusTask(null);
+        }
+      });
+
+    fetchOnboardingStatus({ signal }).then((data) => {
+      if (signal.aborted || !data) return;
       setOnboardingData(data);
       if (!data.completed) {
         setShowSetupPage(true);
@@ -76,7 +98,7 @@ export function App() {
     });
 
     return () => {
-      active = false;
+      controller.abort();
     };
   }, []);
 
