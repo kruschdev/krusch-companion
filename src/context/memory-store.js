@@ -1,6 +1,15 @@
 import fs from 'fs';
 import path from 'path';
 import { getDb, getTasksForDate, getStreak, getDailyFocus, today } from '../db/index.js';
+import {
+  RAW_RAG_DEFAULTS,
+  chunkConversationWindows,
+  computeFeatureVector,
+  cosineSimilarity,
+  rerankCandidateWindowsSync,
+  assembleReaderEvidence,
+  normalizeAppendOnlyWriteOp
+} from '../toolkit/raw-rag.js';
 
 export const VALID_CATEGORIES = ['decision', 'invariant', 'bug', 'lesson', 'blocker'];
 
@@ -213,6 +222,180 @@ export function searchMemories(query) {
     WHERE content LIKE ? OR key LIKE ?
     ORDER BY is_active DESC, id DESC
   `).all(pattern, pattern);
+}
+
+/**
+ * Enforce the arXiv:2610.30755 `ADD` / `NONE` non-destructive write discipline on `companion_context`:
+ * - Duplicate active text -> `NONE` (`NOOP_IDENTICAL_TEXT`)
+ * - `UPDATE` on an active record -> non-destructive `supersedeMemory` preserving full lineage (`ADD`)
+ * - `DELETE` without `explicitComplianceErase: true` -> `NONE` (`DESTRUCTIVE_DELETE_BLOCKED`)
+ */
+export function applyAppendOnlyMemoryProposal({
+  action = 'NONE',
+  targetId = null,
+  category = 'lesson',
+  content = '',
+  key = null,
+  confidence = 1.0,
+  reason = 'Append-only Raw-RAG supersede',
+  explicitComplianceErase = false
+} = {}) {
+  const activeRecords = getActiveMemories();
+  const normalized = normalizeAppendOnlyWriteOp(
+    { action, targetId, content },
+    activeRecords,
+    { explicitComplianceErase }
+  );
+
+  if (normalized.action === 'COMPLIANCE_TOMBSTONE' && normalized.targetId) {
+    const delRes = deleteMemory(Number(normalized.targetId));
+    return { ...normalized, deleted: delRes.deleted };
+  }
+
+  if (normalized.action !== 'ADD') {
+    return { ...normalized, record: null };
+  }
+
+  if (normalized.supersedesId) {
+    const sup = supersedeMemory({
+      targetId: Number(normalized.supersedesId),
+      newContent: normalized.text,
+      reason
+    });
+    return { ...normalized, record: sup.newMemory, supersededResult: sup };
+  }
+
+  const created = rememberMemory({
+    category,
+    content: normalized.text,
+    key,
+    confidence
+  });
+  return { ...normalized, record: created };
+}
+
+/**
+ * Source-Preserving Episodic Dialogue Retrieval (`Raw-RAG`, arXiv:2610.30755) over `companion_dialogue`:
+ * - Zero LLM ingestion calls (`llmIngestionCalls: 0`)
+ * - 256-token sliding windows (`overlap = 32`) isolated per `session_id`
+ * - Top-128 feature-hashed dense recall + Top-15 cross-encoder reranking
+ * - Graceful `maxEvidenceTokens` budget policy (disables turn expansion before dropping chunks)
+ */
+export function retrieveEpisodicDialogue(query, {
+  maxEvidenceTokens = RAW_RAG_DEFAULTS.maxEvidenceTokens,
+  windowTokens = RAW_RAG_DEFAULTS.windowTokens,
+  overlapTokens = RAW_RAG_DEFAULTS.overlapTokens,
+  denseCandidateK = RAW_RAG_DEFAULTS.denseCandidateK,
+  finalRerankK = RAW_RAG_DEFAULTS.finalRerankK,
+  turnExpansion = true,
+  excludeSessionId = null,
+  minRerankScore = 0.12,
+  maxRows = 2000
+} = {}) {
+  const cleanQuery = String(query || '').trim();
+  if (!cleanQuery) {
+    return {
+      query: '',
+      contextText: '',
+      entries: [],
+      selectedWindows: [],
+      tokenCount: 0,
+      turnExpansionApplied: false,
+      budgetPolicyTriggered: 'NONE',
+      llmIngestionCalls: 0
+    };
+  }
+
+  const db = getDb();
+  const safeMaxRows = Math.max(10, Number(maxRows) || 2000);
+  const rows = excludeSessionId
+    ? db.prepare(`
+        SELECT * FROM (
+          SELECT id, session_id, role, content, created_at
+          FROM companion_dialogue
+          WHERE session_id != ?
+          ORDER BY id DESC
+          LIMIT ?
+        )
+        ORDER BY id ASC
+      `).all(String(excludeSessionId), safeMaxRows)
+    : db.prepare(`
+        SELECT * FROM (
+          SELECT id, session_id, role, content, created_at
+          FROM companion_dialogue
+          ORDER BY id DESC
+          LIMIT ?
+        )
+        ORDER BY id ASC
+      `).all(safeMaxRows);
+
+  if (!rows || rows.length === 0) {
+    return {
+      query: cleanQuery,
+      contextText: '',
+      entries: [],
+      selectedWindows: [],
+      tokenCount: 0,
+      turnExpansionApplied: false,
+      budgetPolicyTriggered: 'NONE',
+      llmIngestionCalls: 0
+    };
+  }
+
+  const turns = rows.map(r => ({
+    turnId: `dlg_${r.id}`,
+    date: r.created_at || 'unknown',
+    speaker: r.role,
+    content: r.content,
+    sessionKey: r.session_id
+  }));
+
+  const { serializedTurns, windows } = chunkConversationWindows(turns, {
+    windowTokens,
+    overlapTokens,
+    isolateSessions: true
+  });
+
+  if (windows.length === 0) {
+    return {
+      query: cleanQuery,
+      contextText: '',
+      entries: [],
+      selectedWindows: [],
+      tokenCount: 0,
+      turnExpansionApplied: false,
+      budgetPolicyTriggered: 'NONE',
+      llmIngestionCalls: 0
+    };
+  }
+
+  const qVec = computeFeatureVector(cleanQuery);
+  const denseScored = windows.map(win => {
+    const docVec = computeFeatureVector(win.text, win.contentHash);
+    return {
+      ...win,
+      denseScore: Math.max(0, cosineSimilarity(qVec, docVec))
+    };
+  });
+
+  denseScored.sort((a, b) => (b.denseScore - a.denseScore) || (a.windowIndex - b.windowIndex));
+  const densePool = denseScored.slice(0, Math.max(1, denseCandidateK));
+  const reranked = rerankCandidateWindowsSync(cleanQuery, densePool, finalRerankK)
+    .filter(w => w.rerankScore >= minRerankScore);
+
+  const assembled = assembleReaderEvidence(reranked, serializedTurns, {
+    maxEvidenceTokens,
+    turnExpansion,
+    chronologicalOrder: true
+  });
+
+  return {
+    query: cleanQuery,
+    ...assembled,
+    selectedWindows: reranked,
+    denseCandidateCount: densePool.length,
+    llmIngestionCalls: 0
+  };
 }
 
 /**

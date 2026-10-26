@@ -13,8 +13,15 @@ if (fs.existsSync(`${testDbPath}-wal`)) fs.unlinkSync(`${testDbPath}-wal`);
 if (fs.existsSync(`${testDbPath}-shm`)) fs.unlinkSync(`${testDbPath}-shm`);
 
 // Import modules
-const { initCompanionDb, getPriorities, createTask, toggleTask, getTasksForDate } = await import('../src/db/index.js');
-const { rememberMemory, getActiveMemories, supersedeMemory, compileStateBriefing } = await import('../src/context/memory-store.js');
+const { initCompanionDb, getPriorities, createTask, toggleTask, getTasksForDate, saveDialogueMessage } = await import('../src/db/index.js');
+const {
+  rememberMemory,
+  getActiveMemories,
+  supersedeMemory,
+  compileStateBriefing,
+  retrieveEpisodicDialogue,
+  applyAppendOnlyMemoryProposal
+} = await import('../src/context/memory-store.js');
 const { evaluateCompanionContext } = await import('../src/context/boundary-gate.js');
 
 test('Companion Database: initializes and seeds default priorities', (t) => {
@@ -97,6 +104,81 @@ test('Knowledge Boundary Gate: correctly bypasses memory on closed-world utility
   const scheduleResult = evaluateCompanionContext('What does my routine look like today with my partner?');
   assert.strictEqual(scheduleResult.shouldInjectContext, true);
   assert.ok(scheduleResult.contextPrompt.includes('Krusch Companion Active Working Memory'));
+});
+
+test('Raw-RAG (arXiv:2610.30755): retrieves verbatim cross-session dialogue with 0 LLM ingestion calls and excludes active session', () => {
+  saveDialogueMessage({
+    sessionId: 'sess_alpha',
+    role: 'user',
+    content: 'We tested the rosemary sourdough starter hydration at 78% with King Arthur bread flour.'
+  });
+  saveDialogueMessage({
+    sessionId: 'sess_alpha',
+    role: 'assistant',
+    content: 'Logged: 78% hydration rosemary sourdough baked cleanly at 475F in the Dutch oven.'
+  });
+  saveDialogueMessage({
+    sessionId: 'sess_current',
+    role: 'user',
+    content: 'Unrelated active session turn about folding laundry.'
+  });
+
+  const recall = retrieveEpisodicDialogue('What hydration did we use for the rosemary sourdough starter?', {
+    excludeSessionId: 'sess_current'
+  });
+  assert.strictEqual(recall.llmIngestionCalls, 0);
+  assert.ok(recall.entries.length >= 1);
+  assert.ok(recall.contextText.includes('78%'));
+  assert.ok(recall.contextText.includes('475F'));
+  assert.ok(!recall.contextText.includes('folding laundry'));
+
+  // Boundary gate automatically injects Raw-RAG section on episodic recall queries
+  const gateEval = evaluateCompanionContext(
+    'What did we talked about in an earlier chat regarding rosemary sourdough hydration?',
+    [],
+    { sessionId: 'sess_current' }
+  );
+  assert.strictEqual(gateEval.shouldInjectContext, true);
+  assert.ok(gateEval.episodicEvidenceCount >= 1);
+  assert.ok(gateEval.contextPrompt.includes('Relevant Past Dialogue (Source-Preserving Raw-RAG)'));
+  assert.ok(gateEval.contextPrompt.includes('78%'));
+});
+
+test('Raw-RAG (arXiv:2610.30755): enforces ADD/NONE append-only write discipline on companion_context', () => {
+  const added = applyAppendOnlyMemoryProposal({
+    action: 'ADD',
+    category: 'lesson',
+    content: 'Family movie night starts at 7:15 PM on Fridays'
+  });
+  assert.strictEqual(added.action, 'ADD');
+  assert.ok(added.record?.id);
+
+  // Duplicate UPDATE -> NOOP NONE
+  const noop = applyAppendOnlyMemoryProposal({
+    action: 'UPDATE',
+    targetId: added.record.id,
+    content: '  family movie night starts at 7:15 pm on fridays '
+  });
+  assert.strictEqual(noop.action, 'NONE');
+  assert.strictEqual(noop.reason, 'NOOP_IDENTICAL_TEXT');
+
+  // State transition UPDATE -> non-destructive ADD via supersedeMemory
+  const evolved = applyAppendOnlyMemoryProposal({
+    action: 'UPDATE',
+    targetId: added.record.id,
+    content: 'Family movie night moved to 6:45 PM on Fridays'
+  });
+  assert.strictEqual(evolved.action, 'ADD');
+  assert.strictEqual(evolved.supersedesId, String(added.record.id));
+  assert.ok(evolved.record?.content.includes('6:45 PM'));
+
+  // Non-compliance DELETE -> blocked (NONE)
+  const blocked = applyAppendOnlyMemoryProposal({
+    action: 'DELETE',
+    targetId: evolved.record.id
+  });
+  assert.strictEqual(blocked.action, 'NONE');
+  assert.strictEqual(blocked.reason, 'DESTRUCTIVE_DELETE_BLOCKED');
 });
 
 // Cleanup test db
