@@ -114,32 +114,37 @@ export function CompanionView({
   };
 
   useEffect(() => {
-    let active = true;
-    fetch('/api/companion/sessions')
+    const controller = new AbortController();
+    fetch('/api/companion/sessions', { signal: controller.signal })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (active && data) {
+        if (!controller.signal.aborted && data) {
           setSessions(Array.isArray(data.sessions) ? data.sessions : []);
         }
       })
-      .catch(() => {});
+      .catch((err) => {
+        if (err?.name === 'AbortError') return;
+      });
 
-    fetch(`/api/companion/sessions/${encodeURIComponent(sessionId)}`)
+    fetch(`/api/companion/sessions/${encodeURIComponent(sessionId)}`, {
+      signal: controller.signal
+    })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (!active) return;
+        if (controller.signal.aborted) return;
         if (data && Array.isArray(data.messages) && data.messages.length > 0) {
           setMessages(data.messages);
         } else {
           setMessages([WELCOME_MSG]);
         }
       })
-      .catch(() => {
-        if (active) setMessages([WELCOME_MSG]);
+      .catch((err) => {
+        if (err?.name === 'AbortError' || controller.signal.aborted) return;
+        setMessages([WELCOME_MSG]);
       });
 
     return () => {
-      active = false;
+      controller.abort();
       stopVoiceRecording();
       stopSpeaking();
     };

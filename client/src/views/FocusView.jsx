@@ -28,11 +28,11 @@ export function FocusView({ task, onSelectTask, onTaskCompleted }) {
   };
 
   useEffect(() => {
-    let active = true;
-    fetch('/api/tasks')
+    const controller = new AbortController();
+    fetch('/api/tasks', { signal: controller.signal })
       .then((res) => (res.ok ? res.json() : null))
       .then((all) => {
-        if (!active || !all) return;
+        if (controller.signal.aborted || !all) return;
         const incomplete = (Array.isArray(all) ? all : []).filter(t => !t.completed);
         incomplete.sort((a, b) => {
           const epA = a.execution_priority || 3;
@@ -45,10 +45,10 @@ export function FocusView({ task, onSelectTask, onTaskCompleted }) {
           onSelectTask(incomplete[0]);
         }
       })
-      .catch(() => {});
-    return () => {
-      active = false;
-    };
+      .catch((err) => {
+        if (err?.name === 'AbortError') return;
+      });
+    return () => controller.abort();
   }, [task, onSelectTask]);
 
   useEffect(() => {

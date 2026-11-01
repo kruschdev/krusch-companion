@@ -18,24 +18,29 @@ export function SetupView({ initialData = null, onComplete, onSkip }) {
 
   useEffect(() => {
     if (initialData?.sections?.length && initialData?.profile) {
-      return undefined;
+      return () => {
+        if (silenceMonitorRef.current) {
+          silenceMonitorRef.current.stop();
+          silenceMonitorRef.current = null;
+        }
+      };
     }
-    let mounted = true;
-    fetch('/api/companion/onboarding')
+    const controller = new AbortController();
+    fetch('/api/companion/onboarding', { signal: controller.signal })
       .then((r) => r.json())
       .then((data) => {
-        if (!mounted) return;
+        if (controller.signal.aborted) return;
         if (Array.isArray(data?.sections)) setSections(data.sections);
         if (data?.profile) setProfile(data.profile);
         setLoading(false);
       })
       .catch((err) => {
-        if (!mounted) return;
+        if (err?.name === 'AbortError' || controller.signal.aborted) return;
         setError(err.message || 'Failed to load setup questionnaire');
         setLoading(false);
       });
     return () => {
-      mounted = false;
+      controller.abort();
       if (silenceMonitorRef.current) {
         silenceMonitorRef.current.stop();
         silenceMonitorRef.current = null;

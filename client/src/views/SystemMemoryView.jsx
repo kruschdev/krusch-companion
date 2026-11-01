@@ -21,23 +21,22 @@ export function SystemMemoryView() {
   };
 
   useEffect(() => {
-    let active = true;
-    fetch('/api/context')
+    const controller = new AbortController();
+    fetch('/api/context', { signal: controller.signal })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (active && data) {
+        if (!controller.signal.aborted && data) {
           setMemories(data.activeMemories || []);
         }
       })
       .catch((err) => {
+        if (err?.name === 'AbortError') return;
         console.error('Failed to load memories:', err);
       })
       .finally(() => {
-        if (active) setIsLoading(false);
+        if (!controller.signal.aborted) setIsLoading(false);
       });
-    return () => {
-      active = false;
-    };
+    return () => controller.abort();
   }, []);
 
   const handleAddMemory = async (e) => {

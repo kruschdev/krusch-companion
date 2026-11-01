@@ -1,6 +1,5 @@
 import express from 'express';
 import cors from 'cors';
-import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -104,8 +103,147 @@ if (String(process.env.DISABLE_SENTINEL_DAEMON || '').toLowerCase() !== 'true') 
   }
 }
 
+async function loadUploadToolkit() {
+  const siblingUploadUrl = new URL('../../../lib/upload.js', import.meta.url);
+  if (fs.existsSync(siblingUploadUrl)) {
+    return import(siblingUploadUrl.href);
+  }
+  try {
+    return await import('@krusch/toolkit/upload');
+  } catch {
+    const sanitizeUploadFilename = (raw = '', { fallback = 'upload.bin' } = {}) => {
+      const base = String(raw || '').replace(/\\/g, '/').split('/').pop() || '';
+      const cleaned = base.replace(/[\x00-\x1f\x7f<>:"|?*]+/g, '').replace(/^[.\s-]+|[.\s]+$/g, '');
+      return cleaned || fallback;
+    };
+    const parseBoundedMultipart = async (req, options = {}) => {
+      const maxTotalBytes = Number(options.maxTotalBytes) || 26 * 1024 * 1024;
+      const maxFileBytes = Number(options.maxFileBytes) || 25 * 1024 * 1024;
+      const ct = String(req?.headers?.['content-type'] || '');
+      const m = ct.match(/boundary=(?:"([^"]+)"|([^;\s]+))/i);
+      const boundary = (m && (m[1] || m[2])) || '';
+      if (!boundary) {
+        return { ok: false, error: { code: 'UPLOAD_INVALID_CONTENT_TYPE', message: 'Missing multipart boundary' } };
+      }
+      const chunks = [];
+      let totalBytes = 0;
+      for await (const chunk of req) {
+        const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        totalBytes += buf.length;
+        if (totalBytes > maxTotalBytes) {
+          return { ok: false, error: { code: 'UPLOAD_TOO_LARGE', message: `Multipart body exceeds ${maxTotalBytes} bytes` } };
+        }
+        chunks.push(buf);
+      }
+      const raw = Buffer.concat(chunks);
+      const delim = Buffer.from(`--${boundary}`);
+      const crlfDelim = Buffer.from(`\r\n--${boundary}`);
+      const sep = Buffer.from('\r\n\r\n');
+      const fields = {};
+      const files = [];
+      let pos = raw.indexOf(delim);
+      if (pos < 0) {
+        return { ok: false, error: { code: 'UPLOAD_MALFORMED_PART', message: 'Missing multipart boundary' } };
+      }
+      pos += delim.length;
+      if (raw.subarray(pos, pos + 2).toString() === '--') {
+        return { ok: true, data: { fields, files, totalBytes } };
+      }
+      if (raw.subarray(pos, pos + 2).toString() === '\r\n') pos += 2;
+      while (pos < raw.length) {
+        const nextIdx = raw.indexOf(crlfDelim, pos);
+        if (nextIdx < 0) break;
+        const part = raw.subarray(pos, nextIdx);
+        const hdrEnd = part.indexOf(sep);
+        if (hdrEnd >= 0) {
+          const hdrText = part.subarray(0, hdrEnd).toString('utf8');
+          const body = part.subarray(hdrEnd + 4);
+          const nameMatch = hdrText.match(/\bname="([^"]+)"/i);
+          const fileMatch = hdrText.match(/\bfilename="([^"]*)"/i);
+          const typeMatch = hdrText.match(/content-type:\s*([^\r\n;]+)/i);
+          const fieldName = nameMatch ? nameMatch[1] : '';
+          if (fieldName && fieldName !== '__proto__' && fieldName !== 'constructor' && fieldName !== 'prototype') {
+            if (fileMatch) {
+              if (body.length > maxFileBytes) {
+                return { ok: false, error: { code: 'UPLOAD_FILE_TOO_LARGE', message: `File exceeds ${maxFileBytes} bytes` } };
+              }
+              const copy = new Uint8Array(body.length);
+              copy.set(body);
+              files.push({
+                fieldName,
+                filename: sanitizeUploadFilename(fileMatch[1]),
+                originalFilename: fileMatch[1],
+                mimeType: typeMatch ? typeMatch[1].trim().toLowerCase() : 'application/octet-stream',
+                size: body.length,
+                data: copy
+              });
+            } else {
+              fields[fieldName] = body.toString('utf8');
+            }
+          }
+        }
+        pos = nextIdx + crlfDelim.length;
+        if (raw.subarray(pos, pos + 2).toString() === '--') break;
+        if (raw.subarray(pos, pos + 2).toString() === '\r\n') pos += 2;
+      }
+      return { ok: true, data: { fields, files, totalBytes } };
+    };
+    return { parseBoundedMultipart, sanitizeUploadFilename };
+  }
+}
+
+const { parseBoundedMultipart, sanitizeUploadFilename } = await loadUploadToolkit();
+
+const COMPANION_MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+const upload = {
+  single(expectedFieldName) {
+    return async (req, res, next) => {
+      const contentType = String(req.headers['content-type'] || '');
+      if (!/^\s*multipart\/form-data\b/i.test(contentType)) {
+        return next();
+      }
+      try {
+        const parsed = await parseBoundedMultipart(req, {
+          maxTotalBytes: COMPANION_MAX_UPLOAD_BYTES + 1024 * 1024,
+          maxFileBytes: COMPANION_MAX_UPLOAD_BYTES,
+          maxFiles: 2,
+          requireMagicMatch: false,
+          tool: 'companion.upload'
+        });
+        if (!parsed.ok) {
+          const isTooLarge =
+            parsed.error?.code === 'UPLOAD_TOO_LARGE' ||
+            parsed.error?.code === 'UPLOAD_FILE_TOO_LARGE';
+          return res.status(isTooLarge ? 413 : 400).json({
+            error: parsed.error?.message || 'Invalid multipart upload'
+          });
+        }
+        req.body = {
+          ...(req.body && typeof req.body === 'object' ? req.body : {}),
+          ...(parsed.data.fields || {})
+        };
+        const filePart = parsed.data.files.find((f) => f.fieldName === expectedFieldName);
+        if (filePart) {
+          req.file = {
+            fieldname: filePart.fieldName,
+            originalname: sanitizeUploadFilename(
+              filePart.originalFilename || filePart.filename || 'upload.bin'
+            ),
+            filename: filePart.filename,
+            mimetype: filePart.mimeType || 'application/octet-stream',
+            size: filePart.size,
+            buffer: Buffer.from(filePart.data.buffer, filePart.data.byteOffset, filePart.data.byteLength)
+          };
+        }
+        return next();
+      } catch (err) {
+        return next(err);
+      }
+    };
+  }
+};
+
 const app = express();
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 
 function isTrustedCompanionOrigin(origin) {
   if (!origin) return true;

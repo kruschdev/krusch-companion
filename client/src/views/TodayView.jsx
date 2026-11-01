@@ -109,26 +109,35 @@ export function TodayView({ sessionId = 'default-session', onFocusTaskSelected }
   };
 
   useEffect(() => {
-    let active = true;
-    Promise.all([fetch('/api/execution-lanes'), fetch('/api/tasks')])
+    const controller = new AbortController();
+    Promise.all([
+      fetch('/api/execution-lanes', { signal: controller.signal }),
+      fetch('/api/tasks', { signal: controller.signal })
+    ])
       .then(async ([laneRes, taskRes]) => {
-        if (!active) return;
+        if (controller.signal.aborted) return;
         if (laneRes.ok) {
           const laneData = await laneRes.json();
+          if (controller.signal.aborted) return;
           if (Array.isArray(laneData.lanes) && laneData.lanes.length > 0) setLanes(laneData.lanes);
           if (Array.isArray(laneData.pillars) && laneData.pillars.length > 0) setPillars(laneData.pillars);
         }
-        if (taskRes.ok) setTasks(await taskRes.json());
+        if (taskRes.ok) {
+          const taskData = await taskRes.json();
+          if (controller.signal.aborted) return;
+          setTasks(taskData);
+        }
       })
       .catch((err) => {
+        if (err?.name === 'AbortError') return;
         console.error('Failed to load tasks:', err);
       })
       .finally(() => {
-        if (active) setIsLoading(false);
+        if (!controller.signal.aborted) setIsLoading(false);
       });
 
     return () => {
-      active = false;
+      controller.abort();
       stopVoiceRecording();
     };
   }, []);
