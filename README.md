@@ -279,7 +279,7 @@ curl -s -X POST http://localhost:3004/api/sentinel/tick \
         "id": "eval-promo-1",
         "from": "Store Newsletter <no-reply@marketing.example.com>",
         "subject": "50% OFF Flash Sale Ends Tonight — Unsubscribe",
-        "snippet": "Click to unsubscribe from our promotional digest."
+        "snippet": "Click to unsubscribe from this promotional digest."
       },
       {
         "id": "eval-urgent-2",
