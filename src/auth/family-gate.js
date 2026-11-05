@@ -8,13 +8,65 @@ const MAX_FAILED_ATTEMPTS = 8;
 
 const failedAttemptsByIp = new Map();
 
+const EPHEMERAL_FALLBACK_SECRET = crypto.randomBytes(32).toString('hex');
+let warnedEphemeralSecret = false;
+
 function getSigningSecret() {
-  return (
+  const configured =
     process.env.COMPANION_AUTH_SECRET ||
     process.env.AP2_SIGNING_SECRET ||
-    process.env.GCRUSH_SECRET ||
-    'krusch-companion-sovereign-family-gate-secret-2026'
-  );
+    process.env.GCRUSH_SECRET;
+  if (configured) {
+    return configured;
+  }
+  if (
+    !warnedEphemeralSecret &&
+    !process.execArgv.includes('--test') &&
+    process.env.NODE_ENV !== 'test'
+  ) {
+    warnedEphemeralSecret = true;
+    console.warn(
+      '🔒 [Security] COMPANION_AUTH_SECRET not set; using ephemeral per-process CSPRNG signing key.'
+    );
+  }
+  return EPHEMERAL_FALLBACK_SECRET;
+}
+
+/**
+ * Validate HTTP Host header against DNS rebinding attacks while allowing loopback, LAN, Tailscale, and authorized Cloudflare domains.
+ * @param {string | undefined} hostHeader
+ * @returns {boolean}
+ */
+export function isAllowedCompanionHost(hostHeader) {
+  if (!hostHeader || typeof hostHeader !== 'string') {
+    return true;
+  }
+  try {
+    const parsed = new URL(`http://${hostHeader.trim()}`);
+    const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') {
+      return true;
+    }
+    if (
+      /^192\.168\.\d{1,3}\.\d{1,3}$/.test(host) ||
+      /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host) ||
+      /^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(host) ||
+      /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}$/.test(host) ||
+      host.endsWith('.ts.net') ||
+      host.endsWith('.local') ||
+      host.endsWith('.lan') ||
+      host === 'krusch' ||
+      host === 'krusch.dev' ||
+      host.endsWith('.krusch.dev') ||
+      host === 'kruschdev.com' ||
+      host.endsWith('.kruschdev.com')
+    ) {
+      return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
 }
 
 function getAllowedEmails() {
@@ -353,6 +405,15 @@ export function registerFamilyAuthRoutes(app) {
   const googleClientId = process.env.GOOGLE_CLIENT_ID || '';
   const ownerName = process.env.COMPANION_OWNER_NAME || '';
 
+  if (typeof app?.use === 'function') {
+    app.use((req, res, next) => {
+      if (!isAllowedCompanionHost(req?.headers?.host)) {
+        return res.status(403).json({ error: 'Forbidden: Untrusted Host header.' });
+      }
+      return next();
+    });
+  }
+
   // 1. Magic 1-Tap Device Setup Link: GET /api/auth/magic?token=...
   app.get('/api/auth/magic', (req, res) => {
     const ip = getClientIp(req);
@@ -468,6 +529,10 @@ export function registerFamilyAuthRoutes(app) {
 }
 
 export function familyAuthGateMiddleware(req, res, next) {
+  if (!isAllowedCompanionHost(req?.headers?.host)) {
+    return res.status(403).json({ error: 'Forbidden: Untrusted Host header.' });
+  }
+
   // Always allow auth endpoints and basic health ping
   if (req.path.startsWith('/api/auth/') || req.path === '/api/health') {
     return next();
