@@ -15,7 +15,7 @@
   <img src="https://img.shields.io/badge/Voice--to--Text-Web%20Speech%20%2B%20Whisper%20STT-2dd4bf.svg?style=flat-square" alt="Voice-to-Text">
   <img src="https://img.shields.io/badge/Google%20AP2%20%26%20Wallet-Mandates%20%2B%20Passes-f0c040.svg?style=flat-square" alt="Google AP2 & Wallet">
   <a href="https://github.com/kruschdev/krusch-companion/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/CI-passing-brightgreen.svg?style=flat-square" alt="CI"></a>
-  <img src="https://img.shields.io/badge/tests-62%20passed-brightgreen.svg?style=flat-square" alt="Tests Passed">
+  <img src="https://img.shields.io/badge/tests-76%20passed-brightgreen.svg?style=flat-square" alt="Tests Passed">
 </p>
 
 ---
@@ -625,9 +625,21 @@ docker compose ps
 
 ---
 
+## 🕸️ Bi-Temporal Personal Knowledge Graph (`@hydradb/selfgraph` + Embedded `KuzuStore`)
+
+Flat SQLite notes and cosine vector chunks work well for unstructured logs, but they break down when single-valued personal or household facts change over time (who works where, current primary contractor/vendor, current address) or when quick voice notes create duplicate contact mentions (`"M. Chen"` vs `"Maya Chen"`).
+
+To solve that without adding a separate graph server or consuming GPU VRAM, Companion embeds [`@hydradb/selfgraph`](https://github.com/hydra-db/selfgraph) on an in-process **`KuzuStore`** alongside `companion.db` in [`src/extensions/selfgraph-extension.js`](src/extensions/selfgraph-extension.js) (opt-in extension `selfgraph-knowledge-graph` / tool `selfgraph_knowledge`, preserving the 20-tool core budget):
+- **Automatic `max_count: 1` Supersession (`contradiction: "supersede"`)**: Updating a person's `WORKS_AT`, `LIVES_IN`, or a topic's `PRIMARY_VENDOR_FOR` automatically retires the prior relation on the valid-time axis while keeping historical queries intact via `asOf` and `knownAt`.
+- **Personalized PageRank (`strategy: "ppr"`) & Lexical Answerability (`$0` LLM Cost)**: Retrieves multi-hop personal, project, and vendor context within a strict token budget and runs zero-LLM `checkAnswerable` grounding checks before prompting small 7B/14B models.
+- **Certified Ground-Truth Edges & Reversible Entity Merges**: Owner-verified facts pinned with `certify_relation` survive future `replace_source` note re-ingestions without being overwritten, and duplicate contacts folded via `merge_entities` retain full provenance records so `unmerge` can restore the absorbed entity cleanly at any time.
+- **REST & `<holodata>` Agentic Proxy Access**: Query `GET /api/companion/knowledge-graph?q=Maya+Chen` or dispatch `upsert_facts`, `ingest_note`, `retrieve`, `diff`, `certify_relation`, `merge_entities`, and `unmerge` via `POST /api/companion/knowledge-graph`.
+
+---
+
 ## 📌 Project Status, Limitations & Failure Modes
 
-* **Current Stage**: Standalone V3.8 (`62/62` automated unit, integration, 20-tool execution, L2.5 Colab G4 Burst escalation, 16-question onboarding, and security hardening tests passing across all suites; `0` lint warnings/errors).
+* **Current Stage**: Standalone V3.8 (`76/76` automated unit, integration, 20-tool execution, SelfGraph bi-temporal KuzuStore, L2.5 Colab G4 Burst escalation, 16-question onboarding, and security hardening tests passing across all suites; `0` lint warnings/errors).
 * **Small Local Model (7B) Constraints & Mitigations**:
   - Small 7B parameter models (`qwen2.5-coder:7b`) can occasionally omit XML tool wrappers or struggle with deeply nested multi-step tool chains.
   - **How Companion Mitigates This**:
