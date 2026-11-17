@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { runCompanionBrowserAction } from '../utils/companionClient.js';
 
 const DEFAULT_EXTENSIONS = [
   {
@@ -90,6 +91,33 @@ export function ExtensionsView({ onBoardUpdated } = {}) {
   const [botInput, setBotInput] = useState('What is my top priority task today?');
   const [botReply, setBotReply] = useState('');
   const [botLoading, setBotLoading] = useState(false);
+
+  // 7. Sandboxed Persistent Chrome (`easi.run`) & Argon Browser Navigator state
+  const [browserUrl, setBrowserUrl] = useState('https://example.com');
+  const [browserSessionId, setBrowserSessionId] = useState('');
+  const [browserResult, setBrowserResult] = useState(null);
+  const [browserLoading, setBrowserLoading] = useState(false);
+
+  const handleBrowserAction = async (action, overrides = {}) => {
+    setBrowserLoading(true);
+    try {
+      const out = await runCompanionBrowserAction({
+        action,
+        url: browserUrl,
+        sessionId: browserSessionId,
+        ...overrides
+      });
+      setBrowserResult(out);
+      if (out?.data?.session) {
+        setBrowserSessionId(out.data.session);
+      }
+      if (out?.data?.stagedTask && typeof onBoardUpdated === 'function') {
+        onBoardUpdated();
+      }
+    } finally {
+      setBrowserLoading(false);
+    }
+  };
 
   const loadHubData = async () => {
     try {
@@ -1004,6 +1032,130 @@ export function ExtensionsView({ onBoardUpdated } = {}) {
               ✨ Fix Two-Tone
             </button>
           </div>
+        </section>
+
+        {/* Card 8: Sandboxed Persistent Chrome (easi.run) & Argon Browser Navigator */}
+        <section className="glass-panel" style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+            <div>
+              <h3 style={{ fontSize: '1rem', fontWeight: 700 }}>🛡️ Sandboxed Persistent Chrome (<code>easi.run</code>)</h3>
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                Real desktop Chrome sandbox with encrypted login vaults, live 2FA/CAPTCHA takeover (<code>https://localhost:9443</code>), and <code>[redacted]</code> credential masking.
+              </p>
+            </div>
+            <a
+              href="https://localhost:9443"
+              target="_blank"
+              rel="noreferrer"
+              className="btn-secondary"
+              style={{ padding: '6px 10px', fontSize: '0.76rem', textDecoration: 'none', whiteSpace: 'nowrap' }}
+            >
+              🖥️ Live Viewer (:9443)
+            </a>
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <input
+              type="url"
+              value={browserUrl}
+              onChange={(e) => setBrowserUrl(e.target.value)}
+              placeholder="https://example.com"
+              style={{
+                flex: '1 1 220px',
+                padding: '7px 10px',
+                borderRadius: 8,
+                border: '1px solid rgba(255,255,255,0.12)',
+                background: 'rgba(0,0,0,0.25)',
+                color: 'var(--text-primary)',
+                fontSize: '0.8rem'
+              }}
+            />
+            <input
+              type="text"
+              value={browserSessionId}
+              onChange={(e) => setBrowserSessionId(e.target.value)}
+              placeholder="Session ID (optional)"
+              style={{
+                flex: '0 1 160px',
+                padding: '7px 10px',
+                borderRadius: 8,
+                border: '1px solid rgba(255,255,255,0.12)',
+                background: 'rgba(0,0,0,0.25)',
+                color: 'var(--text-primary)',
+                fontSize: '0.8rem'
+              }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={browserLoading}
+              onClick={() => handleBrowserAction('easi_start')}
+              style={{ padding: '6px 11px', fontSize: '0.76rem' }}
+            >
+              {browserLoading ? 'Working...' : '🚀 Start Sandbox Chrome'}
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={browserLoading}
+              onClick={() => handleBrowserAction('easi_sessions')}
+              style={{ padding: '6px 10px', fontSize: '0.76rem' }}
+            >
+              📋 Active Sessions
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={browserLoading}
+              onClick={() => handleBrowserAction('easi_saved')}
+              style={{ padding: '6px 10px', fontSize: '0.76rem' }}
+            >
+              🔑 Saved Vaults
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={browserLoading || !browserSessionId}
+              onClick={() => handleBrowserAction('easi_request_human', { reason: 'login', autoStageBoard: true, prompt: '2FA / login handoff requested from Companion' })}
+              style={{ padding: '6px 10px', fontSize: '0.76rem' }}
+            >
+              🙋 Request Takeover
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={browserLoading}
+              onClick={() => handleBrowserAction('audit', { autoStageBoard: true })}
+              style={{ padding: '6px 10px', fontSize: '0.76rem' }}
+            >
+              🔍 Argon UI Audit
+            </button>
+          </div>
+
+          {browserResult && (
+            <div
+              style={{
+                fontSize: '0.78rem',
+                padding: 10,
+                borderRadius: 10,
+                background: 'rgba(0,0,0,0.28)',
+                color: '#e2e8f0',
+                whiteSpace: 'pre-wrap'
+              }}
+            >
+              {browserResult.summary || JSON.stringify(browserResult)}
+              {browserResult.data?.watchUrl && (
+                <div style={{ marginTop: 6 }}>
+                  <a href={browserResult.data.watchUrl} target="_blank" rel="noreferrer" style={{ color: '#38bdf8' }}>
+                    Open Live Session Window → {browserResult.data.watchUrl}
+                  </a>
+                </div>
+              )}
+            </div>
+          )}
         </section>
       </div>
     </div>

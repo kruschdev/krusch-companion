@@ -83,6 +83,7 @@ import {
 } from './extensions/krusch-fs-extension.js';
 import { getHealthMetrics } from './extensions/health-media-extension.js';
 import { navigateCompanionBrowser } from './extensions/browser-navigator-extension.js';
+import { executeCompanionSelfGraph } from './extensions/selfgraph-extension.js';
 import { registerFamilyAuthRoutes, familyAuthGateMiddleware } from './auth/family-gate.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -1418,6 +1419,10 @@ app.post('/api/companion/browser', async (req, res) => {
     const out = await navigateCompanionBrowser({
       action: body.action || 'navigate',
       url: body.url || body.targetUrl || '',
+      sessionId: body.sessionId || body.session || '',
+      resumeId: body.resumeId || body.resume || '',
+      reason: body.reason || 'login',
+      cdpEndpoint: body.cdpEndpoint || '',
       steps: body.steps || [],
       waitForSelector: body.waitForSelector || null,
       prompt: body.prompt || '',
@@ -1431,6 +1436,35 @@ app.post('/api/companion/browser', async (req, res) => {
     res.json(out);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/companion/knowledge-graph', async (req, res) => {
+  try {
+    const queryText = String(req.query.q || req.query.query || '').trim();
+    const out = queryText
+      ? await executeCompanionSelfGraph({
+          action: 'retrieve',
+          query: queryText,
+          asOf: req.query.asOf ? String(req.query.asOf) : undefined,
+          budgetTokens: req.query.budgetTokens ? Number(req.query.budgetTokens) : 600
+        })
+      : await executeCompanionSelfGraph({ action: 'status' });
+    res.json(out);
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.post('/api/companion/knowledge-graph', async (req, res) => {
+  try {
+    const out = await executeCompanionSelfGraph(req.body || {});
+    if (!out.ok) {
+      return res.status(400).json(out);
+    }
+    res.json(out);
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 

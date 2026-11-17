@@ -205,3 +205,21 @@ export async function announceOnGoogleHome({ text, room = 'Kitchen' } = {}) {
   }
 }
 
+export async function runCompanionBrowserAction(payload = {}, { signal } = {}) {
+  try {
+    const res = await fetch('/api/companion/browser', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      ...(signal ? { signal } : {})
+    });
+    return await res.json();
+  } catch (err) {
+    if (err?.name !== 'AbortError') {
+      logClientBoundaryWarning('runCompanionBrowserAction', err);
+    }
+    return { ok: false, error: err.message };
+  }
+}
+
+

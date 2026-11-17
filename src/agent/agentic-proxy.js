@@ -153,13 +153,22 @@ export function compactToolSchemaForPrompt(tool, prompt = '') {
       rawParams.action = '"status" | "list_events" | "create_event"';
     }
   } else if (tool.name === 'browser_navigate') {
+    const isEasi = /\b(easi|sandbox|persistent\s+(?:chrome|browser|session)|real\s+(?:chrome|browser)|log\s*in|sign\s*in|take\s*over|2fa|captcha|turnstile|saved\s+session)\b/.test(text);
     const isInteract = /\b(click|type|fill|submit|press|interact)\b/.test(text);
     const isAudit = /\b(audit|responsive|breakpoint|argon|layout|overflow)\b/.test(text);
     const isShot = /\b(screenshot|capture|snap)\b/.test(text);
     if (!isInteract) {
       delete rawParams.steps;
     }
-    if (isAudit) {
+    if (!isEasi) {
+      delete rawParams.sessionId;
+      delete rawParams.resumeId;
+      delete rawParams.reason;
+      delete rawParams.cdpEndpoint;
+    }
+    if (isEasi) {
+      rawParams.action = '"easi_start" | "easi_sessions" | "easi_saved" | "easi_request_human"';
+    } else if (isAudit) {
       rawParams.action = '"audit"';
     } else if (isShot) {
       rawParams.action = '"screenshot"';
@@ -465,7 +474,12 @@ const EXTENSION_INTENT_PATTERNS = [
   {
     category: 'browser_navigation',
     tools: ['browser_navigate'],
-    regex: /\b(?:(?:navigate|browse)\s+(?:to\s+|in\s+chrome\s+to\s+)?https?:\/\/\S+|open\s+https?:\/\/\S+\s+in\s+(?:headless\s+)?(?:chrome|browser)|(?:headless\s+chrome|chrome\s+browser|browser\s+navigator)|(?:audit|screenshot|click|interact\s+with)\s+(?:the\s+)?(?:webpage|page|site|ui)\s+(?:at\s+|on\s+)?https?:\/\/\S+|gemini\s*4?\s*argon\s+(?:chrome|browser|ui)\s+audit)\b/i
+    regex: /\b(?:(?:navigate|browse)\s+(?:to\s+|in\s+chrome\s+to\s+)?https?:\/\/\S+|open\s+https?:\/\/\S+\s+in\s+(?:(?:a|the)\s+)?(?:real\s+|headless\s+|sandboxed\s+|persistent\s+)?(?:chrome|browser|easi(?:\.run)?)|use\s+(?:a\s+|the\s+)?(?:real\s+|sandboxed\s+|persistent\s+)?(?:chrome|browser)\b|(?:log\s*in|sign\s*in)\s+(?:to|on|at)\s+https?:\/\/\S+|(?:real\s+browser|headless\s+chrome|sandboxed\s+chrome|easi\.run|easi\s+browser|chrome\s+browser|browser\s+navigator)|(?:list|show|resume|start|stop)\s+(?:my\s+)?(?:saved\s+)?(?:easi(?:\.run)?|sandboxed\s+chrome|persistent\s+browser)\s+sessions?|(?:request|need)\s+human\s+(?:browser\s+)?takeover|(?:audit|screenshot|click|interact\s+with)\s+(?:the\s+)?(?:webpage|page|site|ui)\s+(?:at\s+|on\s+)?https?:\/\/\S+|gemini\s*4?\s*argon\s+(?:chrome|browser|ui)\s+audit)\b/i
+  },
+  {
+    category: 'knowledge_graph',
+    tools: ['selfgraph_knowledge'],
+    regex: /\b(?:selfgraph|knowledge\s+graph|bi[\s_-]*temporal\s+graph|(?:query|search|traverse|check)\s+(?:my\s+|the\s+)?knowledge\s+graph|what\s+changed\s+in\s+(?:my\s+|the\s+)?graph|(?:merge|unmerge)\s+duplicate\s+entit(?:y|ies)|certify\s+relation)\b/i
   }
 ];
 
@@ -1496,16 +1510,28 @@ export function inferFallbackToolCalls(prompt, matchedCategories = [], history =
   if (categories.includes('browser_navigation')) {
     const urlMatch = text.match(/https?:\/\/[^\s)>\]"']+/i);
     const targetUrl = urlMatch ? urlMatch[0].replace(/[.,;!?]+$/, '') : 'https://example.com';
+    const isEasiSaved = /\bsaved\s+(?:easi(?:\.run)?|sandboxed\s+chrome|persistent\s+browser)\s+sessions?\b/i.test(text);
+    const isEasiList = /\b(?:list|show)\s+(?:my\s+)?(?:easi(?:\.run)?|sandboxed\s+chrome|persistent\s+browser)\s+sessions?\b/i.test(text);
+    const isEasiTakeover = /\b(?:request|need)\s+human\s+(?:browser\s+)?takeover\b/i.test(text);
+    const isEasiStart = /\b(?:easi\.run|easi\s+browser|sandboxed\s+chrome|real\s+(?:chrome|browser)|persistent\s+(?:chrome|browser)|log\s*in|sign\s*in|2fa|captcha|turnstile)\b/i.test(text);
     const isAudit = /\b(?:audit|responsive|breakpoint|argon|layout|overflow)\b/i.test(text);
     const isScreenshot = /\b(?:screenshot|capture|snap)\b/i.test(text);
     const isInteract = /\b(?:click|type|fill|submit|interact)\b/i.test(text);
-    const action = isAudit
-      ? 'audit'
-      : isScreenshot
-        ? 'screenshot'
-        : isInteract
-          ? 'interact'
-          : 'navigate';
+    const action = isEasiSaved
+      ? 'easi_saved'
+      : isEasiList
+        ? 'easi_sessions'
+        : isEasiTakeover
+          ? 'easi_request_human'
+          : isEasiStart
+            ? 'easi_start'
+            : isAudit
+              ? 'audit'
+              : isScreenshot
+                ? 'screenshot'
+                : isInteract
+                  ? 'interact'
+                  : 'navigate';
     calls.push({
       name: 'browser_navigate',
       tool: 'browser_navigate',
@@ -1514,6 +1540,20 @@ export function inferFallbackToolCalls(prompt, matchedCategories = [], history =
         url: targetUrl,
         prompt: text
       }
+    });
+  }
+
+  if (matchedCategories.includes('knowledge_graph')) {
+    const isDiff = /\b(?:diff|what\s+changed)\b/i.test(text);
+    const isAnswerable = /\b(?:answerable|can\s+(?:the\s+)?graph\s+answer)\b/i.test(text);
+    calls.push({
+      name: 'selfgraph_knowledge',
+      tool: 'selfgraph_knowledge',
+      arguments: isDiff
+        ? { action: 'diff', since: new Date(Date.now() - 24 * 3600 * 1000).toISOString() }
+        : isAnswerable
+          ? { action: 'check_answerable', query: text }
+          : { action: 'retrieve', query: text }
     });
   }
 
@@ -1707,7 +1747,7 @@ export async function executeAgenticProxyTurn({
     if (
       res.ok &&
       (
-        ['get_weather', 'web_research', 'fetch_url_digest', 'system_status', 'sovereign_gateway_query', 'commute_departure_check', 'list_notes', 'personal_crm_profile', 'schedule_automation', 'skill_manager', 'krusch_fs_explorer', 'krusch_fs_extension', 'vision_capture', 'finance_subscription_ledger', 'health_energy_sync', 'media_controller', 'skylight_calendar', 'skylight_calendar_hub'].includes(call.name) ||
+        ['get_weather', 'web_research', 'fetch_url_digest', 'system_status', 'sovereign_gateway_query', 'commute_departure_check', 'list_notes', 'personal_crm_profile', 'schedule_automation', 'skill_manager', 'krusch_fs_explorer', 'krusch_fs_extension', 'vision_capture', 'finance_subscription_ledger', 'health_energy_sync', 'media_controller', 'skylight_calendar', 'skylight_calendar_hub', 'selfgraph_knowledge'].includes(call.name) ||
         (call.name === 'gkrusch_drive' && ['search', 'read', 'steering', 'list'].includes(String(resolvedArgs.action || 'search'))) ||
         (call.name === 'gkrusch_calendar' && String(resolvedArgs.action || 'list_events') === 'list_events') ||
         (call.name === 'gkrusch_gmail' && String(resolvedArgs.action || 'search_emails') === 'search_emails') ||

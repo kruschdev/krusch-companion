@@ -667,6 +667,57 @@ describe('Krusch Companion V3.8 — Personal AI Ecosystem & Opt-In Extension Pac
     assert.equal(auditJson.actionType, 'browser_audit');
     assert.equal(auditJson.data.breakpoints.length, 3);
     assert.ok(auditJson.data.stagedTask?.id, 'Should stage Chrome UI audit task onto Today Board when autoStageBoard=true');
+
+    // Sandboxed easi.run persistent Chrome & HITL takeover actions
+    const easiIntent = detectAgenticIntent('Open https://github.com/login in sandboxed chrome easi.run');
+    assert.equal(easiIntent.shouldUseAgenticProxy, true);
+    assert.ok(easiIntent.matchedCategories.includes('browser_navigation'));
+
+    const httpBlockedEasi = await navigateCompanionBrowser({
+      action: 'easi_start',
+      url: 'http://example.com/plain-http'
+    });
+    assert.equal(httpBlockedEasi.ok, false);
+    assert.equal(httpBlockedEasi.reason, 'HTTPS_REQUIRED');
+
+    let capturedMcp = null;
+    const easiStartOut = await navigateCompanionBrowser({
+      action: 'easi_start',
+      url: 'https://github.com/login',
+      resumeId: 'vault-gh-1',
+      easiMcpCaller: async (toolName, toolArgs) => {
+        capturedMcp = { toolName, toolArgs };
+        return {
+          ok: true,
+          structured: {
+            session: 'sess-live-42',
+            watch_url: 'https://localhost:9443/#/session/sess-live-42'
+          },
+          text: 'Started persistent Chrome session sess-live-42'
+        };
+      }
+    });
+    assert.equal(easiStartOut.ok, true);
+    assert.equal(capturedMcp.toolName, 'start_session');
+    assert.equal(capturedMcp.toolArgs.resume, 'vault-gh-1');
+    assert.equal(easiStartOut.data.watchUrl, 'https://localhost:9443/#/session/sess-live-42');
+
+    const takeoverRes = await fetch(`${baseUrl}/api/companion/browser`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'easi_request_human',
+        sessionId: 'sess-live-42',
+        reason: 'captcha',
+        prompt: 'Turnstile challenge on upload form',
+        autoStageBoard: true
+      })
+    });
+    assert.equal(takeoverRes.status, 200);
+    const takeoverJson = await takeoverRes.json();
+    assert.equal(takeoverJson.ok, true);
+    assert.equal(takeoverJson.actionType, 'easi_request_human');
+    assert.ok(takeoverJson.data.stagedTask?.id, 'easi_request_human should stage Priority 1 alert on Today Board');
   });
 
   it('ARCH-DBPATH: config.dbPath() returns fallback when DB_PATH is unset and honours override', async () => {

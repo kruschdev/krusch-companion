@@ -162,18 +162,49 @@ const LAZY_BROWSER_TOOL = createLazyExtensionTool({
   name: 'browser_navigate',
   category: 'browser_navigation',
   description:
-    'Opt-in Headless Chrome Browser Navigator & Gemini 4 Argon Visual UI Auditor: navigate dynamic SPAs, execute multi-step click/type interactions, capture full-page screenshots, or run a 375/768/1440px responsive visual audit.',
+    'Opt-in Chrome Browser Navigator, Sandboxed easi.run Persistent Chrome (live human 2FA/CAPTCHA takeover & [redacted] credential vault), & Gemini 4 Argon Visual UI Auditor.',
   parameters: {
-    action: 'string (REQUIRED: "navigate" | "interact" | "screenshot" | "audit")',
-    url: 'string (REQUIRED: Target https:// URL to open in headless Chrome)',
+    action:
+      'string (REQUIRED: "navigate" | "interact" | "screenshot" | "audit" | "easi_start" | "easi_stop" | "easi_sessions" | "easi_saved" | "easi_status" | "easi_inspect" | "easi_request_human" | "easi_wait_control")',
+    url: 'string (Target https:// URL to open in headless Chrome or easi.run sandbox)',
+    sessionId: 'string (Optional easi.run session ID)',
+    resumeId: 'string (Optional saved persistent vault ID to resume)',
+    reason: 'string (Optional human takeover reason: "login" | "captcha" | "confirm" | "other")',
+    cdpEndpoint: 'string (Optional loopback CDP URL e.g. "http://127.0.0.1:9222")',
     steps: 'string (Optional JSON array or semicolon-separated steps, e.g. "click:#submit; type:#search=query")',
-    waitForSelector: 'string (Optional CSS selector to wait for before extracting DOM/screenshots)',
-    prompt: 'string (Optional visual audit question or extraction goal)'
+    waitForSelector: 'string (Optional CSS selector to wait for or inspect)',
+    prompt: 'string (Optional visual audit question, extraction goal, or takeover note)'
   },
-  required: ['action', 'url'],
+  required: ['action'],
   loader: async () => {
     const mod = await import('./browser-navigator-extension.js');
     return mod.BROWSER_NAVIGATOR_EXTENSION_TOOL;
+  }
+});
+
+const LAZY_SELFGRAPH_TOOL = createLazyExtensionTool({
+  extensionId: 'selfgraph-knowledge-graph',
+  name: 'selfgraph_knowledge',
+  category: 'knowledge_graph',
+  description:
+    'Opt-in SelfGraph Bi-Temporal Personal Knowledge Graph (embedded KuzuStore): store versioned entities, superseding relations, preferences, and decisions, run PPR/asOf time-travel retrieval, certify facts, and merge/unmerge duplicates at $0 LLM cost.',
+  parameters: {
+    action:
+      'string (REQUIRED: "retrieve" | "upsert_facts" | "ingest_note" | "check_answerable" | "diff" | "certify_relation" | "merge_entities" | "unmerge" | "status")',
+    query: 'string (Natural-language query for retrieve or check_answerable)',
+    facts: 'object ({ entities?, relations?, preferences?, decisions? } for upsert_facts)',
+    text: 'string (Unstructured note text for zero-LLM ingest_note)',
+    asOf: 'string (Optional ISO 8601 point-in-time valid date for time-travel retrieve)',
+    since: 'string (ISO 8601 start timestamp for diff)',
+    relationId: 'string (Target relation ID for certify_relation)',
+    survivorId: 'string (Target canonical entity ID for merge_entities)',
+    duplicateIds: 'array of strings (Duplicate entity IDs to fold into survivorId)',
+    mergeId: 'string (Merge record ID to reverse via unmerge)'
+  },
+  required: ['action'],
+  loader: async () => {
+    const mod = await import('./selfgraph-extension.js');
+    return mod.SELFGRAPH_EXTENSION_TOOL;
   }
 });
 
@@ -249,14 +280,25 @@ export const EXTENSION_CATALOG = [
   },
   {
     extensionId: 'chrome-browser-navigator',
-    aliases: ['browser_navigate', 'browser-navigator', 'chrome-navigator', 'browser_navigation', 'argon-browser-audit'],
-    name: 'Headless Chrome Browser Navigator & Gemini 4 Argon UI Auditor',
+    aliases: ['browser_navigate', 'browser-navigator', 'chrome-navigator', 'browser_navigation', 'argon-browser-audit', 'easi-run', 'easi.run', 'sandbox-browser'],
+    name: 'Chrome Browser Navigator, Sandboxed easi.run HITL & Gemini 4 Argon Auditor',
     toolName: 'browser_navigate',
     category: 'browser_navigation',
     description: LAZY_BROWSER_TOOL.description,
     envFlag: 'ENABLE_BROWSER_EXTENSION',
     defaultEnabled: false,
     tool: LAZY_BROWSER_TOOL
+  },
+  {
+    extensionId: 'selfgraph-knowledge-graph',
+    aliases: ['selfgraph_knowledge', 'selfgraph', 'knowledge_graph', 'knowledge-graph', 'bitemporal-graph'],
+    name: 'SelfGraph Bi-Temporal Personal Knowledge Graph (Embedded Kuzu)',
+    toolName: 'selfgraph_knowledge',
+    category: 'knowledge_graph',
+    description: LAZY_SELFGRAPH_TOOL.description,
+    envFlag: 'ENABLE_SELFGRAPH_EXTENSION',
+    defaultEnabled: false,
+    tool: LAZY_SELFGRAPH_TOOL
   }
 ];
 

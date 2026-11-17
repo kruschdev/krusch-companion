@@ -1,9 +1,16 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { spawn } from 'child_process';
+import { fileURLToPath } from 'url';
 import { isSafePublicUrl } from '../agent/tools.js';
 import { analyzeCompanionImage } from '../services/vision.js';
 import { createTask } from '../db/index.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const DEFAULT_EASI_TUNNEL_SCRIPT = path.resolve(__dirname, '../../../../scripts/easi-run-tunnel.sh');
+const DEFAULT_EASI_WATCH_BASE = 'https://localhost:9443';
 
 const DEFAULT_BREAKPOINTS = [
   { name: 'mobile', width: 375, height: 812 },
@@ -13,6 +20,17 @@ const DEFAULT_BREAKPOINTS = [
 
 const FALLBACK_1X1_PNG_BASE64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
+const EASI_SANDBOX_ACTIONS = new Set([
+  'easi_start',
+  'easi_stop',
+  'easi_sessions',
+  'easi_saved',
+  'easi_status',
+  'easi_inspect',
+  'easi_request_human',
+  'easi_wait_control'
+]);
 
 /**
  * Dynamically load `@krusch/toolkit/browser` when running inside the homelab monorepo,
@@ -24,6 +42,211 @@ async function loadToolkitBrowserModule() {
   } catch {
     return null;
   }
+}
+
+/**
+ * Execute a single stateless JSON-RPC 2.0 tool call against `easi.run`'s tokenless SSH stdio MCP bridge
+ * (`scripts/easi-run-tunnel.sh mcp`), or an injected `easiMcpCaller` in hermetic tests.
+ */
+export async function callEasiMcpTool(toolName, toolArgs = {}, options = {}) {
+  if (typeof options.easiMcpCaller === 'function') {
+    return options.easiMcpCaller(toolName, toolArgs, options);
+  }
+
+  const isMockOrCi = process.env.MOCK_LLM === '1' || process.env.CI === 'true';
+  const scriptPath = options.tunnelScriptPath || process.env.EASI_TUNNEL_SCRIPT || DEFAULT_EASI_TUNNEL_SCRIPT;
+
+  if (isMockOrCi || !fs.existsSync(scriptPath)) {
+    const mockSessionId = String(toolArgs.session || 'easi-sess-demo-01');
+    if (toolName === 'start_session') {
+      return {
+        ok: true,
+        simulated: true,
+        structured: {
+          session: mockSessionId,
+          watch_url: `${DEFAULT_EASI_WATCH_BASE}/#/session/${mockSessionId}`,
+          url: toolArgs.url || 'https://example.com',
+          resumed: Boolean(toolArgs.resume)
+        },
+        text: `Started sandboxed Chrome session ${mockSessionId}`
+      };
+    }
+    if (toolName === 'list_sessions') {
+      return {
+        ok: true,
+        simulated: true,
+        structured: { sessions: [] },
+        text: '0 active easi.run browser sessions.'
+      };
+    }
+    if (toolName === 'list_saved_sessions') {
+      return {
+        ok: true,
+        simulated: true,
+        structured: { saved_sessions: [] },
+        text: '0 saved encrypted browser vaults.'
+      };
+    }
+    if (toolName === 'request_person') {
+      return {
+        ok: true,
+        simulated: true,
+        structured: {
+          session: mockSessionId,
+          status: 'needs_human',
+          reason: toolArgs.arguments?.reason || 'login',
+          watch_url: `${DEFAULT_EASI_WATCH_BASE}/#/session/${mockSessionId}`
+        },
+        text: `Requested human takeover (${toolArgs.arguments?.reason || 'login'}) on ${mockSessionId}.`
+      };
+    }
+    if (toolName === 'wait_for_control') {
+      return {
+        ok: true,
+        simulated: true,
+        structured: { session: mockSessionId, outcome: 'resumed' },
+        text: `Human released control back to Companion on ${mockSessionId}.`
+      };
+    }
+    if (toolName === 'inspect_page') {
+      return {
+        ok: true,
+        simulated: true,
+        structured: {
+          session: mockSessionId,
+          selector: toolArgs.arguments?.selector || 'body',
+          elements: [{ tag: 'body', text: 'Sandboxed Chrome DOM snapshot' }]
+        },
+        text: 'Inspected 1 element in sandboxed Chrome.'
+      };
+    }
+    return {
+      ok: true,
+      simulated: true,
+      structured: { session: mockSessionId, tool: toolName },
+      text: `Executed ${toolName} on ${mockSessionId}.`
+    };
+  }
+
+  const timeoutMs = Math.max(2000, Number(options.timeoutMs || 25000));
+  const rpcLines = [
+    JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2025-06-18',
+        capabilities: {},
+        clientInfo: { name: 'krusch-companion', version: '3.8.0' }
+      }
+    }),
+    JSON.stringify({
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: {
+        name: toolName,
+        arguments: toolArgs
+      }
+    })
+  ].join('\n') + '\n';
+
+  return new Promise((resolve) => {
+    const child = spawn(scriptPath, ['mcp'], {
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.kill('SIGTERM');
+      resolve({
+        ok: false,
+        error: `Timed out after ${timeoutMs}ms calling easi.run MCP tool "${toolName}".`,
+        stderr: stderr.trim()
+      });
+    }, timeoutMs);
+
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString('utf8');
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString('utf8');
+    });
+    child.on('error', (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ ok: false, error: err.message });
+    });
+    child.on('close', () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+
+      const lines = stdout
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean);
+
+      let rpcReply = null;
+      for (const line of lines) {
+        try {
+          const parsed = JSON.parse(line);
+          if (parsed.id === 2) {
+            rpcReply = parsed;
+            break;
+          }
+        } catch {
+          // ignore non-JSON lines
+        }
+      }
+
+      if (!rpcReply) {
+        return resolve({
+          ok: false,
+          error: stderr.trim() || 'No JSON-RPC response from easi.run MCP bridge (ensure admin password is enrolled at https://localhost:9443).'
+        });
+      }
+
+      if (rpcReply.error) {
+        return resolve({
+          ok: false,
+          error: rpcReply.error.message || JSON.stringify(rpcReply.error),
+          code: rpcReply.error.code
+        });
+      }
+
+      const result = rpcReply.result || {};
+      const textBlocks = Array.isArray(result.content)
+        ? result.content.filter((c) => c.type === 'text').map((c) => c.text)
+        : [];
+      const joinedText = textBlocks.join('\n').trim();
+      let structured = result.structuredContent || null;
+      if (!structured && joinedText.startsWith('{')) {
+        try {
+          structured = JSON.parse(joinedText);
+        } catch {
+          structured = null;
+        }
+      }
+
+      resolve({
+        ok: result.isError !== true,
+        isError: Boolean(result.isError),
+        structured,
+        text: joinedText,
+        raw: result
+      });
+    });
+
+    child.stdin.write(rpcLines);
+    child.stdin.end();
+  });
 }
 
 /**
@@ -210,13 +433,177 @@ export async function navigateCompanionBrowser(options = {}) {
     steps = [],
     waitForSelector = null,
     prompt = '',
+    sessionId = '',
+    resumeId = '',
+    reason = 'login',
+    cdpEndpoint = '',
+    lease = null,
     allowLocalhost = false,
     autoStageBoard = false,
     browserRunner = null,
+    easiMcpCaller = null,
     fetchImpl = fetch
   } = options || {};
 
   const normalizedAction = String(action || 'navigate').toLowerCase().trim();
+
+  // 0. Sandboxed Persistent Chrome & Human-Takeover Actions (`easi.run` over SSH stdio MCP)
+  if (EASI_SANDBOX_ACTIONS.has(normalizedAction)) {
+    if (normalizedAction === 'easi_start' && url) {
+      const easiUrlCheck = validateBrowserTargetUrl(url, { allowLocalhost: false });
+      if (!easiUrlCheck.allowed || !easiUrlCheck.normalizedUrl.startsWith('https://')) {
+        return {
+          ok: false,
+          blocked: true,
+          reason: easiUrlCheck.allowed ? 'HTTPS_REQUIRED' : easiUrlCheck.reason,
+          tool: 'browser_navigate',
+          actionType: normalizedAction,
+          summary: `🛡️ **Sandboxed Chrome Blocked**: \`easi.run\` enforces public \`https://\` destinations only (${easiUrlCheck.message || 'non-HTTPS URL'}).`,
+          data: { url: url || null, reason: easiUrlCheck.allowed ? 'HTTPS_REQUIRED' : easiUrlCheck.reason }
+        };
+      }
+    }
+
+    let mcpTool = 'list_sessions';
+    let mcpArgs = {};
+    if (normalizedAction === 'easi_start') {
+      mcpTool = 'start_session';
+      if (url) mcpArgs.url = String(url).trim();
+      if (resumeId) mcpArgs.resume = String(resumeId).trim();
+    } else if (normalizedAction === 'easi_stop') {
+      mcpTool = 'stop_session';
+      mcpArgs = { session: String(sessionId).trim() };
+    } else if (normalizedAction === 'easi_sessions') {
+      mcpTool = 'list_sessions';
+    } else if (normalizedAction === 'easi_saved') {
+      mcpTool = 'list_saved_sessions';
+    } else if (normalizedAction === 'easi_status') {
+      mcpTool = 'session_status';
+      mcpArgs = { session: String(sessionId).trim() };
+    } else if (normalizedAction === 'easi_inspect') {
+      mcpTool = 'inspect_page';
+      mcpArgs = {
+        session: String(sessionId).trim(),
+        arguments: {
+          selector: String(waitForSelector || 'body').trim(),
+          html: false,
+          limit: 25
+        }
+      };
+    } else if (normalizedAction === 'easi_request_human') {
+      mcpTool = 'request_person';
+      const validReason = ['login', 'captcha', 'confirm', 'other'].includes(String(reason).toLowerCase())
+        ? String(reason).toLowerCase()
+        : 'login';
+      mcpArgs = {
+        session: String(sessionId).trim(),
+        arguments: {
+          reason: validReason,
+          ...(prompt ? { message: String(prompt).slice(0, 300) } : {})
+        }
+      };
+    } else if (normalizedAction === 'easi_wait_control') {
+      mcpTool = 'wait_for_control';
+      mcpArgs = {
+        session: String(sessionId).trim(),
+        arguments: { timeout_s: 45 }
+      };
+    }
+
+    if (
+      ['easi_stop', 'easi_status', 'easi_inspect', 'easi_request_human', 'easi_wait_control'].includes(normalizedAction) &&
+      !String(sessionId || '').trim()
+    ) {
+      return {
+        ok: false,
+        blocked: true,
+        reason: 'MISSING_SESSION_ID',
+        tool: 'browser_navigate',
+        actionType: normalizedAction,
+        summary: `⚠️ **Missing \`sessionId\`**: Action \`${normalizedAction}\` requires an active \`easi.run\` session ID (call \`easi_sessions\` or \`easi_start\` first).`,
+        data: { reason: 'MISSING_SESSION_ID' }
+      };
+    }
+
+    const mcpOut = await callEasiMcpTool(mcpTool, mcpArgs, { easiMcpCaller });
+    const resolvedSessionId =
+      mcpOut.structured?.id || mcpOut.structured?.session || String(sessionId || '').trim() || null;
+    const watchUrl =
+      mcpOut.structured?.watch_url ||
+      (resolvedSessionId ? `${DEFAULT_EASI_WATCH_BASE}/#session=${resolvedSessionId}` : DEFAULT_EASI_WATCH_BASE);
+
+    let pageDigest = null;
+    if (
+      normalizedAction === 'easi_start' &&
+      mcpOut.ok &&
+      !mcpOut.simulated &&
+      !easiMcpCaller &&
+      url &&
+      resolvedSessionId
+    ) {
+      await new Promise((r) => setTimeout(r, 1200));
+      const inspectOut = await callEasiMcpTool('inspect_page', {
+        session: resolvedSessionId,
+        arguments: { selector: waitForSelector || 'h1, h2, h3, p, a, button', html: false, limit: 20 }
+      });
+      if (inspectOut.ok && inspectOut.structured) {
+        pageDigest = inspectOut.structured;
+      }
+    }
+
+    let stagedTask = null;
+    if (normalizedAction === 'easi_request_human' && mcpOut.ok && autoStageBoard !== false) {
+      stagedTask = createTask({
+        title: `Human Browser Takeover Needed (${String(reason || 'login').toUpperCase()})`,
+        priority_id: 5,
+        execution_priority: 1,
+        pillar: 'Work & Mastery',
+        notes: `${prompt || 'Agent paused at login/2FA/CAPTCHA.'} Watch & take over at ${watchUrl}`,
+        items: [
+          `Open ${watchUrl}`,
+          'Click Take Over, complete login / 2FA / CAPTCHA, then click Release back to Companion'
+        ]
+      });
+    }
+
+    if (!mcpOut.ok) {
+      return {
+        ok: false,
+        tool: 'browser_navigate',
+        actionType: normalizedAction,
+        summary: `⚠️ **Sandboxed Chrome (\`${mcpTool}\`)**: ${mcpOut.error || mcpOut.text || 'Call failed.'}`,
+        data: {
+          engine: 'easi_run_sandbox',
+          mcpTool,
+          watchUrl,
+          error: mcpOut.error || mcpOut.text
+        }
+      };
+    }
+
+    return {
+      ok: true,
+      tool: 'browser_navigate',
+      actionType: normalizedAction,
+      summary:
+        normalizedAction === 'easi_request_human'
+          ? `🙋 **Human Takeover Requested (\`${resolvedSessionId || sessionId}\`)**: Watch live & take control at ${watchUrl}.${stagedTask ? ` Staged alert **#${stagedTask.id}** on Today's Priority Board.` : ''}`
+          : pageDigest?.title
+            ? `🛡️ **Sandboxed Chrome (\`${resolvedSessionId}\`)**: Loaded **"${pageDigest.title}"** (${pageDigest.count || 0} elements inspected). Watch or take over live at ${watchUrl}.`
+            : `🛡️ **Sandboxed Chrome (\`${mcpTool}\`)**: ${mcpOut.text || `Completed ${normalizedAction} (${watchUrl}).`}`,
+      data: {
+        engine: 'easi_run_sandbox',
+        mcpTool,
+        sessionId: resolvedSessionId,
+        watchUrl,
+        ...(mcpOut.structured || {}),
+        ...(pageDigest ? { pageDigest } : {}),
+        text: mcpOut.text || '',
+        stagedTask
+      }
+    };
+  }
+
   const urlCheck = validateBrowserTargetUrl(url, { allowLocalhost });
   if (!urlCheck.allowed) {
     return {
@@ -235,6 +622,7 @@ export async function navigateCompanionBrowser(options = {}) {
 
   const targetUrl = urlCheck.normalizedUrl;
   const normalizedSteps = normalizeBrowserSteps(steps);
+  const resolvedCdpEndpoint = String(cdpEndpoint || '').trim() || null;
   const isMockOrCi =
     process.env.MOCK_LLM === '1' ||
     process.env.CI === 'true' ||
@@ -387,14 +775,25 @@ export async function navigateCompanionBrowser(options = {}) {
     };
   }
 
-  // 4. Action: "interact" or "navigate" — Headless Chrome DOM rendering & step execution
+  // 4. Action: "interact" or "navigate" — Headless Chrome OR CDP-attached easi.run Chrome DOM rendering & step execution
+  if (lease && typeof lease.assertAgentCanAct === 'function') {
+    lease.assertAgentCanAct(`browser_${normalizedAction}`);
+  }
   const toolkitBrowser = !isMockOrCi ? await loadToolkitBrowserModule() : null;
   if (toolkitBrowser && typeof toolkitBrowser.launchBrowser === 'function') {
     let browser = null;
+    let attachedCdp = false;
     try {
-      browser = await toolkitBrowser.launchBrowser({ headless: 'new' });
+      if (resolvedCdpEndpoint && typeof toolkitBrowser.connectBrowserOverCdp === 'function') {
+        browser = await toolkitBrowser.connectBrowserOverCdp(resolvedCdpEndpoint);
+        attachedCdp = true;
+      } else {
+        browser = await toolkitBrowser.launchBrowser({ headless: 'new' });
+      }
       const page = await browser.newPage();
-      await page.setViewport({ width: 1440, height: 900 });
+      if (!attachedCdp) {
+        await page.setViewport({ width: 1440, height: 900 });
+      }
       await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 25000 });
       if (waitForSelector) {
         await page.waitForSelector(waitForSelector, { timeout: 10000 });
@@ -402,6 +801,9 @@ export async function navigateCompanionBrowser(options = {}) {
 
       const executedSteps = [];
       for (const step of normalizedSteps) {
+        if (lease && typeof lease.assertAgentCanAct === 'function') {
+          lease.assertAgentCanAct(`step:${step.action}`);
+        }
         if (step.action === 'click' && step.selector) {
           await page.waitForSelector(step.selector, { timeout: 8000 });
           await page.click(step.selector);
@@ -420,9 +822,11 @@ export async function navigateCompanionBrowser(options = {}) {
         }
       }
 
-      const html = await page.content();
+      const rawPageHtml = await page.content();
+      const html = lease?.redactor ? lease.redactor.scrubText(rawPageHtml) : rawPageHtml;
       const finalUrl = page.url();
       const digest = extractStructuredDomDigest(html, finalUrl);
+      await page.close().catch(() => {});
 
       return {
         ok: true,
@@ -432,7 +836,7 @@ export async function navigateCompanionBrowser(options = {}) {
         data: {
           url: finalUrl,
           title: digest.title,
-          engine: 'puppeteer_headless_chrome',
+          engine: attachedCdp ? 'easi_cdp_chrome' : 'puppeteer_headless_chrome',
           stepsExecuted: executedSteps,
           textExcerpt: digest.textExcerpt,
           interactiveElements: digest.interactiveElements
@@ -442,7 +846,11 @@ export async function navigateCompanionBrowser(options = {}) {
       // Fall through to lightweight HTTP/hermetic fallback below if Chrome binary is unavailable
     } finally {
       if (browser) {
-        await browser.close().catch(() => {});
+        if (attachedCdp && typeof browser.disconnect === 'function') {
+          await browser.disconnect().catch(() => {});
+        } else {
+          await browser.close().catch(() => {});
+        }
       }
     }
   }
@@ -468,7 +876,8 @@ export async function navigateCompanionBrowser(options = {}) {
     rawHtml = `<!doctype html><html><head><title>${host} —Rendered View</title></head><body><h1>${host}</h1><p>Rendered page content for ${targetUrl}.</p><a href="${targetUrl}/docs">Documentation</a><button>Continue</button></body></html>`;
   }
 
-  const digest = extractStructuredDomDigest(rawHtml, targetUrl);
+  const scrubbedFallbackHtml = lease?.redactor ? lease.redactor.scrubText(rawHtml) : rawHtml;
+  const digest = extractStructuredDomDigest(scrubbedFallbackHtml, targetUrl);
   const executedSteps = normalizedSteps.map((s) => ({ ...s, status: 'simulated' }));
 
   return {
@@ -492,31 +901,41 @@ export async function navigateCompanionBrowser(options = {}) {
  */
 export const BROWSER_NAVIGATOR_EXTENSION_TOOL = {
   extensionId: 'chrome-browser-navigator',
-  displayName: 'Headless Chrome Browser Navigator & Gemini 4 Argon UI Auditor',
+  displayName: 'Chrome Browser Navigator, Sandboxed easi.run HITL & Gemini 4 Argon Auditor',
   name: 'browser_navigate',
   category: 'browser_navigation',
   description:
-    'Opt-in Headless Chrome Browser Navigator & Gemini 4 Argon Visual UI Auditor: navigate dynamic SPAs, execute multi-step click/type interactions, capture full-page screenshots, or run a 375/768/1440px responsive visual audit.',
+    'Opt-in Chrome Browser Navigator, Sandboxed easi.run Persistent Chrome (live human 2FA/CAPTCHA takeover & [redacted] credential vault), & Gemini 4 Argon Visual UI Auditor.',
   parameters: {
     action:
-      'string (REQUIRED: "navigate" | "interact" | "screenshot" | "audit")',
-    url: 'string (REQUIRED: Target https:// URL to open in headless Chrome)',
+      'string (REQUIRED: "navigate" | "interact" | "screenshot" | "audit" | "easi_start" | "easi_stop" | "easi_sessions" | "easi_saved" | "easi_status" | "easi_inspect" | "easi_request_human" | "easi_wait_control")',
+    url: 'string (Target https:// URL to open in headless Chrome or easi.run sandbox)',
+    sessionId: 'string (Optional easi.run session ID for easi_stop, easi_status, easi_inspect, easi_request_human, easi_wait_control)',
+    resumeId: 'string (Optional saved persistent vault ID to resume in easi_start)',
+    reason: 'string (Optional human takeover reason: "login" | "captcha" | "confirm" | "other")',
+    cdpEndpoint: 'string (Optional loopback CDP URL e.g. "http://127.0.0.1:9222")',
     steps:
       'string (Optional JSON array or semicolon-separated steps, e.g. "click:#submit; type:#search=query")',
-    waitForSelector: 'string (Optional CSS selector to wait for before extracting DOM/screenshots)',
-    prompt: 'string (Optional visual audit question or extraction goal)'
+    waitForSelector: 'string (Optional CSS selector to wait for or inspect)',
+    prompt: 'string (Optional visual audit question, extraction goal, or human takeover note)'
   },
-  required: ['action', 'url'],
+  required: ['action'],
   async execute(args = {}, options = {}) {
     return navigateCompanionBrowser({
       action: args.action || 'navigate',
       url: args.url || args.targetUrl || '',
+      sessionId: args.sessionId || args.session || '',
+      resumeId: args.resumeId || args.resume || '',
+      reason: args.reason || 'login',
+      cdpEndpoint: args.cdpEndpoint || options.cdpEndpoint || '',
+      lease: options.lease || null,
       steps: args.steps || [],
-      waitForSelector: args.waitForSelector || null,
-      prompt: args.prompt || '',
+      waitForSelector: args.waitForSelector || args.selector || null,
+      prompt: args.prompt || args.message || '',
       allowLocalhost: Boolean(args.allowLocalhost || options.allowLocalhost),
-      autoStageBoard: Boolean(args.autoStageBoard || options.autoStageBoard),
+      autoStageBoard: args.autoStageBoard !== undefined ? Boolean(args.autoStageBoard) : Boolean(options.autoStageBoard),
       browserRunner: options.browserRunner || null,
+      easiMcpCaller: options.easiMcpCaller || null,
       fetchImpl: options.fetchImpl || fetch
     });
   }
