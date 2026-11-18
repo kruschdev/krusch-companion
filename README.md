@@ -171,6 +171,14 @@ The frontend is an installable Progressive Web App (PWA) built with React 19, Vi
 
 ## 🚀 Quickstart (100% Standalone — Zero Monorepo Dependencies)
 
+### Agent-Assisted Setup
+
+Ask your coding agent (Claude Code, Codex, Cursor, Windsurf, or Antigravity):
+
+```text
+Read https://raw.githubusercontent.com/kruschdev/krusch-companion/main/INSTALL.md and set up krusch-companion on this machine.
+```
+
 **Krusch Companion is 100% standalone-installable** with a committed `package-lock.json` and self-contained [`Dockerfile`](Dockerfile) / [`docker-compose.yml`](docker-compose.yml). Choose any of three one-command paths:
 
 ### Fastest Path — One-Command Install & Run
