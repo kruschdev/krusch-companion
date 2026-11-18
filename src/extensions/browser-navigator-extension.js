@@ -449,8 +449,9 @@ export async function navigateCompanionBrowser(options = {}) {
 
   // 0. Sandboxed Persistent Chrome & Human-Takeover Actions (`easi.run` over SSH stdio MCP)
   if (EASI_SANDBOX_ACTIONS.has(normalizedAction)) {
-    if (normalizedAction === 'easi_start' && url) {
-      const easiUrlCheck = validateBrowserTargetUrl(url, { allowLocalhost: false });
+    const trimmedEasiUrl = url ? String(url).trim() : '';
+    if (normalizedAction === 'easi_start' && trimmedEasiUrl && trimmedEasiUrl !== 'about:blank') {
+      const easiUrlCheck = validateBrowserTargetUrl(trimmedEasiUrl, { allowLocalhost: false });
       if (!easiUrlCheck.allowed || !easiUrlCheck.normalizedUrl.startsWith('https://')) {
         return {
           ok: false,
@@ -458,7 +459,7 @@ export async function navigateCompanionBrowser(options = {}) {
           reason: easiUrlCheck.allowed ? 'HTTPS_REQUIRED' : easiUrlCheck.reason,
           tool: 'browser_navigate',
           actionType: normalizedAction,
-          summary: `🛡️ **Sandboxed Chrome Blocked**: \`easi.run\` enforces public \`https://\` destinations only (${easiUrlCheck.message || 'non-HTTPS URL'}).`,
+          summary: `🛡️ **Sandboxed Chrome Blocked**: \`easi.run\` enforces public \`https://\` destinations or \`about:blank\` (${easiUrlCheck.message || 'non-HTTPS URL'}).`,
           data: { url: url || null, reason: easiUrlCheck.allowed ? 'HTTPS_REQUIRED' : easiUrlCheck.reason }
         };
       }
@@ -499,7 +500,7 @@ export async function navigateCompanionBrowser(options = {}) {
         session: String(sessionId).trim(),
         arguments: {
           reason: validReason,
-          ...(prompt ? { message: String(prompt).slice(0, 300) } : {})
+          ...(prompt ? { message: String(prompt).slice(0, 300).toWellFormed() } : {})
         }
       };
     } else if (normalizedAction === 'easi_wait_control') {
@@ -538,7 +539,8 @@ export async function navigateCompanionBrowser(options = {}) {
       mcpOut.ok &&
       !mcpOut.simulated &&
       !easiMcpCaller &&
-      url &&
+      trimmedEasiUrl &&
+      trimmedEasiUrl !== 'about:blank' &&
       resolvedSessionId
     ) {
       await new Promise((r) => setTimeout(r, 1200));

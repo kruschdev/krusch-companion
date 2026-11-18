@@ -702,6 +702,39 @@ describe('Krusch Companion V3.8 — Personal AI Ecosystem & Opt-In Extension Pac
     assert.equal(capturedMcp.toolArgs.resume, 'vault-gh-1');
     assert.equal(easiStartOut.data.watchUrl, 'https://localhost:9443/#/session/sess-live-42');
 
+    // Upstream 7ea6e01 parity: allow exact about:blank start_session and keep surrogate pairs well-formed on slice(0, 300)
+    const blankStartOut = await navigateCompanionBrowser({
+      action: 'easi_start',
+      url: 'about:blank',
+      easiMcpCaller: async (toolName, toolArgs) => ({
+        ok: true,
+        structured: { id: 'sess-blank-01', url: toolArgs.url },
+        text: `Started ${toolName}`
+      })
+    });
+    assert.equal(blankStartOut.ok, true);
+    assert.equal(blankStartOut.data.url, 'about:blank');
+
+    const badAboutScheme = await navigateCompanionBrowser({
+      action: 'easi_start',
+      url: 'about:settings'
+    });
+    assert.equal(badAboutScheme.ok, false);
+
+    let capturedHumanMsg = '';
+    await navigateCompanionBrowser({
+      action: 'easi_request_human',
+      sessionId: 'sess-live-42',
+      reason: 'login',
+      prompt: `${'x'.repeat(299)}🚀trailing`,
+      autoStageBoard: false,
+      easiMcpCaller: async (_toolName, toolArgs) => {
+        capturedHumanMsg = toolArgs.arguments.message;
+        return { ok: true, structured: { requested: true }, text: 'ok' };
+      }
+    });
+    assert.equal(capturedHumanMsg.isWellFormed(), true, '300-char slice must never leave a lone UTF-16 surrogate');
+
     const takeoverRes = await fetch(`${baseUrl}/api/companion/browser`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
