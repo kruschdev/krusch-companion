@@ -44,9 +44,34 @@ async function loadToolkitBrowserModule() {
   }
 }
 
+const sharedEasiClients = new Map();
+
+async function getToolkitEasiClient(scriptPath) {
+  if (sharedEasiClients.has(scriptPath)) {
+    return sharedEasiClients.get(scriptPath);
+  }
+  try {
+    const toolkitEasi = await import('../../../../lib/easi.js');
+    if (toolkitEasi && typeof toolkitEasi.createEasiClient === 'function') {
+      const client = toolkitEasi.createEasiClient({
+        command: scriptPath,
+        watchBase: DEFAULT_EASI_WATCH_BASE,
+        allowStopSession: true,
+        clientName: 'krusch-companion',
+        clientVersion: '3.8.0'
+      });
+      sharedEasiClients.set(scriptPath, client);
+      return client;
+    }
+  } catch {
+    // Standalone krusch-companion checkout without parent monorepo lib/
+  }
+  return null;
+}
+
 /**
- * Execute a single stateless JSON-RPC 2.0 tool call against `easi.run`'s tokenless SSH stdio MCP bridge
- * (`scripts/easi-run-tunnel.sh mcp`), or an injected `easiMcpCaller` in hermetic tests.
+ * Execute a JSON-RPC 2.0 tool call against `easi.run`'s SSH stdio MCP bridge
+ * (`@krusch/toolkit/easi` persistent client in monorepo, or standalone fallback in isolated CI).
  */
 export async function callEasiMcpTool(toolName, toolArgs = {}, options = {}) {
   if (typeof options.easiMcpCaller === 'function') {
@@ -55,6 +80,16 @@ export async function callEasiMcpTool(toolName, toolArgs = {}, options = {}) {
 
   const isMockOrCi = process.env.MOCK_LLM === '1' || process.env.CI === 'true';
   const scriptPath = options.tunnelScriptPath || process.env.EASI_TUNNEL_SCRIPT || DEFAULT_EASI_TUNNEL_SCRIPT;
+
+  if (!isMockOrCi && fs.existsSync(scriptPath)) {
+    const sharedClient = await getToolkitEasiClient(scriptPath);
+    if (sharedClient) {
+      return sharedClient.call(toolName, toolArgs, {
+        timeoutMs: options.timeoutMs || 25000,
+        allowStopSession: true
+      });
+    }
+  }
 
   if (isMockOrCi || !fs.existsSync(scriptPath)) {
     const mockSessionId = String(toolArgs.session || 'easi-sess-demo-01');
