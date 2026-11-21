@@ -768,6 +768,33 @@ describe('Krusch Companion V3.8 — Personal AI Ecosystem & Opt-In Extension Pac
       else process.env.DB_PATH = saved;
     }
   });
+
+  it('BUG-01: resolveExtensionEnvFlag honors non-mutating parsedEnv and fails loudly on typo flags or invalid values', async () => {
+    const { resolveExtensionEnvFlag } = await import('../src/config.js');
+    const { registerExtensionPlugin } = await import('../src/extensions/extension-registry.js');
+
+    // Reads from non-mutating envSource (`.env` parsedEnv) when process.env is unset
+    assert.equal(resolveExtensionEnvFlag('ENABLE_VISION_EXTENSION', { envSource: { ENABLE_VISION_EXTENSION: 'true' } }), true);
+    assert.equal(resolveExtensionEnvFlag('ENABLE_VISION_EXTENSION', { envSource: { ENABLE_VISION_EXTENSION: '0' } }), false);
+
+    // Fails loudly on typo'd / unknown flag name
+    assert.throws(() => resolveExtensionEnvFlag('ENABLE_VISON_TYPO'), /Unknown extension envFlag/);
+    assert.throws(
+      () =>
+        registerExtensionPlugin({
+          extensionId: 'bad-flag-plugin',
+          toolName: 'bad_flag_tool',
+          envFlag: 'ENABLE_TYPO_FLAG_DOES_NOT_EXIST'
+        }),
+      /Unknown extension envFlag/
+    );
+
+    // Fails loudly on unparseable boolean string
+    assert.throws(
+      () => resolveExtensionEnvFlag('ENABLE_VISION_EXTENSION', { envSource: { ENABLE_VISION_EXTENSION: 'definitely_not_bool' } }),
+      /Invalid boolean value/
+    );
+  });
 });
 
 

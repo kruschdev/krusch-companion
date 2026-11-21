@@ -1,4 +1,5 @@
 import { getDb } from '../db/index.js';
+import { resolveExtensionEnvFlag } from '../config.js';
 import { KRUSCH_FS_EXTENSION_TOOL } from './krusch-fs-extension.js';
 
 /**
@@ -350,6 +351,12 @@ export function registerExtensionPlugin(manifest = {}) {
 
   const existingEntry = REGISTERED_PLUGINS_BY_ID.get(extensionId);
 
+  const nextEnvFlag = manifest.envFlag ?? existingEntry?.envFlag ?? null;
+  const allowCustomEnvFlag = Boolean(manifest.allowCustomEnvFlag ?? existingEntry?.allowCustomEnvFlag ?? false);
+  if (nextEnvFlag !== null) {
+    resolveExtensionEnvFlag(nextEnvFlag, { allowCustom: allowCustomEnvFlag });
+  }
+
   const mergedEntry = {
     extensionId,
     aliases: Array.from(
@@ -369,7 +376,8 @@ export function registerExtensionPlugin(manifest = {}) {
     toolName,
     category: manifest.category || toolObj?.category || existingEntry?.category || 'extension',
     description: manifest.description || toolObj?.description || existingEntry?.description || '',
-    envFlag: manifest.envFlag || existingEntry?.envFlag || null,
+    envFlag: nextEnvFlag,
+    allowCustomEnvFlag,
     defaultEnabled: Boolean(manifest.defaultEnabled ?? existingEntry?.defaultEnabled ?? false),
     tool: toolObj
       ? {
@@ -498,12 +506,19 @@ export async function ensureAllExtensionsLoaded() {
     }
   ];
 
-  await Promise.allSettled(loaders.map(fn => fn()));
+  const settled = await Promise.allSettled(loaders.map(fn => fn()));
+  for (const res of settled) {
+    if (res.status === 'rejected') {
+      console.warn(`[ExtensionRegistry] Extension loader rejected: ${res.reason?.message || res.reason}`);
+    }
+  }
   return getRegisteredExtensionTools();
 }
 
 // Kick off background loading of sibling extension modules without blocking synchronous imports
-ensureAllExtensionsLoaded().catch(() => {});
+ensureAllExtensionsLoaded().catch(err => {
+  console.warn(`[ExtensionRegistry] Background initialization error: ${err?.message || err}`);
+});
 
 /**
  * Return all registered extension tool objects (both enabled and disabled).
@@ -539,9 +554,9 @@ export function ensureExtensionRegistryTable() {
   `);
 
   for (const entry of REGISTERED_PLUGINS_BY_ID.values()) {
-    const envEnabled =
-      entry.envFlag &&
-      (process.env[entry.envFlag] === '1' || String(process.env[entry.envFlag]).toLowerCase() === 'true');
+    const envEnabled = entry.envFlag
+      ? resolveExtensionEnvFlag(entry.envFlag, { allowCustom: Boolean(entry.allowCustomEnvFlag) })
+      : false;
     const initialEnabled = envEnabled || entry.defaultEnabled ? 1 : 0;
     insertStmt.run(
       entry.extensionId,
@@ -566,8 +581,9 @@ function formatExtensionRow(row) {
   }
 
   const envEnabled =
-    entry?.envFlag &&
-    (process.env[entry.envFlag] === '1' || String(process.env[entry.envFlag]).toLowerCase() === 'true');
+    entry && entry.envFlag
+      ? resolveExtensionEnvFlag(entry.envFlag, { allowCustom: Boolean(entry.allowCustomEnvFlag) })
+      : false;
   const isEnabled = Boolean(row.enabled) || Boolean(envEnabled);
 
   return {

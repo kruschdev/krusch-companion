@@ -90,4 +90,45 @@ export function validateCompanionConfig(cfg = config) {
   };
 }
 
+export const KNOWN_EXTENSION_ENV_FLAGS = Object.freeze(
+  new Set([
+    'ENABLE_KRUSCH_FS_EXTENSION',
+    'ENABLE_VISION_EXTENSION',
+    'ENABLE_FINANCE_EXTENSION',
+    'ENABLE_HEALTH_EXTENSION',
+    'ENABLE_MEDIA_EXTENSION',
+    'ENABLE_SKYLIGHT_CONNECTOR',
+    'ENABLE_BROWSER_EXTENSION',
+    'ENABLE_SELFGRAPH_EXTENSION'
+  ])
+);
+
+/**
+ * Resolve an extension enablement flag across `process.env` and non-mutating `.env` (`parsedEnv`),
+ * failing loudly on unknown/typo'd flag names or unparseable boolean values (`BUG-01`).
+ */
+export function resolveExtensionEnvFlag(flagName, { allowCustom = false, envSource = parsedEnv } = {}) {
+  if (typeof flagName !== 'string' || !/^ENABLE_[A-Z0-9_]+$/.test(flagName)) {
+    throw new Error(`Invalid extension envFlag "${String(flagName)}": expected ENABLE_<UPPER_SNAKE_CASE>`);
+  }
+  if (!allowCustom && !KNOWN_EXTENSION_ENV_FLAGS.has(flagName)) {
+    throw new Error(
+      `Unknown extension envFlag "${flagName}": add it to KNOWN_EXTENSION_ENV_FLAGS in src/config.js or pass allowCustom=true`
+    );
+  }
+  const raw =
+    process.env[flagName] !== undefined && process.env[flagName] !== ''
+      ? process.env[flagName]
+      : envSource?.[flagName];
+  if (raw === undefined || raw === null || String(raw).trim() === '') {
+    return false;
+  }
+  const normalized = String(raw).trim().toLowerCase();
+  if (normalized === '1' || normalized === 'true') return true;
+  if (normalized === '0' || normalized === 'false') return false;
+  throw new Error(
+    `Invalid boolean value "${String(raw)}" for extension flag ${flagName}: expected "1", "0", "true", or "false"`
+  );
+}
+
 export default config;
