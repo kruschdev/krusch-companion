@@ -403,6 +403,12 @@ test('Hardening: Opt-In Skylight Calendar 2 Connector & Programmatic SDK Entrypo
   const cfgCheck = sdk.validateCompanionConfig();
   assert.strictEqual(cfgCheck.ok, true);
   assert.strictEqual(cfgCheck.issues.length, 0);
+  const badFallbackCheck = sdk.validateCompanionConfig({
+    ...sdk.config,
+    cascade: { ...sdk.config.cascade, swarmFallbackUrl: 'ftp://bad-host', colabBurstUrl: 'not-a-url' }
+  });
+  assert.strictEqual(badFallbackCheck.ok, false);
+  assert.strictEqual(badFallbackCheck.issues.length, 2);
   assert.strictEqual(sdk.COMPANION_TOOLS.length, 20);
 
   const statusRes = await executeCompanionTool('skylight_calendar', { action: 'status' });

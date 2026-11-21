@@ -22,7 +22,7 @@
 
 ## 💡 What It Does For You
 
-**Krusch Companion** is a **100% standalone**, local-first personal AI assistant and daily companion—a user-owned, sovereign alternative that unifies and surpasses the capabilities of **OpenClaw / Clawdbot ("Grokbot")**, **Nous Hermes Agent**, **Meta Muse**, and **OpenAI Dot / Grok Companion**. Instead of surrendering your personal thoughts, daily schedule, relationships, and life notes to centralized cloud data centers, Companion runs on your own hardware (or in Zero-GPU OpenRouter Zero-Data-Retention mode)—providing:
+**Krusch Companion** is a **100% standalone**, local-first personal AI assistant and daily companion, a user-owned, sovereign alternative that unifies and surpasses the capabilities of **OpenClaw / Clawdbot ("Grokbot")**, **Nous Hermes Agent**, **Meta Muse**, and **OpenAI Dot / Grok Companion**. Instead of surrendering your personal thoughts, daily schedule, relationships, and life notes to centralized cloud data centers, Companion runs on your own hardware (or in Zero-GPU OpenRouter Zero-Data-Retention mode), providing:
 - **Hands-Free Voice-to-Text (`🎙️ Speak` with `Auto-Send on Stop`)** directly in both Companion Chat and Thought Stream.
 - **Dual-Axis Priority Board (`Execution Priority Lanes 1–4` × `6 Life Pillar Tags`)** that resolves the *Priority Paradox* so urgent household bills and deadlines never sit underneath recurring daily habits.
 - **20 Sovereign Tools** across Google AP2 cryptographic payment mandates (`ap2_payment_mandate`), Google Wallet Generic Passes (`google_wallet_pass`), concierge reservations (`concierge_reservation`), live traffic & Time-to-Leave alerts (`commute_departure_check`), Google Workspace (`gkrusch_drive`, `gkrusch_calendar`, `gkrusch_gmail`), OpenClaw/Hermes self-improving skills (`skill_manager`), cron automations & 1-page meeting prep dossiers (`schedule_automation`), Home Assistant & multi-channel messaging (`smart_home_bridge`), Personal CRM & evolving `SOUL.md`/`USER.md`/`MEMORY.md` profiles (`personal_crm_profile`), and Sovereign Legal/Contract RAG (`sovereign_gateway_query`).
@@ -42,13 +42,13 @@
 1. **Hands-Free Voice-to-Text Everywhere (Chat & Thought Stream)**:
    - **In Companion Chat (`🎙️ Speak` / `⏹️ Stop`)**: Dictate any question or multi-step command with real-time Browser Web Speech API streaming into the chat box + automatic Local Whisper STT fallback (`POST /api/companion/transcribe`) and an **`Auto-Send on Stop`** toggle so you never have to type long prompts by hand.
    - **In Thought Stream (`🌊 Thought Stream`)**: Speak or paste an unfiltered stream-of-consciousness dump (or click **`✨ Try Sample Thought Stream`** for a 1-click demo). Includes **Speaker Diarization & Clause-Intent Post-Processing** ([`classifyTranscriptSegments`](src/services/chaos-dump.js)) that labels each clause (`urgent_task`, `habit_task`, `focus_task`, `memory_fact`, `context_note`) and speaker (`Speaker 1`, `Speaker 2`, `Self`).
-2. **Dual-Axis Triage (Resolving the Priority Paradox)**: Traditional single-tier boards suffer from the *"Priority Paradox"*—even though *Core Values & Faith* or *Family* are your highest macro values, real-life responsibilities that provide for your family (paying the electric bill before 5pm, shipping a client deliverable, or fixing a broken lock) cannot sit at the bottom of the board underneath non-urgent daily habits. Companion classifies every task across **two orthogonal axes**:
-   - **Axis 1 — Execution Priority Lanes (Board Order)**:
-     1. **`🚨 Must Happen Today — Deadlines & Provision`**: Time-sensitive deadlines, bills, client deliverables, appointments, and urgent life necessities that keep life running.
-     2. **`⚡ High-Impact Focus — Move the Needle`**: Important daily work, family commitments, and meaningful progress.
+2. **Dual-Axis Triage (Resolving the Priority Paradox)**: Traditional single-tier boards suffer from the *"Priority Paradox"*, even though *Core Values & Faith* or *Family* are your highest macro values, real-life responsibilities that provide for your family (paying the electric bill before 5pm, shipping a client deliverable, or fixing a broken lock) cannot sit at the bottom of the board underneath non-urgent daily habits. Companion classifies every task across **two orthogonal axes**:
+   - **Axis 1, Execution Priority Lanes (Board Order)**:
+     1. **`🚨 Must Happen Today, Deadlines & Provision`**: Time-sensitive deadlines, bills, client deliverables, appointments, and urgent life necessities that keep life running.
+     2. **`⚡ High-Impact Focus, Move the Needle`**: Important daily work, family commitments, and meaningful progress.
      3. **`🌱 Daily Habits & Anchors`**: Recurring daily anchors (prayer/reflection, hydration, reading, stretching) that keep you grounded without burying urgent deadlines.
-     4. **`📥 Backlog — When Time Permits`**: Low-urgency ideas and someday tasks.
-   - **Axis 2 — Life Pillar Tags (Color-Coded Badges)**: `🙏 Core Values & Faith`, `💕 Family & Partner`, `👧 Children & Loved Ones`, `💪 Health & Self`, `🔧 Work & Mastery`, and `🏠 Provision & Finance`.
+     4. **`📥 Backlog, When Time Permits`**: Low-urgency ideas and someday tasks.
+   - **Axis 2, Life Pillar Tags (Color-Coded Badges)**: `🙏 Core Values & Faith`, `💕 Family & Partner`, `👧 Children & Loved Ones`, `💪 Health & Self`, `🔧 Work & Mastery`, and `🏠 Provision & Finance`.
 3. **Today's Board, Bulk Actions & 7-Day Weekly Review (Execute)**:
    - Tactile daily board grouped by **Execution Priority** (with a 1-click toggle to group by **Life Pillar**), *"Why this lane?"* (`lane_reason`) explanations on every card, a live **Life-Pillar Balance Strip**, keyboard shortcuts (`N` = New Task, `G` = Group Mode, `R` = Rollover, `W` = Weekly Review), 1-click **`🚨 Must-Do`** promotion, **Bulk Actions** (**`🌱 Habits Done`**, **`🧹 Clear Done`**), 1-click **"🧩 Steps"** task decomposition, and an expandable **📅 7-Day Weekly Review & Life-Pillar Analytics** panel (`GET /api/tasks/weekly-review`).
 4. **Agentic Action Proxy, 3-Stage Smart Tool Token Limiter & Confirmation Gates (Act)**:
@@ -62,9 +62,9 @@
 ## ⚡ The 20-Tool Agentic Proxy (`<holodata>` Dual-Engine) & 3-Stage Smart Tool Token Limiter
 
 Standard 7B/14B local models degrade rapidly when all 20 OpenAI JSON tool schemas (**`~2,050 tokens`**) are injected into the prompt at once. Krusch Companion solves this with a **3-Stage Smart Tool Token Limiter** paired with the **`<holodata>` Cognitive Blueprint**:
-1. **Stage 0 — Conversational Bypass (`0` Tool Tokens)**: Pure coaching, reflection, and emotional support prompts bypass tool schema injection altogether (`shouldUseAgenticProxy: false`).
-2. **Stage 1 — DPP Query-Residual Diverse Tool Router ([`routeDiverseTools`](src/agent/agentic-proxy.js), *arXiv: 2609.05824*)**: Combines 20-category intent detection ([`INTENT_PATTERNS`](src/agent/agentic-proxy.js)) with Determinantal Point Process (DPP) diversity scoring ($\lambda = 0.68$, parity with `@krusch/toolkit` `routeDiverseSkills`) to select at most **1–3 orthogonal tools** within a strict **`<= 240` token budget**.
-3. **Stage 2 — Action-Scoped Micro-Schema Compaction ([`compactToolSchemaForPrompt`](src/agent/agentic-proxy.js))**: Dynamically strips unused sub-action parameters from multiplexer tools (`smart_home_bridge`, `gkrusch_calendar`, `gkrusch_gmail`, `gkrusch_drive`, `schedule_automation`, `personal_crm_profile`, `skill_manager`) based on the prompt's sub-intent and condenses descriptions to a single clause—shrinking injected schemas from **`~2,050 tokens` down to `~45–135 tokens` (`93%–98%` token savings)**.
+1. **Stage 0, Conversational Bypass (`0` Tool Tokens)**: Pure coaching, reflection, and emotional support prompts bypass tool schema injection altogether (`shouldUseAgenticProxy: false`).
+2. **Stage 1, DPP Query-Residual Diverse Tool Router ([`routeDiverseTools`](src/agent/agentic-proxy.js), *arXiv: 2609.05824*)**: Combines 20-category intent detection ([`INTENT_PATTERNS`](src/agent/agentic-proxy.js)) with Determinantal Point Process (DPP) diversity scoring ($\lambda = 0.68$, parity with `@krusch/toolkit` `routeDiverseSkills`) to select at most **1–3 orthogonal tools** within a strict **`<= 240` token budget**.
+3. **Stage 2, Action-Scoped Micro-Schema Compaction ([`compactToolSchemaForPrompt`](src/agent/agentic-proxy.js))**: Dynamically strips unused sub-action parameters from multiplexer tools (`smart_home_bridge`, `gkrusch_calendar`, `gkrusch_gmail`, `gkrusch_drive`, `schedule_automation`, `personal_crm_profile`, `skill_manager`) based on the prompt's sub-intent and condenses descriptions to a single clause, shrinking injected schemas from **`~2,050 tokens` down to `~45–135 tokens` (`93%–98%` token savings)**.
 4. **Unified `<holodata>` Thinker + Flat Tool Array**: The model first reasons through parameter constraints inside `<holodata>...</holodata>` XML tags and then emits a flat JSON tool array (`[{"name": "...", "arguments": {...}}]`).
 5. **Explicit Confidence Scoring & Confirm-Before-Act Safety Gate**: Every `<holodata>` extraction is scored (`scoreHolodataConfidence()`), and side-effect tools (`ap2_payment_mandate`, `gkrusch_gmail`, `gkrusch_calendar`, `concierge_reservation`, `send_notification`, `smart_home_bridge`) support **Confirm-Before-Act (`dryRunMode`)** preview cards with an inline **`✅ Confirm & Execute`** button in Chat.
 6. **Upstream-to-Downstream Live Data Piping, 60s TTL Cache & Hermes Self-Improving Learning Loop**: When chaining multiple tools in one turn (e.g., `get_weather` ➔ `save_note` or `gkrusch_drive` ➔ `gkrusch_gmail`), [`executeAgenticProxyTurn()`](src/agent/agentic-proxy.js) automatically pipes live upstream API outputs directly into downstream notes, push notifications, Google Drive docs, or Gmail drafts, caches idempotent read tools for 60 seconds, and runs a **Nous Hermes-style Self-Improving Learning Pass (`recordLearnedTrajectorySkill`)** that extracts successful multi-step trajectories into reusable `data/skills/<slug>/SKILL.md` packages.
@@ -79,7 +79,7 @@ Standard 7B/14B local models degrade rapidly when all 20 OpenAI JSON tool schema
 | **🍽️ Concierge & Reservations** | `concierge_reservation` | Looks up live venue details (address, phone, website, hours, email via OpenStreetMap), generates pre-filled 1-click **OpenTable**, **Resy**, **SevenRooms**, **Google Wallet Pass**, and **Google Maps** links, calculates live traffic & Leave-By time, drafts/sends a concierge reservation request via **G-Krusch Gmail**, and places a hold on Google Calendar & Today's Board. | *"Make a reservation at Canlis Seattle for 4 people on Friday at 7pm"* |
 | **🚗 Traffic & Time-to-Leave** | `commute_departure_check` | Calculates driving distance, live/estimated traffic delay (Google Maps Directions `duration_in_traffic` + OSRM/OpenStreetMap zero-key fallback), and exact **"Leave By `HH:MM`"** departure warnings so you leave earlier when there's traffic. | *"When do I need to leave for my 6pm dinner in Bellevue and how is traffic?"* |
 | **☁️ Google Drive & Docs** | `gkrusch_drive` | Hybrid semantic + FTS5 BM25 RAG search across Google Drive, Google Docs Markdown export, Drive file creation (`G-Krusch/output/`), and `agent.md` cloud steering (with automatic local `data/notes/` mirror). | *"Search my Google Drive for the Q4 Architecture Spec"* |
-| **📅 Google Calendar** | `gkrusch_calendar` | Lists upcoming Google Calendar events or schedules new calendar meetings/appointments—automatically computing travel time, traffic delay, and Leave-By alerts for any event with a `location`. | *"Schedule a meeting on Google Calendar titled Architecture Sync at 2026-10-14T15:00:00"* |
+| **📅 Google Calendar** | `gkrusch_calendar` | Lists upcoming Google Calendar events or schedules new calendar meetings/appointments, automatically computing travel time, traffic delay, and Leave-By alerts for any event with a `location`. | *"Schedule a meeting on Google Calendar titled Architecture Sync at 2026-10-14T15:00:00"* |
 | **✉️ Gmail Extension** | `gkrusch_gmail` | Searches Gmail messages (`from:`, `is:unread`), creates RFC-2822 MIME drafts in Gmail, or sends emails (with local `data/notes/email-draft-*.md` fallback). | *"Draft an email to team@krusch.dev about the Q4 Spec"* |
 | **🧩 Self-Improving Skills** | `skill_manager` | **OpenClaw & Nous Hermes `SKILL.md` Engine**: learns/saves reusable procedural skills (`data/skills/<slug>/SKILL.md`), lists/reads/executes skills with experience counters, and migrates OpenClaw/Hermes workspaces (`import_openclaw`). | *"Learn a skill called Friday Client Digest: summarize weekly tasks and draft a status email"* |
 | **⏰ Cron & Meeting Prep** | `schedule_automation` | **OpenClaw Cron Scheduler & Meeting Prep Compiler**: schedules recurring cron jobs or timed reminders, and compiles 1-page **Meeting Prep Dossiers** combining Personal CRM, Working Memory, and Local Vault notes. | *"Prepare a meeting dossier for Anniversary Planning with Sarah Chen"* |
@@ -87,7 +87,7 @@ Standard 7B/14B local models degrade rapidly when all 20 OpenAI JSON tool schema
 | **💝 Personal CRM & Persona** | `personal_crm_profile` | **OpenAI Dot Relationship CRM & Nous Hermes `SOUL.md` / `USER.md` Engine**: tracks important people, birthdays, anniversaries, and gift ideas in SQLite (`companion_contacts`), and syncs portable `SOUL.md`, `USER.md`, `MEMORY.md`, and `CRM.md` files. | *"Save contact Sarah Chen: Partner, Birthday Nov 12, loves ceremonial matcha"* |
 | **🌤️ Live Weather** | `get_weather` | Live geocoding + current temperature, wind speed, precipitation probability, and daily highs/lows via Open-Meteo (zero API key required). | *"What's the weather in Seattle right now?"* |
 | **🔎 Web Research** | `web_research` | Queries DuckDuckGo Instant Answer & Wikipedia REST summaries for factual lookups and topic briefs. | *"Research the history of the Pomodoro Technique"* |
-| **📄 URL Digest** | `fetch_url_digest` | **SSRF-guarded** live web page reader—strips scripts/styles and extracts readable text while blocking localhost, LAN, and cloud metadata IPs. | *"Read and summarize https://example.com"* |
+| **📄 URL Digest** | `fetch_url_digest` | **SSRF-guarded** live web page reader, strips scripts/styles and extracts readable text while blocking localhost, LAN, and cloud metadata IPs. | *"Read and summarize https://example.com"* |
 | **📝 Notes Write** | `save_note` | Creates or updates clean Markdown documents inside your sandboxed local vault (`data/notes/`). | *"Save a note titled Weekly Goals: Ship v2.0 & review priorities"* |
 | **📂 Notes Read** | `list_notes` | Lists all saved Markdown notes in `data/notes/` or reads a specific note by title. | *"Show my saved notes"* |
 | **🔔 Push Alerts** | `send_notification` | Dispatches real-time push notifications to your phone or desktop via `ntfy.sh` or a custom self-hosted webhook topic. | *"Send a push notification to my phone: Pick up groceries at 5pm"* |
@@ -98,7 +98,7 @@ Standard 7B/14B local models degrade rapidly when all 20 OpenAI JSON tool schema
 ### 🚨 Multi-Channel Proactive Sentinel Watchdog Daemon (`$0.00` Polling ➔ Event-Driven LLM Wakeup)
 
 Instead of burning LLM tokens polling for changes in a loop, [`src/services/sentinel-daemon.js`](src/services/sentinel-daemon.js) runs a lightweight background watchdog every 5 minutes across **3 monitored channels** at **`$0.00` / `0` LLM tokens**, waking the LLM **only** when an actionable anomaly occurs:
-1. **✉️ Gmail Unread Actionable Triage ([`evaluateEmailTrigger`](src/services/sentinel-daemon.js))**: Polls `GET /api/gmail/messages?q=is:unread` via G-Krusch, discards marketing/newsletter noise (`unsubscribe`, `% off`, `daily digest`, `no-reply@`) on CPU at `0` tokens, and wakes the LLM **only** on reservation/booking updates (`email_reservation_or_schedule`) or urgent action items (`email_urgent_action`: invoices, contracts, deadlines, direct urgent requests)—while automatically staging an `[Email Action]` task on Today's Priority Board.
+1. **✉️ Gmail Unread Actionable Triage ([`evaluateEmailTrigger`](src/services/sentinel-daemon.js))**: Polls `GET /api/gmail/messages?q=is:unread` via G-Krusch, discards marketing/newsletter noise (`unsubscribe`, `% off`, `daily digest`, `no-reply@`) on CPU at `0` tokens, and wakes the LLM **only** on reservation/booking updates (`email_reservation_or_schedule`) or urgent action items (`email_urgent_action`: invoices, contracts, deadlines, direct urgent requests), while automatically staging an `[Email Action]` task on Today's Priority Board.
 2. **📅 Google Calendar Conflict & Imminent Meeting Watchdog ([`evaluateCalendarAnomalies`](src/services/sentinel-daemon.js))**: Polls upcoming Google Calendar events and wakes the LLM on overlapping double-bookings (`calendar_conflict`) or meetings starting within $\le 15$ minutes (`calendar_starting_soon`).
 3. **🚗 Live Route, Traffic & Departure Watchdog ([`evaluateSentinelTrigger`](src/services/sentinel-daemon.js))**: Polls location-tagged events using Google Maps Traffic / OSRM and wakes the LLM **only** on sudden traffic spikes (`+5m` surge), accidents/road closures (`accident_or_incident`), heavy congestion (`+8m` delay), or imminent departure windows ($\le 18\text{m}$ before Leave-By time).
 4. **Proactive Advisory Delivery**: When any channel trips its gate, the daemon wakes the LLM to synthesize a 1–2 sentence advisory, persists it to `sentinel_alerts`, pushes it via `ntfy.sh`, and surfaces it in the Companion UI (`GET /api/sentinel/status`, `POST /api/sentinel/tick`, `POST /api/sentinel/ack/:id`).
@@ -113,21 +113,21 @@ Instead of burning LLM tokens polling for changes in a loop, [`src/services/sent
 
 * **Weather + Note + Push Notification + Priority Board Chain**:
   > *"What is the weather in Seattle right now, save a note titled Run Forecast, and add a task to go for a 20-minute walk?"*
-  > ➜ **Tool 1 (`get_weather`)**: Queries live Open-Meteo API (`60.8°F / 16°C — Overcast ☁️, Wind 1.9 mph, Precip 10%`).
+  > ➜ **Tool 1 (`get_weather`)**: Queries live Open-Meteo API (`60.8°F / 16°C: Overcast ☁️, Wind 1.9 mph, Precip 10%`).
   > ➜ **Tool 2 (`save_note`)**: Automatically pipes the live weather forecast into `data/notes/run-forecast.md`.
   > ➜ **Tool 3 (`board_action`)**: Creates **[Health & Self 💪] Go for a 20-minute walk** on Today's Board.
 
 * **Voice/Text Thought Stream (Dual-Axis Triage + Speaker Post-Processing)**:
   > *"I need to pay the electric bill before 5pm, send the updated invoice to Alex, fix the door latch before tonight, and I kept forgetting to stretch today."*
   > ➜ **Extracted onto Today's Dual-Axis Board**:
-  > 1. `Pay the electric bill before 5pm` — **`🚨 Must Happen Today — Deadlines & Provision`** · Tag: `🏠 Provision & Finance`
-  > 2. `Send updated invoice to Alex` — **`🚨 Must Happen Today — Deadlines & Provision`** · Tag: `🔧 Work & Mastery`
-  > 3. `Fix door latch before tonight` — **`🚨 Must Happen Today — Deadlines & Provision`** · Tag: `🏠 Provision & Finance`
+  > 1. `Pay the electric bill before 5pm`: **`🚨 Must Happen Today: Deadlines & Provision`** · Tag: `🏠 Provision & Finance`
+  > 2. `Send updated invoice to Alex`: **`🚨 Must Happen Today: Deadlines & Provision`** · Tag: `🔧 Work & Mastery`
+  > 3. `Fix door latch before tonight`: **`🚨 Must Happen Today: Deadlines & Provision`** · Tag: `🏠 Provision & Finance`
   > *(All three sit at the very top of Today's Board above non-urgent `🌱 Daily Habits & Anchors` like morning prayer or reading, while preserving their Life Pillar badges.)*
   > ➜ **Saved to Working Memory**: `Remember to take stretching breaks during desk work` (Category: `lesson`).
 
 * **Instant L0 Task & Board Commands in Chat (`<15µs` CPU, `$0.00` LLM Cost)**:
-  > *"Add task: Pay electric bill before 5pm"* ➜ Automatically inferred as **`🚨 Must Happen Today — Deadlines & Provision`** (`🏠 Provision & Finance`) and placed at the top of Today's Board.
+  > *"Add task: Pay electric bill before 5pm"* ➜ Automatically inferred as **`🚨 Must Happen Today: Deadlines & Provision`** (`🏠 Provision & Finance`) and placed at the top of Today's Board.
   > *"Prioritize task: Quarterly review"* (or *"Make task quarterly review urgent"*) ➜ Promotes any existing task to **`🚨 Must Happen Today`** in `<15µs`.
   > *"Complete task: electric bill"* ➜ Marks the matching task completed on Today's Board and awards gamification points (`+50 pts` for Lane 1 Must-Do tasks).
   > *"Break down 'Prepare quarterly taxes' into steps"* ➜ Decomposes the goal into 3 bite-sized (5–15 min) subtasks on Today's Board.
@@ -169,7 +169,7 @@ The frontend is an installable Progressive Web App (PWA) built with React 19, Vi
 
 ---
 
-## 🚀 Quickstart (100% Standalone — Zero Monorepo Dependencies)
+## 🚀 Quickstart (100% Standalone: Zero Monorepo Dependencies)
 
 ### Agent-Assisted Setup
 
@@ -181,7 +181,7 @@ Read https://raw.githubusercontent.com/kruschdev/krusch-companion/main/INSTALL.m
 
 **Krusch Companion is 100% standalone-installable** with a committed `package-lock.json` and self-contained [`Dockerfile`](Dockerfile) / [`docker-compose.yml`](docker-compose.yml). Choose any of three one-command paths:
 
-### Fastest Path — One-Command Install & Run
+### Fastest Path: One-Command Install & Run
 ```bash
 git clone https://github.com/kruschdev/krusch-companion.git
 cd krusch-companion
@@ -237,7 +237,7 @@ curl -s -X POST http://localhost:3004/api/companion/chat \
   -H "Content-Type: application/json" \
   -d '{"prompt": "What is (144 / 12) ^ 2 + 15?"}' | jq '{reply, tierUsed, latencyMs, reason}'
 
-# Natural-language L0 task creation: auto-classified into Lane 1 (Must Happen Today — Deadlines & Provision)
+# Natural-language L0 task creation: auto-classified into Lane 1 (Must Happen Today: Deadlines & Provision)
 # with Life Pillar tag "Provision & Finance", sorting above recurring daily habits ($0.00 cost)
 curl -s -X POST http://localhost:3004/api/companion/chat \
   -H "Content-Type: application/json" \
@@ -286,7 +286,7 @@ curl -s -X POST http://localhost:3004/api/sentinel/tick \
       {
         "id": "eval-promo-1",
         "from": "Store Newsletter <no-reply@marketing.example.com>",
-        "subject": "50% OFF Flash Sale Ends Tonight — Unsubscribe",
+        "subject": "50% OFF Flash Sale Ends Tonight, Unsubscribe",
         "snippet": "Click to unsubscribe from this promotional digest."
       },
       {
@@ -398,7 +398,7 @@ krusch-companion/
 ### 1. Sub-15µs CPU Cascade Router & Dynamic Specialist Routing
 * **L0 Deterministic Heuristic (`<15µs` CPU, `$0.00` Cost)**: Captures commands like `"Add task: ..."`, `"Prioritize task: ..."`, `"Complete task: ..."`, `"Show my tasks"`, `"Roll over unfinished tasks"`, `"Instead of X, remember that Y"`, or evaluates math expressions on CPU in microseconds with zero token cost.
 * **L1 Local Edge (`Ollama`)**: Dispatches daily conversational queries and `<holodata>` tool calls to local Ollama (`qwen2.5-coder:7b`) with sub-second response times.
-* **L2 Compute Swarm (`kruschdev` 30B / `kruschserv`)**: Transparently escalates heavy, multi-paragraph prompts to local network compute nodes (`qwen3-coder-30b-moe:latest` on Dual RTX 2080 Ti NVLink, with `hermes3:latest` secondary fallback on Dual RTX 3060).
+* **L2 Compute Swarm (`kruschdev:18080` / `kruschserv:18080`)**: Transparently escalates heavy, multi-paragraph prompts to my local network compute nodes (`inkling-2-mini:ud-iq4_xs-dspark` at `http://kruschdev:18080/v1` on Dual RTX 2080 Ti NVLink as primary L2 Swarm, with `qwen3-coder-30b-moe:latest` at `http://kruschserv:18080/v1` on Dual RTX 3060 as L2 Swarm fallback).
 * **L2.5 Colab G4 Burst Tier (`gpt-oss:120b` via Private SSH Tunnel)**: Before escalating to external cloud APIs, `L2_SWARM` failures (or explicit `[colab]` / `/colab` / `[g4]` / `/g4` tags) escalate to the private SSH-tunneled **Google Colab Pro 96GB NVIDIA RTX PRO 6000 Blackwell (`--gpu G4`)** server at `http://127.0.0.1:11435/v1` running **`gpt-oss:120b`** (`116.8B` MXFP4, `131,072` ctx, **`~117.7 tok/s`**).
 * **L3 OpenRouter 3-Specialist Dynamic Cascade (Zero-GPU Mode)**: When `LLM_PROVIDER="openrouter"` (or hybrid escalation is enabled and local/Colab tiers are unreachable), [`selectOpenRouterSpecialistModel()`](src/router/cascade-client.js) inspects each turn and dynamically selects the optimal Zero-Data-Retention (`data_collection: "deny"`) specialist model:
 
@@ -495,22 +495,22 @@ The server configuration is located in [`config.json`](config.json) at the proje
 | `cascade.openrouterApiKey` | `""` | `OPENROUTER_API_KEY` | OpenRouter API key for zero-GPU mode or cloud fallback. |
 | `cascade.openrouterModel` | `"qwen/qwen-2.5-72b-instruct"` | `OPENROUTER_MODEL` | Default OpenRouter model (automatically cascades across `qwen-2.5-coder-32b-instruct` for `<holodata>` tools, `qwen-2.5-72b-instruct` for coaching, and `deepseek-chat-v3-0324` for deep reasoning). |
 | `cascade.openrouterZeroDataRetention`| `true` | `OPENROUTER_ZDR` | **Privacy Shield**: Injects `provider: { data_collection: "deny" }` to prevent model training and prompt retention. |
-| `cascade.l0HeuristicEnabled` | `true` | — | Enables sub-15µs CPU routing for math and direct memory storage (always local). |
+| `cascade.l0HeuristicEnabled` | `true` | - | Enables sub-15µs CPU routing for math and direct memory storage (always local). |
 | `cascade.edgeModel` | `"qwen2.5-coder:7b"` | `EDGE_MODEL` | Name of local Ollama model for fast daily tasks. |
-| `cascade.swarmModel` | `"qwen3-coder-30b-moe:latest"`| `SWARM_MODEL` | Primary compute server model (`kruschdev` Dual RTX 2080 Ti NVLink) for deep reasoning. |
-| `cascade.swarmFallbackModel` | `"hermes3:latest"` | `SWARM_FALLBACK_MODEL` | Secondary compute server fallback model (`kruschserv` Dual RTX 3060). |
+| `cascade.swarmModel` | `"inkling-2-mini:ud-iq4_xs-dspark"` | `SWARM_MODEL` | Primary L2 Swarm model (`kruschdev:18080` Dual RTX 2080 Ti NVLink) for deep reasoning. |
+| `cascade.swarmFallbackModel` | `"qwen3-coder-30b-moe:latest"` | `SWARM_FALLBACK_MODEL` | Secondary L2 Swarm fallback model (`kruschserv:18080` Dual RTX 3060). |
 | `cascade.ollamaUrl` | `"http://127.0.0.1:11434"` | `OLLAMA_HOST` | URL of local Ollama instance. |
-| `cascade.swarmUrl` | `"http://kruschdev:11434/v1"` | `SWARM_VLLM_URL` | URL of primary L2 Swarm compute node. |
-| `cascade.swarmFallbackUrl` | `"http://kruschserv:11434/v1"` | `SWARM_FALLBACK_URL` | URL of secondary L2 Swarm compute node. |
+| `cascade.swarmUrl` | `"http://kruschdev:18080/v1"` | `SWARM_VLLM_URL` | URL of primary L2 Swarm compute node (`kruschdev` 1st Chair `llama-server`). |
+| `cascade.swarmFallbackUrl` | `"http://kruschserv:18080/v1"` | `SWARM_FALLBACK_URL` | URL of secondary L2 Swarm compute node (`kruschserv` 2nd Chair `llama-server`). |
 | `cascade.colabBurstEnabled` | `true` | `COLAB_BURST_ENABLED` | Enables the intermediate `L2.5` Colab G4 96GB burst tier between `L2_SWARM` and `L3_CLOUD` (OpenRouter). |
 | `cascade.colabBurstUrl` | `"http://127.0.0.1:11435/v1"` | `COLAB_BURST_URL` | Local SSH-tunneled URL (`./scripts/colab-ollama-g4.sh start`) for the Colab G4 Ollama server. |
 | `cascade.colabBurstModel` | `"gpt-oss:120b"` | `COLAB_BURST_MODEL` | Private 120B MXFP4 model (`131K` ctx, `~117.7 tok/s`) running on the 96GB Blackwell G4 burst tier. |
-| — | `"http://127.0.0.1:5446"` | `G_KRUSCH_URL` | URL of local G-Krusch Google Workspace Extension server (Drive RAG, Calendar, Gmail). |
-| — | `""` *(OSRM Fallback)* | `GOOGLE_MAPS_API_KEY` | Optional Google Maps Directions API key for live `duration_in_traffic` telemetry (automatically falls back to zero-key OpenStreetMap + OSRM routing when unset). |
-| — | `"Seattle, WA"` | `DEFAULT_ORIGIN_ADDRESS` | Default home/office departure address for `commute_departure_check` and Sentinel Watchdog Leave-By calculations (auto-resolves from `home_location` memory). |
-| — | `300000` *(5 mins)* | `SENTINEL_INTERVAL_MS` | Background polling interval in milliseconds for the Multi-Channel Proactive Sentinel Watchdog Daemon (`DISABLE_SENTINEL_DAEMON="true"` to disable). |
-| — | `""` | `NTFY_TOPIC` | Optional `ntfy.sh` push notification topic (`NTFY_SERVER` defaults to `"https://ntfy.sh"`). |
-| — | `""` | `MOCK_LLM` | Set `MOCK_LLM=1` for instant hermetic zero-GPU / zero-API-key test and evaluation mode. |
+| - | `"http://127.0.0.1:5446"` | `G_KRUSCH_URL` | URL of local G-Krusch Google Workspace Extension server (Drive RAG, Calendar, Gmail). |
+| - | `""` *(OSRM Fallback)* | `GOOGLE_MAPS_API_KEY` | Optional Google Maps Directions API key for live `duration_in_traffic` telemetry (automatically falls back to zero-key OpenStreetMap + OSRM routing when unset). |
+| - | `"Seattle, WA"` | `DEFAULT_ORIGIN_ADDRESS` | Default home/office departure address for `commute_departure_check` and Sentinel Watchdog Leave-By calculations (auto-resolves from `home_location` memory). |
+| - | `300000` *(5 mins)* | `SENTINEL_INTERVAL_MS` | Background polling interval in milliseconds for the Multi-Channel Proactive Sentinel Watchdog Daemon (`DISABLE_SENTINEL_DAEMON="true"` to disable). |
+| - | `""` | `NTFY_TOPIC` | Optional `ntfy.sh` push notification topic (`NTFY_SERVER` defaults to `"https://ntfy.sh"`). |
+| - | `""` | `MOCK_LLM` | Set `MOCK_LLM=1` for instant hermetic zero-GPU / zero-API-key test and evaluation mode. |
 | `db.path` | `"./data/companion.db"` | `DB_PATH` | Path to SQLite WAL database file. |
 | `context.decayDays` | `30` | `CONTEXT_DECAY_DAYS` | Age threshold in days before memories are flagged for decay review. |
 

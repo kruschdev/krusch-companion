@@ -1,5 +1,5 @@
 {
-  "_comment": "Krusch Companion configuration — sovereign, privacy-first personal assistant",
+  "_comment": "Krusch Companion configuration: sovereign, privacy-first personal assistant",
   "app": {
     "name": "Krusch Companion",
     "port": 3004,
@@ -11,11 +11,11 @@
     "l0HeuristicEnabled": true,
     "speculativeHedging": true,
     "edgeModel": "qwen2.5-coder:7b",
-    "swarmModel": "qwen3-coder-30b-moe:latest",
-    "swarmFallbackModel": "hermes3:latest",
+    "swarmModel": "inkling-2-mini:ud-iq4_xs-dspark",
+    "swarmFallbackModel": "qwen3-coder-30b-moe:latest",
     "ollamaUrl": "http://127.0.0.1:11434",
-    "swarmUrl": "http://kruschdev:11434/v1",
-    "swarmFallbackUrl": "http://kruschserv:11434/v1",
+    "swarmUrl": "http://kruschdev:18080/v1",
+    "swarmFallbackUrl": "http://kruschserv:18080/v1",
     "openrouterApiKey": "",
     "openrouterModel": "qwen/qwen-2.5-72b-instruct",
     "frontierModel": "z-ai/glm-5.3",

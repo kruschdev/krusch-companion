@@ -698,7 +698,7 @@ export function classifyCompanionPrompt(prompt) {
       tier = TIERS.L2_SWARM;
     }
   } else {
-    // Balanced mode (default): escalate to L2 Swarm (kruschdev Dual 2080 Ti / kruschserv Dual 3060) on complex reasoning
+    // Balanced mode (default): escalate to L2 Swarm (1st Chair kruschdev:18080 -> 2nd Chair kruschserv:18080) on complex reasoning
     if (
       preRoute.complexityScore >= 0.35 ||
       preRoute.role === 'reasoning_deep' ||
@@ -1346,24 +1346,24 @@ PERSONA & EXECUTION RULES (SOUL.md):
     }
   }
 
-  // 4. Execution with resilient multi-node hedging for L2 Swarm (kruschdev Dual 2080 Ti -> kruschserv Dual 3060 -> L2.5 Colab G4 Burst)
+  // 4. Execution with resilient multi-node hedging for L2 Swarm (1st Chair kruschdev:18080 -> 2nd Chair kruschserv:18080 -> L2.5 Colab G4 Burst)
   if (classification.tier === TIERS.L2_SWARM || classification.tier === TIERS.L2_5_COLAB_BURST || classification.tier === TIERS.L3_CLOUD) {
     const swarmTargets = [
       {
         endpoint: config.cascade.swarmUrl,
-        model: config.cascade.swarmModel || 'qwen3-coder-30b-moe:latest'
+        model: config.cascade.swarmModel || 'inkling-2-mini:ud-iq4_xs-dspark'
       },
       {
         endpoint: config.cascade.swarmFallbackUrl,
-        model: config.cascade.swarmFallbackModel || 'hermes3:latest'
+        model: config.cascade.swarmFallbackModel || 'qwen3-coder-30b-moe:latest'
       }
     ].filter(t => Boolean(t.endpoint));
 
     for (const { endpoint, model: targetSwarmModel } of swarmTargets) {
+      const isInkling = /^inkling/i.test(targetSwarmModel);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), isInkling ? 45000 : 25000);
       try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 18000);
-
         const res = await fetch(`${endpoint.replace(/\/+$/, '')}/chat/completions`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1375,6 +1375,7 @@ PERSONA & EXECUTION RULES (SOUL.md):
               ...cleanHistory,
               { role: 'user', content: cleanPrompt }
             ],
+            max_tokens: isInkling ? 6144 : 4096,
             temperature: 0.6
           })
         });
@@ -1382,7 +1383,8 @@ PERSONA & EXECUTION RULES (SOUL.md):
 
         if (res.ok) {
           const data = await res.json();
-          const content = data?.choices?.[0]?.message?.content;
+          const rawContent = data?.choices?.[0]?.message?.content;
+          const content = typeof rawContent === 'string' ? rawContent.trim() : '';
           if (content) {
             return {
               content: systemPrompt ? content : stripHallucinatedBoardDump(content),
@@ -1391,8 +1393,12 @@ PERSONA & EXECUTION RULES (SOUL.md):
               reason: `L2 Swarm (${targetSwarmModel} @ ${endpoint})`
             };
           }
+          console.warn(`⚠️ L2 Swarm (${targetSwarmModel} @ ${endpoint}) returned empty content; trying next fallback`);
+        } else {
+          console.warn(`⚠️ L2 Swarm (${targetSwarmModel} @ ${endpoint}) returned HTTP ${res.status}; trying next fallback`);
         }
       } catch (err) {
+        clearTimeout(timeoutId);
         console.error('Cascade client error:', err);
       }
     }

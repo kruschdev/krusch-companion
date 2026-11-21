@@ -28,11 +28,11 @@ export const config = {
     l0HeuristicEnabled: fileConfig.cascade?.l0HeuristicEnabled !== false,
     speculativeHedging: fileConfig.cascade?.speculativeHedging !== false,
     edgeModel: envOr('EDGE_MODEL', fileConfig.cascade?.edgeModel, 'qwen2.5-coder:7b'),
-    swarmModel: envOr('SWARM_MODEL', fileConfig.cascade?.swarmModel, 'qwen3-coder-30b-moe:latest'),
-    swarmFallbackModel: envOr('SWARM_FALLBACK_MODEL', fileConfig.cascade?.swarmFallbackModel, 'hermes3:latest'),
+    swarmModel: envOr('SWARM_MODEL', fileConfig.cascade?.swarmModel, 'inkling-2-mini:ud-iq4_xs-dspark'),
+    swarmFallbackModel: envOr('SWARM_FALLBACK_MODEL', fileConfig.cascade?.swarmFallbackModel, 'qwen3-coder-30b-moe:latest'),
     ollamaUrl: envOr('OLLAMA_HOST', fileConfig.cascade?.ollamaUrl, 'http://127.0.0.1:11434'),
-    swarmUrl: envOr('SWARM_VLLM_URL', fileConfig.cascade?.swarmUrl, 'http://kruschdev:11434/v1'),
-    swarmFallbackUrl: envOr('SWARM_FALLBACK_URL', fileConfig.cascade?.swarmFallbackUrl, 'http://kruschserv:11434/v1'),
+    swarmUrl: envOr('SWARM_VLLM_URL', fileConfig.cascade?.swarmUrl, 'http://kruschdev:18080/v1'),
+    swarmFallbackUrl: envOr('SWARM_FALLBACK_URL', fileConfig.cascade?.swarmFallbackUrl, 'http://kruschserv:18080/v1'),
     colabBurstEnabled: envBool('COLAB_BURST_ENABLED', fileConfig.cascade?.colabBurstEnabled, true),
     colabBurstUrl: envOr('COLAB_BURST_URL', fileConfig.cascade?.colabBurstUrl, 'http://127.0.0.1:11435/v1'),
     colabBurstModel: envOr('COLAB_BURST_MODEL', fileConfig.cascade?.colabBurstModel, 'gpt-oss:120b'),
@@ -80,6 +80,12 @@ export function validateCompanionConfig(cfg = config) {
   }
   if (!cfg?.cascade?.swarmUrl || !/^https?:\/\//i.test(cfg.cascade.swarmUrl)) {
     issues.push('Invalid cascade.swarmUrl: must be an HTTP(S) URL');
+  }
+  if (cfg?.cascade?.swarmFallbackUrl && !/^https?:\/\//i.test(cfg.cascade.swarmFallbackUrl)) {
+    issues.push('Invalid cascade.swarmFallbackUrl: must be an HTTP(S) URL when set');
+  }
+  if (cfg?.cascade?.colabBurstUrl && !/^https?:\/\//i.test(cfg.cascade.colabBurstUrl)) {
+    issues.push('Invalid cascade.colabBurstUrl: must be an HTTP(S) URL when set');
   }
   if (!cfg?.db?.path || typeof cfg.db.path !== 'string') {
     issues.push('Invalid db.path: must be a non-empty file path string');
