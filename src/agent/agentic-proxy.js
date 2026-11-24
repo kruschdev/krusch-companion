@@ -497,9 +497,17 @@ export function detectAgenticIntent(prompt, options = {}) {
   const selectedToolNames = new Set();
 
   let enabledExtensionTools = [];
+  let extensionRegistryDegraded = false;
+  let extensionRegistryError = null;
+  const resolveExtensionTools = typeof options.getEnabledExtensionTools === 'function'
+    ? options.getEnabledExtensionTools
+    : getEnabledExtensionTools;
   try {
-    enabledExtensionTools = getEnabledExtensionTools() || [];
-  } catch {
+    enabledExtensionTools = resolveExtensionTools() || [];
+  } catch (err) {
+    extensionRegistryDegraded = true;
+    extensionRegistryError = err?.message || String(err);
+    console.warn(`[AgenticProxy] Extension registry degraded; falling back to core tools: ${extensionRegistryError}`);
     enabledExtensionTools = [];
   }
   const enabledExtNames = new Set(enabledExtensionTools.map(t => t.name));
@@ -528,7 +536,12 @@ export function detectAgenticIntent(prompt, options = {}) {
   }
 
   if (selectedToolNames.size === 0) {
-    return { shouldUseAgenticProxy: false, matchedCategories: [], tools: [] };
+    return {
+      shouldUseAgenticProxy: false,
+      matchedCategories: [],
+      tools: [],
+      ...(extensionRegistryDegraded ? { degraded: true, degradedReason: extensionRegistryError } : {})
+    };
   }
 
   // Check if the user is chaining a board/memory action or note save alongside an external tool call
@@ -601,7 +614,8 @@ export function detectAgenticIntent(prompt, options = {}) {
     matchedCategories,
     tools,
     compactedSchemas: dppRouted.compactedSchemas,
-    pruningReport
+    pruningReport,
+    ...(extensionRegistryDegraded ? { degraded: true, degradedReason: extensionRegistryError } : {})
   };
 }
 

@@ -958,6 +958,25 @@ describe('Krusch Companion — Agentic Proxy (<holodata> Dual-Engine for 7B/14B 
       else process.env.DISABLE_GKRUSCH_SYNC = prevDisable;
     }
   });
+
+  test('20. detectAgenticIntent surfaces degraded-mode signal when extension registry throws (BUG-01)', () => {
+    const throwingProvider = () => {
+      throw new Error('extension db locked');
+    };
+    const coreIntent = detectAgenticIntent('What is the weather in Seattle today?', {
+      getEnabledExtensionTools: throwingProvider
+    });
+    assert.equal(coreIntent.shouldUseAgenticProxy, true);
+    assert.equal(coreIntent.degraded, true);
+    assert.match(coreIntent.degradedReason, /extension db locked/);
+
+    const chatIntent = detectAgenticIntent('How do I stay motivated today?', {
+      getEnabledExtensionTools: throwingProvider
+    });
+    assert.equal(chatIntent.shouldUseAgenticProxy, false);
+    assert.equal(chatIntent.degraded, true);
+    assert.match(chatIntent.degradedReason, /extension db locked/);
+  });
 });
 
 
