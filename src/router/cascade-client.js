@@ -1124,6 +1124,13 @@ export function createL1FallbackSentinel(startTime = Date.now(), error = null) {
   };
 }
 
+export function resolveSanitizedPrompt(sanitizedResult) {
+  if (sanitizedResult && typeof sanitizedResult.sanitizedMessage === 'string') {
+    return sanitizedResult.sanitizedMessage;
+  }
+  return '';
+}
+
 /**
  * Dispatch conversational turn through the cascade router hierarchy.
  */
@@ -1139,7 +1146,7 @@ export async function dispatchCompanionChat({
 
   // 1. Sanitize incoming prompt for security & injection containment (arXiv: 2608.10218)
   const sanitized = sanitizeAgentMessage(prompt);
-  const rawSanitized = sanitized.sanitizedMessage || prompt;
+  const rawSanitized = resolveSanitizedPrompt(sanitized);
   const cleanPrompt = systemPrompt ? rawSanitized : normalizeSpokenTranscript(rawSanitized);
 
   // Strip any historical hallucinated board dumps from conversation history so 7B models don't few-shot imitate them

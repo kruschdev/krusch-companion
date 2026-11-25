@@ -610,6 +610,14 @@ test('Hardening (BUG-01): createL1FallbackSentinel returns structured L1 fallbac
   assert.ok(sentinel.latencyMs >= 0);
 });
 
+test('Hardening (BUG-01): resolveSanitizedPrompt fails closed instead of re-admitting raw prompt', async () => {
+  const { resolveSanitizedPrompt } = await import('../src/router/cascade-client.js');
+  assert.strictEqual(resolveSanitizedPrompt({ sanitizedMessage: '' }), '');
+  assert.strictEqual(resolveSanitizedPrompt({ sanitizedMessage: '[FILTERED] hi' }), '[FILTERED] hi');
+  assert.strictEqual(resolveSanitizedPrompt({}), '');
+  assert.strictEqual(resolveSanitizedPrompt(null), '');
+});
+
 test('Hardening: Cleanup test artifacts', () => {
   if (fs.existsSync(testDbPath)) fs.unlinkSync(testDbPath);
   if (fs.existsSync(`${testDbPath}-wal`)) fs.unlinkSync(`${testDbPath}-wal`);
